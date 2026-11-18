@@ -179,6 +179,34 @@ def load(me_id: int) -> dict:
                     f"SELECT task_id FROM critical_dates WHERE task_id IS NOT NULL AND id IN ({','.join('?' * len(m['dates']))})",
                     m["dates"])]
 
+        # --- month-end close board: this month's close at two more properties (different progress) and last month's
+        #     close at a third that hasn't started this month yet
+        with tx() as c:
+            close_tpl = c.execute("SELECT id FROM templates WHERE name='Month-End Close'").fetchone()
+        if close_tpl:
+            first = date.today().replace(day=1)
+            last_month = (first - timedelta(days=1)).replace(day=1)
+            for addr, client, start, done_n, blocked in [
+                    ("4500 Fredericksburg Rd, San Antonio, TX", "Fredericksburg Center LLC", first, 5, None),
+                    ("8800 Research Blvd, Austin, TX", "Research Plaza Owner LP", first, 1, "Enter & approve payables"),
+                    ("1200 Broadway St, San Antonio, TX", "Broadway Lofts LP", last_month, 99, None)]:
+                pid = services.create_project_from_template(
+                    close_tpl[0], f"{start:%B %Y} – Month-End Close ({addr.split(',')[0]})", start,
+                    details={"property": addr, "client": client})
+                m["projects"].append(pid)
+                with tx() as c:
+                    tids = [r[0] for r in c.execute("SELECT id FROM tasks WHERE project_id=? AND parent_id IS NULL ORDER BY position, id", (pid,))]
+                for n, tid in enumerate(tids):
+                    if n < done_n:
+                        services.apply_update(tid, ids["Jordan Lee"], "web", "done", None)
+                if blocked:
+                    t = _task(pid, blocked)
+                    if t:
+                        services.apply_update(t, ids["Maria Garza"], "web", "blocked", "Waiting on owner to approve the roof invoice")
+            properties.link_all()
+            with tx() as c:
+                m["properties"] += [r[0] for r in c.execute("SELECT id FROM properties") if r[0] not in before and r[0] not in m["properties"]]
+
         # --- a monthly recurring setup (paused, so it doesn't create real projects)
         with tx() as c:
             tpl_id = c.execute("SELECT id FROM templates WHERE name='Month-End Close'").fetchone()
@@ -229,6 +257,7 @@ def remove() -> dict:
             c.execute("UPDATE task_updates SET user_id=NULL WHERE user_id=?", (uid,))
             c.execute("UPDATE task_comments SET user_id=NULL WHERE user_id=?", (uid,))
             c.execute("DELETE FROM project_team WHERE user_id=?", (uid,))
+            c.execute("DELETE FROM property_team WHERE user_id=?", (uid,))
             c.execute("DELETE FROM users WHERE id=?", (uid,))
     set_setting("demo.manifest", "")
     return {"removed": True, "projects": len(m["projects"]), "people": len(m["users"])}

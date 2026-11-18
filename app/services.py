@@ -73,6 +73,10 @@ def apply_update(task_id: int, user_id: int | None, source: str, status: str | N
         elif status and status != "done":  # reopening a task reopens its project
             c.execute("UPDATE projects SET status='active' WHERE id=? AND status='done'", (t["project_id"],))
     automations.on_status_change(task_id, old, status, user_id, note)
+    if status and status != old:
+        from . import audit
+        audit.log(user_id, f"status → {STATUS_LABEL.get(status, status)}", "task", task_id, t["title"],
+                  (f"from {STATUS_LABEL.get(old, old)}" + (f" · via Blink" if source == "blink" else "")) + (f" · “{note}”" if note else ""))
     if status == "done" and old != "done" and t.get("repeat"):
         t["next_occurrence"] = recur.on_done(task_id)
     return t

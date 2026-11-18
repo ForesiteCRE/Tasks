@@ -163,8 +163,9 @@ def init_db():
 
 
 def _init_extras():
-    from . import chat, dashboard, extras, intake, photos, properties, recur, timing, tpl  # tables kept next to their features
+    from . import audit, chat, dashboard, extras, intake, photos, properties, recur, timing, tpl  # tables kept next to their features
     tpl.init()
+    audit.init()
     chat.init()
     intake.init()
     timing.init()

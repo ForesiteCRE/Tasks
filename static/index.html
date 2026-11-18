@@ -163,6 +163,15 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 .warnbox{background:#fdf6ea;border:1px solid #f3dcb5;border-radius:8px;padding:8px 10px;font-size:13px;margin:4px 0 8px}.warnbox.bad{background:#fdecec;border-color:#f3c4c4}.warnbox.okbox{background:#eef6e4;border-color:#cfe3b8}
 .docrow{display:flex;gap:10px;padding:10px 2px;border-bottom:1px solid var(--line)}.docrow a{color:var(--ink)}.docrow .ico{font-size:18px}
 .lbl{display:block;font-size:12px;color:var(--mute);margin:8px 0 2px}
+.row2.restored{opacity:.55}.actrow{display:flex;gap:12px;padding:7px 2px;border-bottom:1px solid var(--line);font-size:13.5px}.actrow .t{min-width:64px;font-size:12px;padding-top:2px}
+.closewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.closegrid{border-collapse:separate;border-spacing:0;width:100%;min-width:640px}.closegrid th,.closegrid td{border-bottom:1px solid var(--line);padding:8px 6px;vertical-align:middle}
+.closegrid th.step{font-size:11.5px;font-weight:600;color:var(--mute);text-align:center;width:88px;line-height:1.25}.closegrid th.step div{max-width:96px;margin:0 auto}
+.closegrid .prop{position:sticky;left:0;background:var(--card,#fff);z-index:1;min-width:220px;max-width:280px;box-shadow:1px 0 0 var(--line)}
+.closegrid td.cl{text-align:center}.closegrid tfoot td{font-size:12px;border-bottom:0}
+.cc{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;font-style:normal;font-weight:700;font-size:14px;cursor:pointer;background:#eef1f4;color:#9aa5af}
+.cc.done{background:#e3f1d4;color:#3d6b1f}.cc.in_progress{background:#dcecf6;color:var(--acc)}.cc.blocked{background:#fdf1e2;color:#b26a12;font-size:12px}.cc.od{background:#fde2e2;color:var(--bad)}.cc.none{background:none;cursor:default}
+.row .cc{width:20px;height:20px;font-size:11px;border-radius:5px;cursor:default;vertical-align:middle}
 .rolelist{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px}.rolelist>div{display:flex;flex-direction:column;background:#f7fafc;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px}.rolelist .via{font-size:11.5px}
 .propgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
 .nextd{margin-top:8px;font-size:12.5px;padding-top:8px;border-top:1px solid var(--line)}
@@ -234,7 +243,9 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
   <div class="dd" data-g="tasks"><button class="ddb">Tasks <span class="car">▾</span></button><div class="ddm">
     <button data-v="tasks">✓ All tasks<small>with or without a project</small></button>
     <button data-v="projects">📁 Projects<small>start a new project, see progress</small></button>
+    <button data-v="close">📊 Month-end close<small>every property's close at a glance</small></button>
     <button data-v="properties">🏢 Properties<small>each building, its critical dates &amp; work</small></button>
+    <button data-v="history" class="mgr">🗑 Recently deleted &amp; history<small>restore deletes · who changed what</small></button>
     <button data-v="templates" class="mgr">📋 Templates<small>reusable checklists</small></button></div></div>
   <button data-v="calendar">Calendar</button>
   <button data-v="team" class="mgr">By person</button>
@@ -294,6 +305,23 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
   <div class="row" style="margin-bottom:12px"><input type="search" id="propSearch" placeholder="Search properties…" oninput="renderProperties()" style="flex:1;min-width:180px"></div>
   <div class="propgrid" id="propList"></div>
   <div class="panel" style="margin-top:18px"><header><h3>⚑ Critical dates — next 120 days</h3><span class="cnt" id="propUpN"></span></header><div class="body" id="propUpcoming"></div></div>
+</section>
+
+<section id="v-close" class="hidden">
+  <div class="pagehead"><h2>Month-end close</h2>
+    <div class="row" style="margin:0"><button class="b ghost" onclick="closeGo(CLOSE.prev)">‹</button><b id="closeMonth" style="min-width:130px;text-align:center"></b><button class="b ghost" onclick="closeGo(CLOSE.next)">›</button><select id="closeTpl" onchange="closeGo(CLOSE.month)"></select></div></div>
+  <div id="closeSum" class="row" style="gap:6px;margin:0 0 10px"></div>
+  <div class="card" style="padding:0"><div class="closewrap"><table class="closegrid" id="closeGrid"></table></div></div>
+  <div id="closeMissing"></div>
+  <div class="row mute" style="font-size:12px;margin-top:8px;gap:10px"><span><i class="cc done">✓</i> Done</span><span><i class="cc in_progress">●</i> In progress</span><span><i class="cc blocked">⛔</i> Blocked</span><span><i class="cc od">!</i> Overdue</span><span><i class="cc todo">○</i> To do</span><span>Click a square to open the task · click a property for its close project</span></div>
+</section>
+
+<section id="v-history" class="hidden">
+  <div class="pagehead"><h2>Recently deleted &amp; history</h2></div>
+  <div class="panel"><header><h3>🗑 Recently deleted</h3><span class="cnt">kept 30 days</span></header><div class="body" id="binList"></div></div>
+  <div class="panel" style="margin-top:16px"><header><h3>🕘 Who did what</h3><span class="cnt" id="actN"></span></header><div class="body">
+    <div class="row" style="margin:6px 0 8px"><select id="actWho" onchange="renderActivity()"></select><select id="actKind" onchange="renderActivity()"><option value="">Everything</option><option value="task">Tasks</option><option value="project">Projects</option><option value="property">Properties</option></select></div>
+    <div id="actList"></div></div></div>
 </section>
 
 <section id="v-property" class="hidden"><div id="propPage"></div></section>
@@ -407,7 +435,7 @@ const fmtDate=d=>d?new Date(d+'T12:00').toLocaleDateString(undefined,{month:'sho
 function show(v){document.querySelectorAll('nav button[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   document.querySelectorAll('.dd').forEach(d=>{d.classList.remove('open');d.querySelector('.ddb').classList.toggle('on',!!d.querySelector(`[data-v="${v}"]`))});
   if(v==='tasks')renderTasks();document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-'+v));
-  if(v==='home')renderHome();if(v==='chat')loadChat();if(v==='admin')loadAdmin();if(v==='calendar')renderCalendar();if(v==='team')renderTeam();if(v==='properties')renderProperties(true);}
+  if(v==='home')renderHome();if(v==='chat')loadChat();if(v==='admin')loadAdmin();if(v==='calendar')renderCalendar();if(v==='team')renderTeam();if(v==='properties')renderProperties(true);if(v==='history')renderHistory();if(v==='close')closeGo(CLOSE.month);}
 $('#nav').onclick=e=>{const b=e.target.closest('button');if(!b)return;
   if(b.classList.contains('ddb')){const d=b.parentElement,o=!d.classList.contains('open');document.querySelectorAll('.dd').forEach(x=>x.classList.remove('open'));d.classList.toggle('open',o);return;}
   if(b.dataset.v)show(b.dataset.v)};
@@ -664,7 +692,7 @@ async function cdDel(id){if(!confirm('Remove this critical date? (Its task, if a
 async function propTeamSet(rid,uid){const r=await api(`/api/properties/${PROP.id}/team/${rid}`,{method:'PUT',body:{user_id:+uid||null}});
   toast(r.moved?`Updated — ${r.moved} open task${r.moved>1?'s':''} moved`:'Updated');await refresh();openProperty(PROP.id);}
 async function propPatch(b){await api('/api/properties/'+PROP.id,{method:'PATCH',body:b});PROPS=[];await refresh();openProperty(PROP.id);toast('Saved');}
-async function delProperty(){await api(`/api/properties/${PROP.id}?confirm=${encodeURIComponent($('#propDelConfirm').value)}`,{method:'DELETE'});PROPS=[];toast('Property page deleted');show('properties');}
+async function delProperty(){const r=await api(`/api/properties/${PROP.id}?confirm=${encodeURIComponent($('#propDelConfirm').value)}`,{method:'DELETE'});PROPS=[];show('properties');toast('Property page deleted',()=>restoreTrash(r.trash_id),'Undo');}
 async function ctAdd(){await api(`/api/properties/${PROP.id}/contacts`,{method:'POST',body:{role:$('#ctRole').value,name:$('#ctName').value,company:$('#ctCompany').value,email:$('#ctEmail').value,phone:$('#ctPhone').value,notes:$('#ctNotes').value}});toast('Contact added');openProperty(PROP.id);}
 async function ctDel(id){if(!confirm('Remove this contact?'))return;await api('/api/property-contacts/'+id,{method:'DELETE'});openProperty(PROP.id);}
 async function docPatch(id,b){await api('/api/property-docs/'+id,{method:'PATCH',body:b});PROPS=[];openProperty(PROP.id);toast('Saved');}
@@ -699,8 +727,46 @@ async function leaseSave(){const L=LEASE,who=$('#lWho')?+$('#lWho').value||null:
   if(Object.keys(patch).length){await api('/api/properties/'+PROP.id,{method:'PATCH',body:patch});added+=Object.keys(patch).length;}
   for(const [i,c] of L.contacts.entries())if($('#lc'+i).checked){await api(`/api/properties/${PROP.id}/contacts`,{method:'POST',body:c}).catch(()=>0);added++;}
   LEASE=null;PROPS=[];toast(`Added ${added} item${added===1?'':'s'}`);await refresh();openProperty(PROP.id);}
+
+/* ---------- recently deleted + history ---------- */
+const ago=ts=>{const d=new Date(ts.replace(' ','T')+'Z'),m=Math.round((Date.now()-d)/6e4);return m<1?'just now':m<60?`${m} min ago`:m<1440?`${Math.round(m/60)} h ago`:d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});};
+async function renderHistory(){const items=await api('/api/trash');
+  $('#binList').innerHTML=items.map(i=>`<div class="row2 ${i.restored_at?'restored':''}"><span class="ico">${i.icon}</span><div class="grow"><b>${esc(i.label)}</b> <span class="mute">${i.kind}</span>
+    <div class="sub">Deleted by ${esc(i.deleted_by_name)} · ${ago(i.deleted_at)}${i.restored_at?` · restored by ${esc(i.restored_by_name||'someone')} ${ago(i.restored_at)}`:` · ${i.days_left} day${i.days_left===1?'':'s'} left`}</div></div>
+    ${i.restored_at?'<span class="dl">restored</span>':`<button class="b ghost sm" onclick="restoreTrash(${i.id})">↩ Restore</button>`}</div>`).join('')||'<div class="empty">Nothing deleted in the last 30 days.</div>';
+  const w=$('#actWho').value;$('#actWho').innerHTML='<option value="">Everyone</option>'+USERS.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('');$('#actWho').value=w;
+  renderActivity();}
+async function renderActivity(){const q=new URLSearchParams({limit:300});if($('#actWho').value)q.set('user_id',$('#actWho').value);if($('#actKind').value)q.set('entity',$('#actKind').value);
+  const a=await api('/api/activity?'+q);$('#actN').textContent=a.length===300?'latest 300':a.length;
+  const link=x=>x.entity==='task'&&TASKS.some(t=>t.id===x.entity_id)?`openTask(${x.entity_id})`:x.entity==='project'&&PROJECTS.some(p=>p.id===x.entity_id)?`openProject(${x.entity_id})`:x.entity==='property'&&x.entity_id?`openProperty(${x.entity_id})`:'';
+  const icon={task:'✓',project:'📁',property:'🏢'};let day='';
+  $('#actList').innerHTML=a.map(x=>{const d=new Date(x.at.replace(' ','T')+'Z'),dk=d.toDateString(),hdr=dk!==day?`<div class="grp" style="margin:12px 0 2px">${d.toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'})}</div>`:'';day=dk;const l=link(x);
+    return hdr+`<div class="actrow"><span class="t mute">${d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}</span><div class="grow"><b>${esc(x.who)}</b> ${esc(x.action)} ${icon[x.entity]||''} ${x.label?(l?`<span class="tlink" onclick="${l}">${esc(x.label)}</span>`:`<span>${esc(x.label)}</span>`):''}${x.detail?`<div class="sub">${esc(x.detail)}</div>`:''}</div></div>`}).join('')||'<div class="empty">No activity yet.</div>';}
+
+/* ---------- month-end close board ---------- */
+let CLOSE={month:null,prev:null,next:null};
+async function closeGo(month){const t=$('#closeTpl').value,q=new URLSearchParams();if(month)q.set('month',month);if(t)q.set('template_id',t);
+  const b=await api('/api/close-board?'+q);CLOSE=b;
+  $('#closeMonth').textContent=new Date(b.month+'-15T12:00').toLocaleDateString(undefined,{month:'long',year:'numeric'});
+  $('#closeTpl').innerHTML=b.templates.map(x=>`<option value="${x.id}" ${x.id===b.template_id?'selected':''}>${esc(x.name)}</option>`).join('');
+  $('#closeTpl').classList.toggle('hidden',b.templates.length<2);
+  const S=b.summary;$('#closeSum').innerHTML=`<span class="pchip">${S.properties} propert${S.properties===1?'y':'ies'}</span><span class="pchip ok">${S.closed} fully closed</span>${S.overdue?`<span class="pchip bad">${S.overdue} overdue step${S.overdue>1?'s':''}</span>`:''}${S.blocked?`<span class="pchip warn">${S.blocked} blocked</span>`:''}${b.missing.length?`<span class="pchip warn">${b.missing.length} not started</span>`:''}`;
+  const cell=t=>{if(!t)return '<td class="cl"><span class="cc none" title="Not in this project">—</span></td>';
+    const k=t.status==='done'?'done':t.overdue?'od':t.status;const ic={done:'✓',od:'!',in_progress:'●',blocked:'⛔',todo:'○'}[k]||'○';
+    return `<td class="cl"><span class="cc ${k}" title="${esc(t.title)} · ${esc(t.assignee_name)}${t.due_date?' · due '+fmtDate(t.due_date):''}${t.status==='done'&&t.completed_at?' · done '+fmtDate(t.completed_at.slice(0,10)):''}" onclick="openTask(${t.id})">${ic}</span></td>`;};
+  $('#closeGrid').innerHTML=b.rows.length?`<thead><tr><th class="prop">Property</th>${b.columns.map(c=>`<th class="step"><div>${esc(c)}</div></th>`).join('')}</tr></thead>
+    <tbody>${b.rows.map(r=>{const pct=r.total?Math.round(100*r.done/r.total):0;return `<tr><td class="prop"><span class="tlink" onclick="openProject(${r.project_id})"><b>${esc(r.label)}</b></span>
+      <div class="bar" style="margin:4px 0"><i style="width:${pct}%"></i></div><div class="sub">${r.done}/${r.total} done${r.next?` · next: <span class="${r.next.overdue?'over':''}">${esc(r.next.title)}</span> (${esc(r.next.assignee_name.split(' ')[0])}${r.next.due_date?', '+fmtDate(r.next.due_date):''})`:' · ✅ closed'}</div></td>
+      ${b.columns.map(c=>cell(r.cells[c])).join('')}</tr>`}).join('')}</tbody>
+    <tfoot><tr><td class="prop mute">Done</td>${b.columns.map(c=>`<td class="cl mute">${b.totals[c]}/${b.rows.length}</td>`).join('')}</tr></tfoot>`
+    :`<tbody><tr><td class="empty" style="padding:18px">No close projects for this month.${b.months.length?` Months with closes: ${b.months.slice(0,6).map(m=>`<span class="tlink" onclick="closeGo('${m}')">${m}</span>`).join(', ')}`:' Start one from the Month-End Close template (it can repeat monthly).'}</td></tr></tbody>`;
+  $('#closeMissing').innerHTML=b.missing.length?`<div class="warnbox" style="margin-top:12px"><b>Closed last month but not started this month:</b> ${b.missing.map(m=>`<span class="tlink" onclick="openProperty(${m.property_id})">${esc(m.label)}</span>${isMgr()?` <button class="b ghost sm" onclick="startClose(${m.property_id})">Start close</button>`:''}`).join(' · ')}</div>`:'';}
+async function startClose(propId){const p=await api('/api/properties/'+propId);openNewProject();
+  $('#pTpl').value=CLOSE.template_id;$('#pProp').value=p.address;$('#pClient').value=p.client||'';$('#pStart').value=CLOSE.month+'-01';
+  $('#pName').value=`${new Date(CLOSE.month+'-15T12:00').toLocaleDateString(undefined,{month:'long',year:'numeric'})} – Month-End Close (${p.name})`;
+  await propTeamFill();renderPreview();}
 async function delProject(pid){const typed=$('#delConfirm').value;
-  await api(`/api/projects/${pid}?confirm=${encodeURIComponent(typed)}`,{method:'DELETE'});taskDlg.close();await refresh();toast('Project deleted');}
+  const r=await api(`/api/projects/${pid}?confirm=${encodeURIComponent(typed)}`,{method:'DELETE'});taskDlg.close();await refresh();toast('Project deleted',()=>restoreTrash(r.trash_id),'Undo');}
 async function removeSamples(){if(!confirm('Remove all sample projects and their tasks? Your real projects are not affected.'))return;
   const r=await api('/api/projects/samples',{method:'DELETE'});await refresh();toast(`Removed ${r.removed} sample project(s)`);}
 let STARTERS=[];
@@ -956,7 +1022,10 @@ function turnaround(d){const s=d.created_at&&new Date(d.created_at.replace(' ','
   return e?`${txt} (created → done)`:`${txt} open so far`;}
 async function timeSave(id,b){await api('/api/tasks/'+id,{method:'PATCH',body:b});await refresh();openTask(id);}
 async function saveTut(id){await patch(id,{tutorial_url:$('#tutIn').value.trim()});openTask(id);toast('Tutorial saved for this task');}
-async function delTask(id){await api('/api/tasks/'+id,{method:'DELETE'});taskDlg.close();refresh();}
+async function delTask(id){const r=await api('/api/tasks/'+id,{method:'DELETE'});taskDlg.close();refresh();toast('Task deleted',()=>restoreTrash(r.trash_id),'Undo');}
+async function restoreTrash(id){const r=await api(`/api/trash/${id}/restore`,{method:'POST'});PROPS=[];await refresh();
+  toast(`Restored “${r.label}”`,r.kind==='task'?()=>openTask(r.id):r.kind==='project'?()=>openProject(r.id):()=>openProperty(r.id),'Open');
+  if(!$('#v-history').classList.contains('hidden'))renderHistory();}
 async function ckAdd(id){const v=$('#ckNew').value.trim();if(!v)return;await api(`/api/tasks/${id}/checklist`,{method:'POST',body:{text:v}});await refresh();openTask(id).then(()=>$('#ckNew').focus());}
 async function ckPatch(cid,b){await api(`/api/checklist/${cid}`,{method:'PATCH',body:b});await refresh();openTask(OPEN_ID);}
 async function ckDel(cid){await api(`/api/checklist/${cid}`,{method:'DELETE'});await refresh();openTask(OPEN_ID);}

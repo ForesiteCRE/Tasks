@@ -191,6 +191,7 @@ def sync_project(project_id: int):
         prop = p["property_id"]
         mine = {r["role_id"]: r["user_id"] for r in c.execute(
             "SELECT role_id, user_id FROM project_team WHERE project_id=?", (project_id,))}
+        c.execute("DELETE FROM property_team WHERE user_id NOT IN (SELECT id FROM users)")
         theirs = team_map_c(c, prop)
         for role, user in mine.items():
             if user and role not in theirs:
@@ -261,7 +262,7 @@ def update(pid: int, fields: dict):
             c.execute("UPDATE projects SET property=? WHERE property_id=?", (allowed["address"], pid))
 
 
-def delete(pid: int):
+def delete(pid: int, keep_files: bool = False):
     with tx() as c:
         c.execute("UPDATE projects SET property_id=NULL WHERE property_id=?", (pid,))
         ids = [r[0] for r in c.execute("SELECT id FROM critical_dates WHERE property_id=?", (pid,))]
@@ -269,7 +270,8 @@ def delete(pid: int):
         c.execute("DELETE FROM critical_dates WHERE property_id=?", (pid,))
         c.execute("DELETE FROM property_contacts WHERE property_id=?", (pid,))
         for d in c.execute("SELECT path FROM property_docs WHERE property_id=?", (pid,)).fetchall():
-            _remove_file(d["path"])
+            if not keep_files:   # kept while the page sits in Recently deleted
+                _remove_file(d["path"])
         c.execute("DELETE FROM property_docs WHERE property_id=?", (pid,))
         c.execute("DELETE FROM properties WHERE id=?", (pid,))
 

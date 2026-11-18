@@ -811,3 +811,72 @@ def test_roles_live_on_the_property(mgr):
     # changing it from a project's panel changes the property (and so the other project) too
     ids(mgr.put(f"/api/projects/{b}/team/{pm}", json={"user_id": jo}))
     assert ids_task(ta)["assignee_id"] == jo and team_of(a)[pm] == jo
+
+
+def test_recently_deleted_and_activity_log(mgr, staff):
+    pid = ids(mgr.post("/api/projects", json={"name": "Bin test project"}))["id"]
+    t1 = ids(mgr.post("/api/tasks", json={"title": "Parent to delete", "project_id": pid}))["id"]
+    sub = ids(mgr.post("/api/tasks", json={"title": "Child", "parent_id": t1}))["id"]
+    other = ids(mgr.post("/api/tasks", json={"title": "Blocked by parent", "project_id": pid}))["id"]
+    ids(mgr.post(f"/api/tasks/{other}/dependencies", json={"depends_on_id": t1}))
+    ids(mgr.post(f"/api/tasks/{t1}/checklist", json={"text": "step one"}))
+    ids(mgr.post(f"/api/tasks/{t1}/comments", json={"body": "a comment"}))
+    ids(mgr.patch(f"/api/tasks/{t1}", json={"status": "in_progress", "due_date": "2030-02-02"}))
+    # delete → in the bin; a new task created meanwhile may reuse the old id and must not be disturbed
+    tr = ids(mgr.delete(f"/api/tasks/{t1}"))["trash_id"]
+    newer = ids(mgr.post("/api/tasks", json={"title": "Created after delete", "project_id": pid}))["id"]
+    assert staff.get("/api/trash").status_code == 403
+    item = [i for i in ids(mgr.get("/api/trash")) if i["id"] == tr][0]
+    assert item["label"] == "Parent to delete" and item["days_left"] == 30
+    back = ids(mgr.post(f"/api/trash/{tr}/restore"))
+    assert back["kind"] == "task" and ids_task(newer)["title"] == "Created after delete"
+    rt = ids(mgr.get(f"/api/tasks/{back['id']}"))
+    assert rt["title"] == "Parent to delete" and rt["status"] == "in_progress" and rt["due_date"] == "2030-02-02"
+    assert [x["text"] for x in rt["checklist"]] == ["step one"] and len(rt["comments"]) == 1
+    with tx() as c:
+        assert c.execute("SELECT COUNT(*) FROM tasks WHERE parent_id=? AND title='Child'", (back["id"],)).fetchone()[0] == 1
+        assert c.execute("SELECT 1 FROM task_dependencies WHERE task_id=? AND depends_on_id=?", (other, back["id"])).fetchone()
+    assert mgr.post(f"/api/trash/{tr}/restore").status_code == 400                       # only once
+    # whole project round-trip
+    name = "Bin test project"
+    trp = ids(mgr.delete(f"/api/projects/{pid}", params={"confirm": name}))["trash_id"]
+    assert not [p for p in ids(mgr.get("/api/projects")) if p["name"] == name]
+    np = ids(mgr.post(f"/api/trash/{trp}/restore"))["id"]
+    proj = [p for p in ids(mgr.get("/api/projects")) if p["id"] == np][0]
+    assert proj["name"] == name and {t["title"] for t in proj["tasks"]} >= {"Parent to delete", "Child", "Blocked by parent", "Created after delete"}
+    # property page round-trip keeps dates/contacts and relinks projects
+    prop = ids(mgr.post("/api/properties", json={"address": "3 Bin Blvd, Austin, TX"}))["id"]
+    ids(mgr.post(f"/api/properties/{prop}/contacts", json={"role": "CPA", "name": "Bin CPA"}))
+    ids(mgr.post(f"/api/properties/{prop}/dates", json={"dates": [{"kind": "tax_protest", "date": "2031-05-15"}]}))
+    trq = ids(mgr.delete(f"/api/properties/{prop}", params={"confirm": "3 Bin Blvd"}))["trash_id"]
+    newp = ids(mgr.post(f"/api/trash/{trq}/restore"))["id"]
+    page = ids(mgr.get(f"/api/properties/{newp}"))
+    assert page["contacts"][0]["name"] == "Bin CPA" and page["dates"][0]["kind"] == "tax_protest"
+    # who did what
+    acts = ids(mgr.get("/api/activity"))
+    kinds = {(a["action"], a["label"]) for a in acts}
+    assert ("deleted", "Parent to delete") in kinds and ("restored", "Parent to delete") in kinds
+    assert ("due date changed", "Parent to delete") in kinds and ("status → In progress", "Parent to delete") in kinds
+    assert ("created", name) in kinds and all(a["who"] for a in acts)
+    assert staff.get("/api/activity").status_code == 403
+
+
+def test_month_end_close_board(mgr):
+    from datetime import date
+    tpl = ids(mgr.post("/api/templates", json={"name": "Test Month-End Close", "items": [
+        {"title": "Post receipts", "due_offset_days": 2}, {"title": "Bank rec", "due_offset_days": 8},
+        {"title": "Owner report", "due_offset_days": 12}]}))["id"]
+    month = "2030-03"
+    a = ids(mgr.post("/api/projects", json={"name": "Close A", "template_id": tpl, "start_date": "2030-03-01", "property": "10 Close St, Austin, TX"}))["id"]
+    b = ids(mgr.post("/api/projects", json={"name": "Close B", "template_id": tpl, "start_date": "2030-03-01", "property": "20 Close St, Austin, TX"}))["id"]
+    ids(mgr.post("/api/projects", json={"name": "Close C Feb", "template_id": tpl, "start_date": "2030-02-01", "property": "30 Close St, Austin, TX"}))
+    a_tasks = [t for t in [p for p in ids(mgr.get("/api/projects")) if p["id"] == a][0]["tasks"]]
+    ids(mgr.patch(f"/api/tasks/{a_tasks[0]['id']}", json={"status": "done"}))
+    board = ids(mgr.get("/api/close-board", params={"month": month, "template_id": tpl}))
+    assert board["columns"] == ["Post receipts", "Bank rec", "Owner report"]
+    assert [r["label"] for r in board["rows"]] == ["10 Close St", "20 Close St"]
+    ra = board["rows"][0]
+    assert ra["cells"]["Post receipts"]["status"] == "done" and ra["done"] == 1 and ra["next"]["title"] == "Bank rec"
+    assert board["totals"]["Post receipts"] == 1 and board["prev"] == "2030-02" and board["next"] == "2030-04"
+    assert [m["label"] for m in board["missing"]] == ["30 Close St"]                 # closed last month, not this month
+    assert mgr.get("/api/close-board", params={"month": "March"}).status_code == 400

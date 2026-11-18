@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import (auth, automations, blink, chat, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
+from . import (audit, auth, automations, blink, chat, closeboard, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
                starter_templates, team, timing, tpl)
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
@@ -34,7 +34,7 @@ async def scheduler_loop():
                 logging.exception("scheduler job %s failed", job.__name__)
         if datetime.now().hour >= REMINDER_HOUR:
             for job in (services.send_reminders, maintenance.send_weekly_summary, automations.overdue_escalation,
-                        extras.send_week_ahead, properties.run_alerts):
+                        extras.send_week_ahead, properties.run_alerts, audit.purge):
                 try:
                     job()
                 except Exception:
@@ -174,6 +174,10 @@ def delete_user(uid: int, request: Request, merge_into: int | None = None):
         c.execute("UPDATE tasks SET assignee_id=? WHERE assignee_id=?", (merge_into, uid))
         c.execute("UPDATE template_items SET default_assignee_id=? WHERE default_assignee_id=?", (merge_into, uid))
         c.execute("UPDATE task_updates SET user_id=? WHERE user_id=?", (merge_into, uid))
+        if merge_into:
+            c.execute("UPDATE OR REPLACE property_team SET user_id=? WHERE user_id=?", (merge_into, uid))
+        c.execute("DELETE FROM property_team WHERE user_id=?", (uid,))
+        c.execute("UPDATE critical_dates SET assignee_id=? WHERE assignee_id=?", (merge_into, uid))
         c.execute("DELETE FROM users WHERE id=?", (uid,))  # delete first: blink_user_id is UNIQUE
         if merge_into:
             c.execute("""UPDATE users SET
@@ -423,6 +427,8 @@ def create_project(p: ProjectIn, request: Request):
     me = auth.current_user(request) or {}
     with tx() as c:
         c.execute("UPDATE projects SET created_by=? WHERE id=?", (me.get("id"), pid))
+        nm = c.execute("SELECT name FROM projects WHERE id=?", (pid,)).fetchone()["name"]
+    audit.log(me.get("id"), "created", "project", pid, nm, p.repeat and f"repeats {p.repeat}")
     return {"id": pid}
 
 
@@ -473,8 +479,10 @@ def delete_project(pid: int, request: Request, confirm: str = ""):
     if confirm.strip().casefold() != (p["name"] or "").strip().casefold():
         raise HTTPException(400, "To delete, type the project's exact name to confirm.")
     logging.warning("Project %s “%s” deleted by %s", pid, p["name"], me.get("email"))
+    trash_id = audit.to_trash("project", p["name"], audit.snapshot_project(pid), me.get("id"))
     starter_templates.delete_project(pid)
-    return {"ok": True}
+    audit.log(me.get("id"), "deleted", "project", pid, p["name"])
+    return {"ok": True, "trash_id": trash_id}
 
 
 class PhotoIn(BaseModel):
@@ -541,13 +549,17 @@ class ProjectPatch(BaseModel):
     start_date: date | None = None
 
 @app.patch("/api/projects/{pid}")
-def patch_project(pid: int, p: ProjectPatch):
+def patch_project(pid: int, p: ProjectPatch, request: Request):
     fields = {k: (v.isoformat() if isinstance(v, date) else v) for k, v in p.model_dump(exclude_unset=True).items()}
     if fields:
         with tx() as c:
             c.execute(f"UPDATE projects SET {', '.join(k + '=?' for k in fields)} WHERE id=?", (*fields.values(), pid))
         if "property" in fields:
             properties.relink(pid)
+        with tx() as c:
+            nm = c.execute("SELECT name FROM projects WHERE id=?", (pid,)).fetchone()
+        audit.log(_me_id(request), "project edited", "project", pid, nm["name"] if nm else None,
+                  ", ".join(f"{k.replace('_', ' ')}: {str(v)[:60]}" for k, v in fields.items()))
     return {"ok": True}
 
 
@@ -555,8 +567,19 @@ class TeamMemberIn(BaseModel):
     user_id: int | None = None
 
 @app.put("/api/projects/{pid}/team/{role_id}")
-def set_team_member(pid: int, role_id: int, body: TeamMemberIn):
-    return {"moved": team.set_member(pid, role_id, body.user_id)}
+def set_team_member(pid: int, role_id: int, body: TeamMemberIn, request: Request):
+    moved = team.set_member(pid, role_id, body.user_id)
+    _log_role(request, "project", pid, role_id, body.user_id, moved)
+    return {"moved": moved}
+
+
+def _log_role(request, entity, eid, role_id, user_id, moved):
+    with tx() as c:
+        role = c.execute("SELECT name FROM project_roles WHERE id=?", (role_id,)).fetchone()
+        who = c.execute("SELECT name FROM users WHERE id=?", (user_id,)).fetchone() if user_id else None
+        label = c.execute(f"SELECT name FROM {'projects' if entity == 'project' else 'properties'} WHERE id=?", (eid,)).fetchone()
+    audit.log(_me_id(request), "role changed", entity, eid, label["name"] if label else None,
+              f"{role['name'] if role else 'Role'} → {who['name'] if who else 'nobody'}" + (f" · {moved} open task{'s' if moved != 1 else ''} moved" if moved else ""))
 
 
 # ---------- project roles ----------
@@ -647,6 +670,8 @@ def patch_task(tid: int, p: TaskPatch, request: Request):
         if p.assignee_id is not None or p.due_date is not None or p.title is not None or p.tutorial_url is not None:
             raise HTTPException(403, "Only managers can rename, reassign, change due dates or tutorial links.")
     with tx() as c:
+        before = c.execute("SELECT t.title, t.assignee_id, t.due_date, u.name AS who FROM tasks t LEFT JOIN users u ON u.id=t.assignee_id WHERE t.id=?",
+                           (tid,)).fetchone()
         if p.title:
             c.execute("UPDATE tasks SET title=? WHERE id=?", (p.title.strip(), tid))
         if p.repeat is not None:
@@ -665,6 +690,18 @@ def patch_task(tid: int, p: TaskPatch, request: Request):
             c.execute("UPDATE tasks SET assignee_id=?, role_id=NULL WHERE id=?", (p.assignee_id or None, tid))
         if p.due_date is not None:
             c.execute("UPDATE tasks SET due_date=? WHERE id=?", (p.due_date.isoformat(), tid))
+    if before:
+        changes = []
+        if p.title and p.title.strip() != before["title"]:
+            changes.append(("renamed", f"was “{before['title']}”"))
+        if p.assignee_id is not None and (p.assignee_id or None) != before["assignee_id"]:
+            with tx() as c:
+                new = c.execute("SELECT name FROM users WHERE id=?", (p.assignee_id,)).fetchone() if p.assignee_id else None
+            changes.append(("reassigned", f"{before['who'] or 'Unassigned'} → {new['name'] if new else 'Unassigned'}"))
+        if p.due_date is not None and p.due_date.isoformat() != before["due_date"]:
+            changes.append(("due date changed", f"{before['due_date'] or 'none'} → {p.due_date.isoformat()}"))
+        for action, detail in changes:
+            audit.log(p.user_id, action, "task", tid, p.title or before["title"], detail)
     if p.due_date is not None:
         automations.reset_overdue_flag(tid)
     if p.estimate is not None or p.actual is not None or p.time_notes is not None:
@@ -713,9 +750,14 @@ def delete_task(tid: int, request: Request):
     _require_manager(request)
     with tx() as c:
         t = c.execute("SELECT title FROM tasks WHERE id=?", (tid,)).fetchone()
-    logging.warning("Task %s “%s” deleted by %s", tid, t["title"] if t else "?", (auth.current_user(request) or {}).get("email"))
+    if not t:
+        raise HTTPException(404, "Task not found")
+    me = auth.current_user(request) or {}
+    logging.warning("Task %s “%s” deleted by %s", tid, t["title"], me.get("email"))
+    trash_id = audit.to_trash("task", t["title"], audit.snapshot_task(tid), me.get("id"))
     collab.delete_task(tid)
-    return {"ok": True}
+    audit.log(me.get("id"), "deleted", "task", tid, t["title"])
+    return {"ok": True, "trash_id": trash_id}
 
 
 class ChecklistIn(BaseModel):
@@ -885,7 +927,9 @@ class PropTeamIn(BaseModel):
 @app.put("/api/properties/{pid}/team/{role_id}")
 def set_property_member(pid: int, role_id: int, body: PropTeamIn, request: Request):
     _require_manager(request)
-    return {"moved": properties.set_member(pid, role_id, body.user_id)}
+    moved = properties.set_member(pid, role_id, body.user_id)
+    _log_role(request, "property", pid, role_id, body.user_id, moved)
+    return {"moved": moved}
 
 
 @app.get("/api/properties/{pid}")
@@ -899,14 +943,18 @@ def get_property(pid: int):
 @app.patch("/api/properties/{pid}")
 def patch_property(pid: int, body: PropertyPatch, request: Request):
     _require_manager(request)
+    fields = body.model_dump(exclude_unset=True)
     try:
-        properties.update(pid, body.model_dump(exclude_unset=True))
+        properties.update(pid, fields)
     except (ValueError, Exception) as e:
         if "UNIQUE" in str(e):
             raise HTTPException(400, "Another property already has that address.")
         if isinstance(e, ValueError):
             raise HTTPException(400, str(e))
         raise
+    p = properties.get(pid)
+    audit.log(_me_id(request), "property edited", "property", pid, p["name"] if p else None,
+              ", ".join(f"{k.replace('_', ' ')}: {str(v)[:60]}" for k, v in fields.items()))
     return {"ok": True}
 
 
@@ -918,9 +966,12 @@ def delete_property(pid: int, request: Request, confirm: str = ""):
         raise HTTPException(404, "Property not found")
     if confirm.strip().casefold() != p["name"].strip().casefold():
         raise HTTPException(400, "To delete, type the property's exact name to confirm.")
-    logging.warning("Property %s “%s” deleted by %s", pid, p["name"], (auth.current_user(request) or {}).get("email"))
-    properties.delete(pid)
-    return {"ok": True}
+    me = auth.current_user(request) or {}
+    logging.warning("Property %s “%s” deleted by %s", pid, p["name"], me.get("email"))
+    trash_id = audit.to_trash("property", p["name"], audit.snapshot_property(pid), me.get("id"))
+    properties.delete(pid, keep_files=True)
+    audit.log(me.get("id"), "deleted", "property", pid, p["name"])
+    return {"ok": True, "trash_id": trash_id}
 
 
 @app.get("/api/properties/{pid}/streetview")
@@ -957,13 +1008,22 @@ def patch_date(did: int, body: DatePatch, request: Request):
         properties.update_date(did, fields)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    with tx() as c:
+        d2 = c.execute("SELECT title, property_id FROM critical_dates WHERE id=?", (did,)).fetchone()
+    audit.log(me.get("id"), "marked handled" if fields.get("status") == "handled" else "critical date edited",
+              "property", d2["property_id"] if d2 else None, d2["title"] if d2 else None,
+              ", ".join(f"{k.replace('_', ' ')}: {v}" for k, v in fields.items() if k != "status"))
     return {"ok": True}
 
 
 @app.delete("/api/critical-dates/{did}")
 def delete_date(did: int, request: Request):
     _require_manager(request)
+    with tx() as c:
+        d = c.execute("SELECT title, date, property_id FROM critical_dates WHERE id=?", (did,)).fetchone()
     properties.delete_date(did)
+    if d:
+        audit.log(_me_id(request), "critical date removed", "property", d["property_id"], d["title"], d["date"])
     return {"ok": True}
 
 
@@ -1019,7 +1079,11 @@ def patch_property_doc(did: int, body: DocPatch, request: Request):
 @app.delete("/api/property-docs/{did}")
 def delete_property_doc(did: int, request: Request):
     _require_manager(request)
+    with tx() as c:
+        d = c.execute("SELECT filename, property_id FROM property_docs WHERE id=?", (did,)).fetchone()
     properties.delete_doc(did)
+    if d:
+        audit.log(_me_id(request), "document deleted", "property", d["property_id"], d["filename"])
     return {"ok": True}
 
 
@@ -1052,6 +1116,39 @@ def delete_property_contact(cid: int, request: Request):
     _require_manager(request)
     properties.delete_contact(cid)
     return {"ok": True}
+
+
+# ---------- month-end close board ----------
+
+@app.get("/api/close-board")
+def close_board(month: str | None = None, template_id: int | None = None):
+    import re as _re
+    if month and not _re.fullmatch(r"\d{4}-\d{2}", month):
+        raise HTTPException(400, "month must look like 2026-11")
+    return closeboard.board(month, template_id)
+
+
+# ---------- recently deleted + activity log ----------
+
+@app.get("/api/trash")
+def list_trash(request: Request):
+    _require_manager(request)
+    return audit.bin_items()
+
+
+@app.post("/api/trash/{trash_id}/restore")
+def restore_trash(trash_id: int, request: Request):
+    _require_manager(request)
+    try:
+        return audit.restore(trash_id, _me_id(request))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/activity")
+def list_activity(request: Request, limit: int = 200, user_id: int | None = None, entity: str | None = None):
+    _require_manager(request)
+    return audit.activity(limit, user_id, entity)
 
 
 # ---------- dashboards, reminders, daily recap ----------
