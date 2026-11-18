@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import (auth, automations, blink, chat, collab, dashboard, demo, extras, intake, maintenance, photos, services,
+from . import (auth, automations, blink, chat, collab, dashboard, demo, extras, intake, maintenance, photos, recur, services,
                starter_templates, team, timing, tpl)
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
@@ -102,6 +102,7 @@ class RecurrenceIn(BaseModel):
     day_of_month: int = 1
 
 class ProjectIn(BaseModel):
+    repeat: str | None = None                   # "monthly" | "quarterly" | "yearly" (needs a template)
     name: str
     template_id: int | None = None
     start_date: date | None = None
@@ -111,6 +112,7 @@ class ProjectIn(BaseModel):
     team: dict[str, int | None] | None = None   # role_id -> user_id
 
 class TaskIn(BaseModel):
+    repeat: str | None = None
     project_id: int | None = None
     parent_id: int | None = None
     title: str
@@ -120,6 +122,7 @@ class TaskIn(BaseModel):
     due_date: date | None = None
 
 class TaskPatch(BaseModel):
+    repeat: str | None = None              # weekly|biweekly|monthly|quarterly|yearly; "" stops repeating
     tutorial_url: str | None = None        # "" clears
     estimate: str | int | None = None      # "1h30", "90m", 90; "" clears
     actual: str | int | None = None
@@ -372,6 +375,19 @@ def create_recurrence(r: RecurrenceIn):
     services.run_recurrences()  # generate this month's immediately if the day has passed
     return {"id": rid}
 
+@app.get("/api/recurring")
+def recurring_overview():
+    return recur.overview()
+
+@app.delete("/api/recurrences/{rid}")
+def delete_recurrence(rid: int, request: Request):
+    if not auth.is_manager(request):
+        raise HTTPException(403, "Only managers can stop repeating projects.")
+    with tx() as c:
+        c.execute("UPDATE projects SET recurrence_id=NULL WHERE recurrence_id=?", (rid,))
+        c.execute("DELETE FROM recurrences WHERE id=?", (rid,))
+    return {"ok": True}
+
 @app.patch("/api/recurrences/{rid}")
 def toggle_recurrence(rid: int, active: bool):
     with tx() as c:
@@ -404,8 +420,19 @@ def list_projects():
 def create_project(p: ProjectIn):
     start = p.start_date or date.today()
     details = {"property": p.property, "client": p.client, "description": p.description}
+    every = {"monthly": 1, "quarterly": 3, "yearly": 12}.get((p.repeat or "").lower())
+    if p.repeat and not every:
+        raise HTTPException(400, "Projects can repeat monthly, quarterly or yearly.")
+    if every and not p.template_id:
+        raise HTTPException(400, "Choose a template for a repeating project — each new copy is built from it.")
     if p.template_id:
-        return {"id": services.create_project_from_template(p.template_id, p.name, start, team=p.team, details=details)}
+        name = recur.project_name_for(p.name, start) if every else p.name
+        pid = services.create_project_from_template(p.template_id, name, start, team=p.team, details=details)
+        if every:
+            rid = recur.create_project_recurrence(p.template_id, p.name, start, every, p.team, details)
+            with tx() as c:
+                c.execute("UPDATE projects SET recurrence_id=? WHERE id=?", (rid, pid))
+        return {"id": pid}
     with tx() as c:
         pid = c.execute("INSERT INTO projects(name,start_date,property,client,description) VALUES(?,?,?,?,?)",
                         (p.name, start.isoformat(), p.property, p.client, p.description)).lastrowid
@@ -572,6 +599,13 @@ def create_task(t: TaskIn, background: BackgroundTasks, request: Request):
         u = c.execute("SELECT blink_user_id FROM users WHERE id=?", (t.assignee_id,)).fetchone() if t.assignee_id else None
     if t.estimate not in (None, ""):
         timing.set_times(tid, estimate=timing.parse_duration(t.estimate) or 0)
+    if t.repeat:
+        try:
+            rep = recur.clean(t.repeat)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        with tx() as c:
+            c.execute("UPDATE tasks SET repeat=? WHERE id=?", (rep, tid))
     if u and u["blink_user_id"] and t.assignee_id != me.get("id"):
         kind = "subtask" if t.parent_id else "task"
         text = f"📌 New {kind} assigned: #{tid} {t.title}" + (f" – due {t.due_date:%b %d}" if t.due_date else "")
@@ -597,6 +631,11 @@ def patch_task(tid: int, p: TaskPatch, request: Request):
     with tx() as c:
         if p.title:
             c.execute("UPDATE tasks SET title=? WHERE id=?", (p.title.strip(), tid))
+        if p.repeat is not None:
+            try:
+                c.execute("UPDATE tasks SET repeat=? WHERE id=?", (recur.clean(p.repeat), tid))
+            except ValueError as e:
+                raise HTTPException(400, str(e))
         if p.tutorial_url is not None:
             try:
                 c.execute("UPDATE tasks SET tutorial_url=? WHERE id=?", (tpl.clean_url(p.tutorial_url), tid))

@@ -31,7 +31,7 @@ dialog.wide{max-width:900px}
 .dd.open .ddm{display:block}.ddm button{display:block;width:100%;text-align:left;padding:8px 10px;border-radius:7px;color:var(--ink)}.ddm button:hover{background:#f3f5fa}.ddm button.on{background:#e6f2f8;color:var(--acc)}
 .ddm small{display:block;font-size:11.5px;color:var(--mute);font-weight:400}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.toolbar input[type=search]{flex:1;min-width:180px}
-.qadd{display:grid;grid-template-columns:minmax(180px,2fr) minmax(130px,1fr) minmax(120px,1fr) 150px 90px auto;gap:8px;align-items:center}
+.qadd{display:grid;grid-template-columns:minmax(180px,2fr) minmax(130px,1fr) minmax(120px,1fr) 150px 80px 140px auto;gap:8px;align-items:center}
 @media (max-width:900px){.qadd{grid-template-columns:1fr 1fr}.qadd input:first-child{grid-column:1/-1}}
 .tl td{padding:7px 8px}.tl .proj{font-size:12px;color:var(--mute);max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tl tr.tgrp td{background:#fafbfc;font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);padding:8px}
 .tl tr.tgrp.red td{color:var(--bad)}.tl tr.done td{opacity:.6}
@@ -160,7 +160,7 @@ input,select,textarea{border-color:#d5dce1;border-radius:3px}input:focus,select:
     <button data-v="tasks">✓ All tasks<small>with or without a project</small></button>
     <button data-v="projects">📁 Projects<small>start a new project, see progress</small></button>
     <button data-v="templates" class="mgr">📋 Templates<small>reusable checklists</small></button>
-    <button data-v="recurring" class="mgr">🔁 Monthly recurring<small>projects created each month</small></button></div></div>
+    <button data-v="recurring" class="mgr">🔁 Recurring<small>everything that repeats</small></button></div></div>
   <button data-v="calendar">Calendar</button>
   <button data-v="team" class="mgr">By person</button>
   <div class="dd adm" data-g="admin"><button class="ddb">Admin <span class="car">▾</span></button><div class="ddm">
@@ -186,7 +186,7 @@ input,select,textarea{border-color:#d5dce1;border-radius:3px}input:focus,select:
 <section id="v-tasks" class="hidden">
   <div class="card"><h2>Add a task</h2>
     <div class="qadd"><input id="qTitle" placeholder="What needs doing?" onkeydown="if(event.key==='Enter')quickAdd()">
-      <select id="qProj"></select><select id="qWho"></select><input id="qDue" type="date"><input id="qEst" placeholder="Est. 1h"><button class="b" onclick="quickAdd()">Add</button></div>
+      <select id="qProj"></select><select id="qWho"></select><input id="qDue" type="date"><input id="qEst" placeholder="Est. 1h"><select id="qRepeat" title="Repeat"><option value="">Doesn't repeat</option><option value="weekly">🔁 Every week</option><option value="biweekly">🔁 Every 2 weeks</option><option value="monthly">🔁 Every month</option><option value="quarterly">🔁 Every quarter</option><option value="yearly">🔁 Every year</option></select><button class="b" onclick="quickAdd()">Add</button></div>
     <p class="mute" style="margin:6px 0 0;font-size:12.5px">Tasks don't need a project — leave it as “No project” for one-off work. <span class="mgronly">Assign it to someone and they get a Blink message.</span></p></div>
   <div class="toolbar">
     <input type="search" id="tSearch" placeholder="Search tasks…" oninput="renderTasks()">
@@ -240,15 +240,10 @@ input,select,textarea{border-color:#d5dce1;border-radius:3px}input:focus,select:
 </section>
 
 <section id="v-recurring" class="hidden">
-  <div class="card"><h2>New monthly recurring project</h2>
-    <div class="team-grid" style="grid-template-columns:minmax(200px,1fr) minmax(260px,2fr) 110px auto;align-items:end">
-      <label>1. Template to copy each month<select id="rTpl" onchange="rSuggest()"></select></label>
-      <label>2. Project name (each month)<input id="rPattern" placeholder="{month} {year} – Month-End Close" oninput="rPreview()"></label>
-      <label>3. Day of month<input id="rDay" type="number" min="1" max="31" value="1" oninput="rPreview()"></label>
-      <button class="b" onclick="saveRecurrence()">Add</button></div>
-    <p id="rExample" class="mute" style="margin:6px 0 0"></p>
-    <p class="mute">Recurring projects copy everything in the template — subtasks, checklists and “waiting on” order. Use {month}, {year}, {mm} in the name. A project is created from the template on that day each month.</p></div>
-  <div class="card"><table id="recurring"></table></div>
+  <div class="pagehead"><h2>Recurring</h2></div>
+  <p class="mute" style="margin-top:-6px">To make something repeat, choose <b>Repeats</b> when you create a project (from a template) or a task, or in a task's panel. Template items can repeat too (Templates → More…).</p>
+  <div class="card"><h3>🔁 Repeating projects</h3><table id="recurring"></table></div>
+  <div class="card"><h3>🔁 Repeating tasks</h3><table id="recurTasks"></table></div>
 </section>
 
 <section id="v-people" class="hidden">
@@ -295,7 +290,9 @@ input,select,textarea{border-color:#d5dce1;border-radius:3px}input:focus,select:
   <label class="b ghost" style="cursor:pointer">📄 Fill from a document<input type="file" id="pDoc" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg" class="hidden" onchange="fromDoc(this)"></label></div>
     <p id="pDocInfo" class="mute" style="margin:6px 0"></p>
     <div class="row"><input id="pName" placeholder="Project name (e.g. 123 Main St Listing)" style="flex:1;min-width:220px">
-      <select id="pTpl" onchange="renderPreview()"></select><label class="mute">Start <input id="pStart" type="date" onchange="renderPreview()"></label></div>
+      <select id="pTpl" onchange="renderPreview();repeatHint()"></select><label class="mute">Start <input id="pStart" type="date" onchange="renderPreview()"></label>
+      <select id="pRepeat" onchange="repeatHint()" title="Repeat this project"><option value="">Doesn't repeat</option><option value="monthly">🔁 Every month</option><option value="quarterly">🔁 Every quarter</option><option value="yearly">🔁 Every year</option></select></div>
+    <p id="pRepeatHint" class="mute hidden" style="margin:2px 0 6px;font-size:12.5px"></p>
     <div class="row"><input id="pProp" placeholder="Property / address" style="flex:1;min-width:200px"><input id="pClient" placeholder="Client / owner" style="flex:1;min-width:200px"></div>
     <textarea id="pNotes" rows="2" placeholder="Summary / key terms (optional)"></textarea>
     <details id="pTeamBox"><summary class="mute" style="cursor:pointer">👥 Project team <span id="pTeamSum"></span></summary><div id="pTeam" class="team-grid"></div></details>
@@ -339,7 +336,7 @@ async function refresh(){
   document.querySelectorAll('.adm').forEach(el=>el.classList.toggle('hidden',!isAdmin()));
   $('#roleNote').textContent=isMgr()?'':'You can view everything and update tasks assigned to you.';
   const tOpts='<option value="">Blank (no template)</option>'+TPLS.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
-  const keepTpl=$('#pTpl').value;$('#pTpl').innerHTML=tOpts;$('#pTpl').value=keepTpl;const keepR=$('#rTpl').value;$('#rTpl').innerHTML='<option value="">Choose a template…</option>'+TPLS.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');$('#rTpl').value=keepR;
+  const keepTpl=$('#pTpl').value;$('#pTpl').innerHTML=tOpts;$('#pTpl').value=keepTpl;
   const w=$('#calWho').value, pj=$('#calProj').value;
   $('#calWho').innerHTML=`<option value="">Everyone</option><option value="me">Just me</option><option value="none">Unassigned</option>`+USERS.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('');$('#calWho').value=w;
   const projOpts=PROJECTS.filter(p=>!p.is_general&&p.status!=='done').map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join(''),gen=PROJECTS.find(p=>p.is_general);
@@ -355,8 +352,7 @@ async function refresh(){
   if(isAdmin()){renderPeople();renderRoles();}
   if(isMgr()){renderTemplates();renderNewTeam();renderPreview();
     $('#cUser').innerHTML=USERS.filter(u=>u.blink_user_id).map(u=>`<option value="${esc(u.blink_user_id)}">${esc(u.name)}</option>`).join('');
-    const rs=await api('/api/recurrences');
-    $('#recurring').innerHTML='<tr><th>Name pattern</th><th>Template</th><th>Day</th><th>Last created</th><th></th></tr>'+rs.map(r=>`<tr><td>${esc(r.name_pattern)}</td><td>${esc(r.template_name)}</td><td>${r.day_of_month}</td><td>${r.last_period||'—'}</td><td><button class="b ghost" onclick="toggleRec(${r.id},${!r.active})">${r.active?'Pause':'Resume'}</button></td></tr>`).join('');}
+    renderRecurring();}
   if(!$('#v-calendar').classList.contains('hidden'))renderCalendar();
   if(!$('#v-team').classList.contains('hidden'))renderTeam();
 }
@@ -368,6 +364,7 @@ function orderTasks(ts){const kids={};ts.filter(t=>t.parent_id).forEach(t=>(kids
 function badges(t){const subs=TASKS.filter(x=>x.parent_id===t.id),b=[];
   if(subs.length)b.push(`<span class="pill">↳ ${subs.filter(x=>x.status==='done').length}/${subs.length}</span>`);
   if(t.check_total)b.push(`<span class="pill">☑ ${t.check_done}/${t.check_total}</span>`);
+  if(t.repeat)b.push(`<span class="pill" title="Repeats">🔁 ${({weekly:'weekly',biweekly:'every 2 wks',monthly:'monthly',quarterly:'quarterly',yearly:'yearly'})[t.repeat]||t.repeat}</span>`);
   if(t.tutorial_url)b.push(`<a class="pill tut" href="${esc(t.tutorial_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="How-to tutorial">🎓 how-to</a>`);
   if(t.comments)b.push(`<span class="pill">💬 ${t.comments}</span>`);
   if(t.estimate_minutes||t.actual_minutes)b.push(`<span class="pill" title="Actual / estimate">⏱ ${t.actual_minutes?fmtMin(t.actual_minutes)+(t.estimate_minutes?' / '+fmtMin(t.estimate_minutes):''):'est '+fmtMin(t.estimate_minutes)}</span>`);
@@ -591,8 +588,8 @@ function renderTasks(){const q=$('#tSearch').value.trim().toLowerCase(),w=$('#tW
       <td class="${isOver(t)?'over':''}" style="white-space:nowrap">${fmtDate(t.due_date)||'—'}</td><td>${statusSel(t)}</td></tr>`).join('')}).join('')
     :`<tr><td class="empty" style="padding:24px;text-align:center">No tasks match. ${w==='me'?'Add one above, or switch to “Everyone”.':''}</td></tr>`;}
 async function quickAdd(){const title=$('#qTitle').value.trim();if(!title){$('#qTitle').focus();return;}
-  await api('/api/tasks',{method:'POST',body:{title,project_id:+$('#qProj').value||null,assignee_id:+$('#qWho').value||null,due_date:$('#qDue').value||null,estimate:$('#qEst').value||null}});
-  $('#qTitle').value='';$('#qEst').value='';await refresh();toast('Task added');$('#qTitle').focus();}
+  await api('/api/tasks',{method:'POST',body:{title,project_id:+$('#qProj').value||null,assignee_id:+$('#qWho').value||null,due_date:$('#qDue').value||null,estimate:$('#qEst').value||null,repeat:$('#qRepeat').value||null}});
+  $('#qTitle').value='';$('#qEst').value='';$('#qRepeat').value='';await refresh();toast('Task added');$('#qTitle').focus();}
 async function moveTask(id,pid){await api(`/api/tasks/${id}/project`,{method:'PUT',body:{project_id:+pid||null}});await refresh();openTask(id);toast('Moved');}
 
 /* ---------- calendar ---------- */
@@ -630,6 +627,7 @@ async function openTask(id){OPEN_ID=id;const [d,h]=await Promise.all([api(`/api/
      ${mg?`<button class="b ghost" style="color:var(--bad);border-color:#f3c4c4" onclick="delTask(${d.id})">Delete</button>`:''}</div>
    <table style="margin-top:8px"><tr><td style="width:110px">Assignee</td><td>${mg?`<select onchange="patch(${d.id},{assignee_id:+this.value||0}).then(()=>openTask(${d.id}))">${userOpts(d.assignee_id)}</select>`:esc(who)}</td></tr>
    <tr><td>Due</td><td>${mg?`<input type="date" value="${d.due_date||''}" onchange="patch(${d.id},{due_date:this.value||null}).then(()=>openTask(${d.id}))">`:`<span class="${isOver(d)?'over':''}">${fmtDate(d.due_date)||'—'}</span>`}</td></tr>
+   <tr><td>Repeats</td><td>${ed?`<select onchange="patch(${d.id},{repeat:this.value}).then(()=>openTask(${d.id}))">${`<option value="">Doesn't repeat</option><option value="weekly">🔁 Every week</option><option value="biweekly">🔁 Every 2 weeks</option><option value="monthly">🔁 Every month</option><option value="quarterly">🔁 Every quarter</option><option value="yearly">🔁 Every year</option>`.replace(`value="${d.repeat||''}"`,`value="${d.repeat||''}" selected`)}</select>`:(d.repeat?'🔁 '+d.repeat:'—')}<span class="mute" style="font-size:12px;margin-left:8px">${d.repeat?'Next one is created when this is marked done':''}</span></td></tr>
    <tr><td>Status</td><td>${statusSel({...d,assignee_id:ed?ME.id:d.assignee_id}).replace(/onchange="setStatus\((\d+),this.value\)"/,`onchange="setStatus($1,this.value).then(()=>openTask($1))"`)}</td></tr></table>
 
    ${d.tutorial_url||mg?`<div class="sec tutsec"><h3>🎓 How to do this</h3>
@@ -734,13 +732,15 @@ function renderTemplates(){
     <table><tr><th>Item</th><th style="width:190px">Assign to</th><th style="width:120px">Due (days after start)</th><th style="width:90px">Estimate</th><th style="width:230px"></th></tr>
     ${t.items.map(i=>`<tr><td style="padding-left:${8+i.depth*24}px">${i.depth?'<span class="mute">↳</span> ':''}<input value="${esc(i.title)}" style="width:calc(100% - 24px);border-color:transparent" onchange="tiPatch(${i.id},{title:this.value})">
       <div class="badges" style="margin:2px 0 0 ${i.depth?18:0}px;flex-wrap:wrap">
+       ${i.repeat?`<span class="pill">🔁 ${esc(i.repeat)} <a style="cursor:pointer" title="Stop repeating" onclick="tiPatch(${i.id},{repeat:''}).then(refresh)">✕</a></span>`:''}
        ${i.tutorial_url?`<a class="pill tut" href="${esc(i.tutorial_url)}" target="_blank" rel="noopener">🎓 ${esc(hostOf(i.tutorial_url))}</a><a class="pill" style="cursor:pointer" title="Remove tutorial" onclick="tiPatch(${i.id},{tutorial_url:''}).then(refresh)">✕</a>`:''}
        ${i.checklist.map(k=>`<span class="pill">☑ ${esc(k.text)} <a style="cursor:pointer" onclick="tcDel(${k.id})">✕</a></span>`).join('')}
        ${i.waiting_on.map(w=>`<span class="pill lock">🔒 after “${esc((byId[w]||{}).title||'#'+w)}” <a style="cursor:pointer" onclick="tdDel(${i.id},${w})">✕</a></span>`).join('')}</div></td>
      <td><select onchange="tiPatch(${i.id},whoVal(this.value))">${whoOpts(i)}</select></td>
      <td>+<input type="number" min="0" value="${i.due_offset_days||0}" style="width:64px" onchange="tiPatch(${i.id},{due_offset_days:+this.value||0})"></td>
      <td><input placeholder="2h" value="${fmtMin(i.estimate_minutes)}" style="width:76px" onchange="tiEst(${i.id},this)"></td>
-     <td style="white-space:nowrap"><button class="b ghost" title="Move up" style="padding:4px 7px" onclick="tiMove(${i.id},-1)">↑</button><button class="b ghost" title="Move down" style="padding:4px 7px" onclick="tiMove(${i.id},1)">↓</button> <select title="More" onchange="tiAction(this,${t.id},${i.id})"><option value="">More…</option><option value="tut">🎓 ${i.tutorial_url?'Change':'Add'} tutorial link</option><option value="check">+ Checklist item</option><option value="sub">+ Subtask</option>
+     <td style="white-space:nowrap"><button class="b ghost" title="Move up" style="padding:4px 7px" onclick="tiMove(${i.id},-1)">↑</button><button class="b ghost" title="Move down" style="padding:4px 7px" onclick="tiMove(${i.id},1)">↓</button> <select title="More" onchange="tiAction(this,${t.id},${i.id})"><option value="">More…</option><option value="tut">🎓 ${i.tutorial_url?'Change':'Add'} tutorial link</option>
+       <optgroup label="Repeats (task re-created when done)"><option value="rep:weekly">🔁 Every week</option><option value="rep:biweekly">🔁 Every 2 weeks</option><option value="rep:monthly">🔁 Every month</option><option value="rep:quarterly">🔁 Every quarter</option><option value="rep:yearly">🔁 Every year</option>${i.repeat?'<option value="rep:">Stop repeating</option>':''}</optgroup><option value="check">+ Checklist item</option><option value="sub">+ Subtask</option>
        <optgroup label="Can't start until…">${t.items.filter(o=>o.id!==i.id&&!i.waiting_on.includes(o.id)).map(o=>`<option value="dep:${o.id}">🔒 ${esc(o.title)}</option>`).join('')}</optgroup>
        <option value="del">🗑 Delete item</option></select></td></tr>`).join('')||'<tr><td colspan="4" class="mute">No items yet.</td></tr>'}
     </table></div>`}).join('');
@@ -748,6 +748,7 @@ function renderTemplates(){
 }
 async function tiAction(sel,tid,iid){const v=sel.value;sel.value='';if(!v)return;
   if(v==='check'){const x=prompt('Checklist item');if(x)await api(`/api/template-items/${iid}/checklist`,{method:'POST',body:{text:x}});}
+  else if(v.startsWith('rep:'))await api(`/api/template-items/${iid}`,{method:'PATCH',body:{repeat:v.slice(4)}});
   else if(v==='tut'){const cur=(TPLS.flatMap(t=>t.items).find(i=>i.id===iid)||{}).tutorial_url||'';const x=prompt('Link to a how-to video or guide (YouTube, Loom, Vimeo, Google Drive…). Every task created from this item will show it.',cur);
     if(x!==null)await api(`/api/template-items/${iid}`,{method:'PATCH',body:{tutorial_url:x}});}
   else if(v==='sub'){await tiAdd(tid,iid);return;}
@@ -767,10 +768,13 @@ async function saveTemplate(){const items=[...document.querySelectorAll('.ti')].
   const tid=(await api('/api/templates',{method:'POST',body:{name:$('#tName').value||'Untitled',items:[]}})).id;
   for(const it of items)await api(`/api/templates/${tid}/items`,{method:'POST',body:it});$('#tItems').innerHTML='';$('#tName').value='';refresh();}
 async function delTpl(id){if(confirm('Delete template?')){await api('/api/templates/'+id,{method:'DELETE'});refresh();}}
+function repeatHint(){const v=$('#pRepeat').value,h=$('#pRepeatHint');h.classList.toggle('hidden',!v);if(!v)return;
+  const d=$('#pStart').value?new Date($('#pStart').value+'T12:00'):new Date(),n=$('#pName').value||'Project name';
+  h.innerHTML=$('#pTpl').value?`A fresh copy is created ${({monthly:'every month',quarterly:'every 3 months',yearly:'every year'})[v]} on day ${d.getDate()}, named like “${esc(n)} – ${d.toLocaleString(undefined,{month:'long'})} ${d.getFullYear()}”.`:'<span class="over">Choose a template — each repeat is built from it.</span>';}
 function openNewProject(fromDoc){renderNewTeam();renderPreview();newProjDlg.showModal();setTimeout(()=>fromDoc?$('#pDoc').click():$('#pName').focus(),50);}
 async function newProject(){const name=$('#pName').value.trim();if(!name){alert('Give the project a name.');return;}
-  await api('/api/projects',{method:'POST',body:{name,template_id:+$('#pTpl').value||null,start_date:$('#pStart').value||null,property:$('#pProp').value||null,client:$('#pClient').value||null,description:$('#pNotes').value||null,team:newTeam()}});
-  ['#pName','#pProp','#pClient','#pNotes'].forEach(x=>$(x).value='');$('#pDocInfo').textContent='';$('#pTpl').value='';$('#pTeam').innerHTML='';newProjDlg.close();await refresh();toast('Project created');show('projects');}
+  await api('/api/projects',{method:'POST',body:{name,template_id:+$('#pTpl').value||null,start_date:$('#pStart').value||null,property:$('#pProp').value||null,client:$('#pClient').value||null,description:$('#pNotes').value||null,team:newTeam(),repeat:$('#pRepeat').value||null}});
+  ['#pName','#pProp','#pClient','#pNotes','#pRepeat'].forEach(x=>$(x).value='');repeatHint();$('#pDocInfo').textContent='';$('#pTpl').value='';$('#pTeam').innerHTML='';newProjDlg.close();await refresh();toast('Project created');show('projects');}
 async function fromDoc(inp){const f=inp.files[0];inp.value='';if(!f)return;
   if(f.size>25e6){alert('That file is over 25 MB.');return;}
   $('#pDocInfo').textContent=`⏳ Reading ${f.name}… (can take ~30 seconds)`;
@@ -784,15 +788,21 @@ async function fromDoc(inp){const f=inp.files[0];inp.value='';if(!f)return;
 async function saveAsTpl(id,n){const name=prompt('Template name',n+' checklist');if(name){await api(`/api/projects/${id}/save-as-template`,{method:'POST',body:{name}});refresh();}}
 async function patch(id,b){try{await api('/api/tasks/'+id,{method:'PATCH',body:b})}finally{await refresh()}}
 const setStatus=async(id,s)=>{await patch(id,{status:s});const t=TASKS.find(x=>x.id===id);
-  if(s==='done'&&t&&!t.actual_minutes&&canEdit(t)&&!taskDlg.open)toast('⏱ Done! How long did it take?',()=>openTask(id).then(()=>{$('#timeSec').scrollIntoView({block:'center'});$('#actIn').focus()}),'Log time');};
+  if(s==='done'&&t&&t.repeat)toast('🔁 Done — next one scheduled');
+  else if(s==='done'&&t&&!t.actual_minutes&&canEdit(t)&&!taskDlg.open)toast('⏱ Done! How long did it take?',()=>openTask(id).then(()=>{$('#timeSec').scrollIntoView({block:'center'});$('#actIn').focus()}),'Log time');};
 async function addTask(p){const t=$('#nt'+p).value;if(!t)return;await api('/api/tasks',{method:'POST',body:{project_id:p,title:t,assignee_id:+$('#na'+p).value||null,due_date:$('#nd'+p).value||null}});refresh();}
-function rSuggest(){const t=TPLS.find(t=>t.id==$('#rTpl').value);if(t&&!$('#rPattern').value)$('#rPattern').value=`{month} {year} – ${t.name}`;rPreview();}
-function rPreview(){const n=($('#rPattern').value||'').replace('{month}',new Date().toLocaleString(undefined,{month:'long'})).replace('{year}',new Date().getFullYear()).replace('{mm}',String(new Date().getMonth()+1).padStart(2,'0'));
-  $('#rExample').textContent=n?`Example: “${n}” is created on day ${$('#rDay').value||1} of every month.`:'';}
-async function saveRecurrence(){if(!$('#rTpl').value){alert('Choose which template to copy each month.');return;}if(!$('#rPattern').value.trim()){alert('Give the monthly project a name, e.g. {month} {year} – Month-End Close');return;}
-  await api('/api/recurrences',{method:'POST',body:{template_id:+$('#rTpl').value,name_pattern:$('#rPattern').value,day_of_month:+$('#rDay').value||1}});
-  $('#rTpl').value='';$('#rPattern').value='';rPreview();await refresh();toast('Monthly project scheduled');}
-async function toggleRec(id,a){await api(`/api/recurrences/${id}?active=${a}`,{method:'PATCH'});refresh();}
+async function renderRecurring(){const r=await api('/api/recurring');
+  $('#recurring').innerHTML=r.projects.length?'<tr><th>Project name</th><th>Template</th><th>How often</th><th>Next copy</th><th></th></tr>'+r.projects.map(x=>`<tr style="${x.active?'':'opacity:.55'}">
+    <td>${esc(x.name_pattern)}${x.property?`<div class="mute" style="font-size:12px">📍 ${esc(x.property)}</div>`:''}</td><td class="mute">${esc(x.template_name)}</td><td>${esc(x.every_label)} · day ${x.day_of_month}</td>
+    <td>${x.active?fmtDate(x.next_run):'<span class="mute">paused</span>'}</td>
+    <td style="white-space:nowrap"><button class="b ghost" onclick="toggleRec(${x.id},${!x.active})">${x.active?'Pause':'Resume'}</button> <button class="b ghost" style="color:var(--bad)" onclick="delRec(${x.id})">Stop</button></td></tr>`).join('')
+    :'<tr><td class="empty">No repeating projects. Choose “Repeats” in + New project (with a template).</td></tr>';
+  $('#recurTasks').innerHTML=r.tasks.length?'<tr><th>Task</th><th>Who</th><th>How often</th><th>Next due</th><th></th></tr>'+r.tasks.map(t=>`<tr>
+    <td><span class="tlink" onclick="openTask(${t.id})">${esc(t.title)}</span><div class="mute" style="font-size:12px">${t.is_general?'No project':esc(t.project_name)}</div></td><td class="mute">${esc(t.assignee_name)}</td>
+    <td>${esc(t.repeat_label)}</td><td>${fmtDate(t.due_date)||'—'}</td><td><button class="b ghost" onclick="patch(${t.id},{repeat:''}).then(renderRecurring)">Stop repeating</button></td></tr>`).join('')
+    :'<tr><td class="empty">No repeating tasks. Choose “Repeats” when adding a task, or in the task panel.</td></tr>';}
+async function delRec(id){if(!confirm('Stop this project from repeating? Projects already created stay.'))return;await api('/api/recurrences/'+id,{method:'DELETE'});renderRecurring();}
+async function toggleRec(id,a){await api(`/api/recurrences/${id}?active=${a}`,{method:'PATCH'});renderRecurring();}
 async function addUser(){await api('/api/users',{method:'POST',body:{name:$('#uName').value,email:$('#uEmail').value,blink_user_id:$('#uBlink').value||null}});refresh();}
 async function removeUser(id){const u=USERS.find(x=>x.id===id),to=$('#mg'+id).value,t=USERS.find(x=>x.id==to);
   if(!confirm(`Remove ${u.name}?\n\n`+(t?`Their ${u.open_tasks} open task(s), history and Blink link move to ${t.name}.`:`Their ${u.open_tasks} open task(s) become unassigned.`)))return;

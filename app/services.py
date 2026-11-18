@@ -1,10 +1,11 @@
 """Business logic: templates, recurring projects, reminders, chat updates."""
 import calendar
+import json
 import os
 import re
 from datetime import date, datetime, timedelta
 
-from . import automations, blink, chat, collab, dashboard, intake, timing, tpl
+from . import automations, blink, chat, collab, dashboard, intake, recur, timing, tpl
 from .db import rows, tx
 
 LOOKAHEAD = int(os.getenv("REMINDER_LOOKAHEAD_DAYS", "2"))
@@ -36,12 +37,16 @@ def run_recurrences(today: date | None = None) -> list[int]:
         due = rows(c.execute(
             "SELECT * FROM recurrences WHERE active=1 AND (last_period IS NULL OR last_period < ?)", (period,)))
     for r in due:
+        if not recur.due_this_month(r, today):          # quarterly / yearly: only in the right months
+            continue
         day = min(r["day_of_month"], calendar.monthrange(today.year, today.month)[1])
         if today.day < day:
             continue
         start = today.replace(day=day)
         name = r["name_pattern"].format(month=start.strftime("%B"), year=start.year, mm=start.strftime("%m"))
-        created.append(create_project_from_template(r["template_id"], name, start, recurrence_id=r["id"]))
+        team = json.loads(r["team_json"]) if r.get("team_json") else None
+        created.append(create_project_from_template(r["template_id"], name, start, recurrence_id=r["id"], team=team,
+                                                    details={"property": r.get("property"), "client": r.get("client")}))
         with tx() as c:
             c.execute("UPDATE recurrences SET last_period=? WHERE id=?", (period, r["id"]))
     return created
@@ -66,6 +71,8 @@ def apply_update(task_id: int, user_id: int | None, source: str, status: str | N
         elif status and status != "done":  # reopening a task reopens its project
             c.execute("UPDATE projects SET status='active' WHERE id=? AND status='done'", (t["project_id"],))
     automations.on_status_change(task_id, old, status, user_id, note)
+    if status == "done" and old != "done" and t.get("repeat"):
+        t["next_occurrence"] = recur.on_done(task_id)
     return t
 
 
@@ -86,6 +93,7 @@ def fmt_task(t: dict) -> str:
     blockers = automations.open_blockers(t["id"]) if t.get("status") != "done" else []
     wait = f" 🔒 waiting on {', '.join('#' + str(b['id']) for b in blockers)}" if blockers else ""
     howto = f"\n   🎓 How-to: {t['tutorial_url']}" if t.get("tutorial_url") and t.get("status") != "done" else ""
+    wait += " 🔁" if t.get("repeat") else ""
     return f"#{t['id']} {t['title']} [{STATUS_LABEL[t['status']]}] · {t['project_name']}{flag}{wait}{howto}"
 
 
@@ -207,6 +215,7 @@ def handle_inbound(blink_user_id: str, text: str, files: list[dict] | None = Non
                 skipped.append(up["task_id"])
                 continue
             t = apply_update(up["task_id"], u["id"], "blink", up.get("status"), up.get("note"))
+            nxt = t.get("next_occurrence")
             if up.get("actual_minutes"):
                 timing.set_times(t["id"], actual=up["actual_minutes"], notes=up.get("time_note"))
                 t = {**t, "actual_minutes": up["actual_minutes"]}
@@ -215,6 +224,8 @@ def handle_inbound(blink_user_id: str, text: str, files: list[dict] | None = Non
                     t = dict(c.execute("SELECT * FROM tasks WHERE id=?", (t["id"],)).fetchone())
             done_lines.append(f"✅ #{t['id']} {t['title']} → {STATUS_LABEL[t['status']]}"
                               + (f" (note: {up['note']})" if up.get("note") else ""))
+            if nxt:
+                done_lines.append(f"🔁 Next one scheduled: #{nxt['id']} due {date.fromisoformat(nxt['due_date']):%a %b %d}")
         reply = "\n".join(done_lines) or parsed.get("reply") or "No changes made."
         need_time = [up["task_id"] for up in parsed["updates"] if up.get("status") == "done" and not up.get("actual_minutes")
                      and up["task_id"] in allowed]

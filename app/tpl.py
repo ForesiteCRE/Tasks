@@ -93,10 +93,10 @@ def create_project(template_id: int, name: str, start: date, recurrence_id=None,
             who = overrides.get(it["id"]) or (team.get(role) if role else None) or it["default_assignee_id"]
             task_of[it["id"]] = c.execute(
                 """INSERT INTO tasks(project_id, parent_id, title, assignee_id, role_id, due_date, position, estimate_minutes,
-                                     tutorial_url) VALUES(?,?,?,?,?,?,?,?,?)""",
+                                     tutorial_url, repeat) VALUES(?,?,?,?,?,?,?,?,?,?)""",
                 (pid, task_of.get(it["parent_item_id"]), it["title"], who, role,
                  (start + timedelta(days=it["due_offset_days"] or 0)).isoformat(), it["position"],
-                 it.get("estimate_minutes"), it.get("tutorial_url"))).lastrowid
+                 it.get("estimate_minutes"), it.get("tutorial_url"), it.get("repeat"))).lastrowid
             for n, ck in enumerate(rows(c.execute(
                     "SELECT text FROM template_checklist WHERE template_item_id=? ORDER BY position, id", (it["id"],)))):
                 c.execute("INSERT INTO task_checklist(task_id, text, position) VALUES(?,?,?)",
@@ -124,9 +124,11 @@ def save_from_project(project_id: int, name: str) -> int:
             by_role = t.get("role_id")
             item_of[t["id"]] = c.execute(
                 """INSERT INTO template_items(template_id, parent_item_id, title, default_assignee_id, default_role_id,
-                                              due_offset_days, position, estimate_minutes, tutorial_url) VALUES(?,?,?,?,?,?,?,?,?)""",
+                                              due_offset_days, position, estimate_minutes, tutorial_url, repeat)
+                   VALUES(?,?,?,?,?,?,?,?,?,?)""",
                 (tid, item_of.get(t["parent_id"]), t["title"], None if by_role else t["assignee_id"], by_role,
-                 max(offset, 0), i, t.get("estimate_minutes") or t.get("actual_minutes"), t.get("tutorial_url"))).lastrowid
+                 max(offset, 0), i, t.get("estimate_minutes") or t.get("actual_minutes"), t.get("tutorial_url"),
+                 t.get("repeat"))).lastrowid
             for n, ck in enumerate(rows(c.execute(
                     "SELECT text FROM task_checklist WHERE task_id=? ORDER BY position, id", (t["id"],)))):
                 c.execute("INSERT INTO template_checklist(template_item_id, text, position) VALUES(?,?,?)",
@@ -197,7 +199,11 @@ def update_item(item_id: int, fields: dict):
     elif fields.get("default_assignee_id"):
         fields["default_role_id"] = None
     allowed = {k: v for k, v in fields.items()
-               if k in ("title", "default_assignee_id", "default_role_id", "due_offset_days", "estimate_minutes", "tutorial_url")}
+               if k in ("title", "default_assignee_id", "default_role_id", "due_offset_days", "estimate_minutes", "tutorial_url",
+                        "repeat")}
+    if "repeat" in allowed:
+        from . import recur
+        allowed["repeat"] = recur.clean(allowed["repeat"])
     if "tutorial_url" in allowed:
         allowed["tutorial_url"] = clean_url(allowed["tutorial_url"])
     if not allowed:

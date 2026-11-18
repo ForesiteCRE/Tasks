@@ -553,3 +553,77 @@ def test_tutorial_links(mgr, staff):
     t2 = ids(mgr.post(f"/api/projects/{pid}/save-as-template", json={"name": "Tutorial copy"}))["id"]
     items = {i["title"]: i for i in [t for t in ids(mgr.get("/api/templates")) if t["id"] == t2][0]["items"]}
     assert items["Set up GL codes"]["tutorial_url"] == "https://loom.com/share/abc123"
+
+
+def test_repeating_tasks_and_projects(mgr, staff):
+    from app import recur
+    assert recur.add_months(date(2026, 1, 31), 1) == date(2026, 2, 28)          # month-end safe
+    assert recur.next_due("biweekly", date(2026, 1, 1)) == date(2026, 1, 15)
+    # repeating task: done -> next one created once, checklist reset, repeat moves forward
+    due = T + timedelta(days=2)
+    tid = ids(staff.post("/api/tasks", json={"title": "Weekly site walk", "due_date": due.isoformat(), "repeat": "weekly"}))["id"]
+    ids(staff.post(f"/api/tasks/{tid}/checklist", json={"text": "Parking lot lights"}))
+    ck = ids(mgr.get(f"/api/tasks/{tid}"))["checklist"][0]["id"]
+    ids(staff.patch(f"/api/checklist/{ck}", json={"done": True}))
+    assert staff.post("/api/tasks", json={"title": "x", "repeat": "hourly"}).status_code == 400
+    reply = services.handle_inbound("u-sam", f"done {tid}")
+    assert "Next one scheduled" in reply
+    first = ids(mgr.get(f"/api/tasks/{tid}"))
+    nxt = ids(mgr.get(f"/api/tasks/{first['repeat_next_id']}"))
+    assert nxt["due_date"] == (due + timedelta(days=7)).isoformat() and nxt["repeat"] == "weekly"
+    assert nxt["checklist"][0]["done"] == 0 and nxt["assignee_id"] == staff.me["id"]
+    ids(staff.patch(f"/api/tasks/{tid}", json={"status": "todo"}))
+    ids(staff.patch(f"/api/tasks/{tid}", json={"status": "done"}))
+    assert ids(mgr.get(f"/api/tasks/{tid}"))["repeat_next_id"] == nxt["id"]       # no duplicate on re-complete
+    # finished very late -> next due jumps to the future
+    late = ids(staff.post("/api/tasks", json={"title": "Monthly filter change", "repeat": "monthly",
+                                              "due_date": (T - timedelta(days=95)).isoformat()}))["id"]
+    ids(staff.patch(f"/api/tasks/{late}", json={"status": "done"}))
+    assert ids(mgr.get(f"/api/tasks/{ids(mgr.get(f'/api/tasks/{late}'))['repeat_next_id']}"))["due_date"] >= T.isoformat()
+    ov = ids(mgr.get("/api/recurring"))
+    assert any(t["id"] == nxt["id"] for t in ov["tasks"])
+    ids(staff.patch(f"/api/tasks/{nxt['id']}", json={"repeat": ""}))                 # stop repeating
+    assert not any(t["id"] == nxt["id"] for t in ids(mgr.get("/api/recurring"))["tasks"])
+    # repeating project: needs a template; first copy now; quarterly only runs in the right months
+    assert mgr.post("/api/projects", json={"name": "No tpl", "repeat": "monthly"}).status_code == 400
+    tpl_id = ids(mgr.post("/api/templates", json={"name": "Quarterly review", "items": [{"title": "Owner review"}]}))["id"]
+    start = date(T.year, T.month, 1)
+    pid = ids(mgr.post("/api/projects", json={"name": "Sonterra Quarterly Review", "template_id": tpl_id, "repeat": "quarterly",
+                                             "start_date": start.isoformat(), "property": "777 E Sonterra Blvd"}))["id"]
+    p = [x for x in ids(mgr.get("/api/projects")) if x["id"] == pid][0]
+    assert p["name"] == f"Sonterra Quarterly Review – {start:%B} {start.year}" and p["recurrence_id"]
+    r = [x for x in ids(mgr.get("/api/recurring"))["projects"] if x["id"] == p["recurrence_id"]][0]
+    assert r["every_label"] == "Every quarter" and r["next_run"] >= T.isoformat()
+    rid = p["recurrence_id"]
+    ours = lambda: [x for x in ids(mgr.get("/api/projects")) if x["recurrence_id"] == rid]
+    with tx() as c:   # keep other tests' monthly recurrences out of this check
+        c.execute("UPDATE recurrences SET active=0 WHERE id!=?", (rid,))
+    n = len(ours())
+    services.run_recurrences(today=recur.add_months(start, 1))      # next month: not a quarter month -> nothing
+    assert len(ours()) == n
+    made = services.run_recurrences(today=recur.add_months(start, 3))
+    assert len(made) == 1 and len(ours()) == n + 1
+    newp = [x for x in ids(mgr.get("/api/projects")) if x["id"] == made[0]][0]
+    assert newp["property"] == "777 E Sonterra Blvd" and newp["tasks"][0]["title"] == "Owner review"
+    ids(mgr.delete(f"/api/recurrences/{p['recurrence_id']}"))
+    # template items can repeat; tasks made from them inherit it
+    item = [t for t in ids(mgr.get("/api/templates")) if t["id"] == tpl_id][0]["items"][0]["id"]
+    ids(mgr.patch(f"/api/template-items/{item}", json={"repeat": "monthly"}))
+    p2 = ids(mgr.post("/api/projects", json={"name": "Inherit", "template_id": tpl_id}))["id"]
+    assert [x for x in ids(mgr.get("/api/projects")) if x["id"] == p2][0]["tasks"][0]["repeat"] == "monthly"
+
+
+def test_page_script_has_no_syntax_errors(tmp_path):
+    """Catch typos (e.g. a stray apostrophe or bracket) in the web page's JavaScript before they reach users."""
+    import os
+    import shutil
+    import subprocess
+    if not shutil.which("node"):
+        import pytest
+        pytest.skip("node not installed")
+    html = open(os.path.join(os.path.dirname(__file__), "..", "static", "index.html"), encoding="utf8").read()
+    js = html[html.rindex("<script>") + 8: html.rindex("</script>")]
+    f = tmp_path / "page.js"
+    f.write_text(js, encoding="utf8")
+    r = subprocess.run(["node", "--check", str(f)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr[:500]
