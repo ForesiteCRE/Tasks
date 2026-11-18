@@ -159,6 +159,10 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 .kpi.clk .l::after{content:" ›";opacity:.5}
 @keyframes flash{0%{box-shadow:0 0 0 3px var(--acc)}100%{box-shadow:0 0 0 3px transparent}}.flash{animation:flash 1.6s ease-out;scroll-margin-top:80px}
 .xclose{display:none}
+.pchip{display:inline-block;font-size:12.5px;padding:3px 10px;border-radius:99px;background:#e6f2f8;color:var(--ink)}.pchip.ok{background:#eef6e4;color:#3d6b1f}.pchip.warn{background:#fdf1e2;color:#9a5b0c}.pchip.bad{background:#fde8e8;color:var(--bad)}
+.warnbox{background:#fdf6ea;border:1px solid #f3dcb5;border-radius:8px;padding:8px 10px;font-size:13px;margin:4px 0 8px}.warnbox.bad{background:#fdecec;border-color:#f3c4c4}.warnbox.okbox{background:#eef6e4;border-color:#cfe3b8}
+.docrow{display:flex;gap:10px;padding:10px 2px;border-bottom:1px solid var(--line)}.docrow a{color:var(--ink)}.docrow .ico{font-size:18px}
+.lbl{display:block;font-size:12px;color:var(--mute);margin:8px 0 2px}
 .rolelist{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px}.rolelist>div{display:flex;flex-direction:column;background:#f7fafc;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px}.rolelist .via{font-size:11.5px}
 .propgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
 .nextd{margin-top:8px;font-size:12.5px;padding-top:8px;border-top:1px solid var(--line)}
@@ -565,6 +569,7 @@ async function renderProperties(fetch){if(fetch||!PROPS.length)PROPS=await api('
   $('#propList').innerHTML=ps.map(p=>`<div class="pcard" style="padding:0;overflow:hidden" onclick="openProperty(${p.id})">${propBanner(p,110)}
     <div style="padding:10px 12px"><h4>${esc(p.name)}</h4><div class="sub">${esc(p.client||' ')}</div>
     <div class="row" style="margin:6px 0 0;gap:6px;font-size:12.5px"><span class="mute">${p.projects} project${p.projects===1?'':'s'} · ${p.open_tasks} open task${p.open_tasks===1?'':'s'}</span>${p.overdue?`<span class="risk hi">${p.overdue} overdue</span>`:''}</div>
+    <div class="row" style="margin:6px 0 0;gap:4px">${p.insurance&&p.insurance.state!=='ok'?insChip(p.insurance):''}</div>
     ${p.next_date?`<div class="nextd">${p.next_date.icon} ${esc(p.next_date.title)} · ${fmtDate(p.next_date.date)} ${daysBadge(p.next_date.days_left)}</div>`:`<div class="nextd mute">No critical dates yet</div>`}</div></div>`).join('')
     ||`<p class="mute">${PROPS.length?'No match.':'No properties yet. They appear automatically when a project has an address — or add one.'}</p>`;
   const up=await api('/api/properties/upcoming-dates?days=120');$('#propUpN').textContent=up.length;
@@ -578,75 +583,122 @@ async function openProperty(id){PROP=await api('/api/properties/'+id);LEASE=null
   document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-property'));
   document.querySelectorAll('.dd').forEach(d=>d.querySelector('.ddb').classList.toggle('on',d.dataset.g==='tasks'));
   if(taskDlg.open)taskDlg.close();renderProperty();scrollTo(0,0);}
+function insChip(ins){const m={ok:['ok','🛡 '],not_named:['bad','⚠️ '],unverified:['warn','🛡 '],expired:['bad','⚠️ '],missing:['warn','🛡 ']}[ins.state]||['warn',''];
+  return `<span class="pchip ${m[0]}">${m[1]}${esc(ins.label)}${ins.expires&&ins.state!=='missing'?` · exp. ${fmtDate(ins.expires)}`:''}</span>`;}
+const money=n=>'$'+Number(n).toLocaleString(undefined,{maximumFractionDigits:0});
 function renderProperty(){const p=PROP,mg=isMgr(),dis=mg?'':'disabled',open=p.dates.filter(d=>d.status==='open'),done=p.dates.filter(d=>d.status!=='open');
   $('#propPage').innerHTML=`<div class="row" style="margin:0 0 10px"><button class="b ghost" onclick="show('properties')">← All properties</button></div>
   <div class="card" style="padding:0;overflow:hidden">${propBanner(p,190)}<div style="padding:14px 16px">
     <h2 style="margin:0 0 8px">${mg?`<input value="${esc(p.name)}" style="font:inherit;font-weight:600;width:100%" onchange="propPatch({name:this.value})">`:esc(p.name)}</h2>
+    <div class="row" style="margin:0 0 10px;gap:6px">${p.spend_limit?`<span class="pchip">💲 Owner approval needed over <b>${money(p.spend_limit)}</b></span>`:`<span class="pchip warn">💲 Owner approval limit not set</span>`}${insChip(p.insurance)}</div>
     <div class="team-grid"><label>Address<input ${dis} value="${esc(p.address)}" onchange="propPatch({address:this.value})"></label>
-      <label>Owner / client<input ${dis} value="${esc(p.client||'')}" onchange="propPatch({client:this.value})"></label></div>
-    <label class="mute" style="font-size:12px">Notes (access codes, vendors, owner preferences…)</label><textarea ${dis} rows="2" onchange="propPatch({notes:this.value})">${esc(p.notes||'')}</textarea></div></div>
+      <label>Owner / client<input ${dis} value="${esc(p.client||'')}" onchange="propPatch({client:this.value})"></label></div></div></div>
+  ${mg?`<div class="row" style="margin:0 0 12px"><button class="b" onclick="docPick()">📄 Upload &amp; read a document</button><span class="mute" style="font-size:12.5px">Management agreement, insurance policy, tax notice… Claude pulls out dates, the spend limit, reporting requirements and contacts, and checks the insurance.</span></div><div id="leaseBox"></div>`:''}
   <div class="hgrid"><div>
-    <div class="panel"><header><h3>⚑ Critical dates</h3><span class="cnt">${open.length} open</span></header><div class="body">
-      ${mg?`<div class="row" style="margin:4px 0 8px"><button class="b" onclick="leasePick()">📄 Read a lease</button><button class="b ghost" onclick="dateForm()">+ Add a date</button></div><div id="cdForm"></div><div id="leaseBox"></div>`:''}
-      ${open.map(cdRow).join('')||'<div class="empty">No critical dates yet.'+(mg?' Upload a lease and Claude will find them, or add one by hand.':'')+'</div>'}
+    <div class="panel"><header><h3>⚑ Critical dates</h3><span class="cnt">${open.length} upcoming</span></header><div class="body">
+      ${mg?`<div class="row" style="margin:4px 0 8px"><button class="b ghost" onclick="dateForm()">+ Add a date</button></div><div id="cdForm"></div>`:''}
+      ${open.map(cdRow).join('')||'<div class="empty">No critical dates yet.'+(mg?' Upload the management agreement or insurance policy, or add one by hand.':'')+'</div>'}
       ${done.length?`<details style="margin-top:8px"><summary class="mute">Handled · ${done.length}</summary>${done.map(cdRow).join('')}</details>`:''}</div></div>
     <div class="panel"><header><h3>✅ Open tasks</h3><span class="cnt">${p.tasks.length}</span></header><div class="body">
       ${p.tasks.map(t=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><span class="pill ${t.status}">${LBL[t.status]}</span><div class="grow">${esc(t.title)}<div class="sub">${esc(t.assignee_name)} · ${esc(t.project_name)}</div></div><span class="${isOver(t)?'over':'mute'}" style="white-space:nowrap">${fmtDate(t.due_date)||'—'}</span></div>`).join('')||'<div class="empty">Nothing open.</div>'}</div></div>
   </div><div>
-    <div class="panel"><header><h3>📁 Projects</h3><span class="cnt">${p.projects.length}</span></header><div class="body">
-      ${p.projects.map(x=>{const pct=x.total?Math.round(100*x.done/x.total):0;return `<div class="row2" style="cursor:pointer;display:block" onclick="openProject(${x.id})"><div class="row" style="justify-content:space-between;margin:0"><b>${esc(x.name)}</b><span class="mute" style="font-size:12px">${x.done}/${x.total}${x.status==='done'?' · finished':''}</span></div><div class="bar" style="margin:6px 0 0"><i style="width:${pct}%"></i></div>${x.overdue?`<span class="risk hi" style="margin-top:6px;display:inline-block">${x.overdue} overdue</span>`:''}</div>`}).join('')||'<div class="empty">No projects at this address yet. Projects whose address matches are linked automatically.</div>'}</div></div>
+    <div class="panel"><header><h3>📋 Owner requirements</h3></header><div class="body">
+      <label class="lbl">Max spend without owner approval</label>
+      <div class="row" style="margin:2px 0 10px"><span style="font-size:18px">$</span><input ${dis} type="number" min="0" step="100" value="${p.spend_limit||''}" placeholder="e.g. 5000" style="width:150px" onchange="propPatch({spend_limit:+this.value||null})"><span class="mute" style="font-size:12.5px">per repair / purchase</span></div>
+      <label class="lbl">How the owner wants reports</label><textarea ${dis} rows="3" placeholder="What's included, format, who gets it, when…" onchange="propPatch({report_notes:this.value})">${esc(p.report_notes||'')}</textarea>
+      <label class="lbl">Other notes</label><textarea ${dis} rows="2" placeholder="Owner preferences, access, vendors…" onchange="propPatch({notes:this.value})">${esc(p.notes||'')}</textarea></div></div>
+    <div class="panel"><header><h3>🛡 Insurance &amp; documents</h3><span class="cnt">${p.docs.length}</span></header><div class="body">
+      ${p.insurance.state==='missing'?`<div class="warnbox">No property insurance on file. ${mg?'Upload the policy or certificate — Claude checks that Foresite is named additional insured and adds the renewal date.':''}</div>`:''}
+      ${p.insurance.state==='not_named'?`<div class="warnbox bad">⚠️ Foresite is <b>not</b> named additional insured on the latest policy. Ask the insurance agent for an additional insured endorsement.${p.insurance.note?`<div class="sub">${esc(p.insurance.note)}</div>`:''}</div>`:''}
+      ${p.insurance.state==='unverified'?`<div class="warnbox">Couldn't confirm whether Foresite is named additional insured — open the policy and mark it below.</div>`:''}
+      ${p.insurance.state==='expired'?`<div class="warnbox bad">⚠️ The insurance on file expired ${fmtDate(p.insurance.expires)}. Upload the renewal.</div>`:''}
+      ${p.docs.map(d=>`<div class="docrow"><span class="ico">${d.kind==='insurance'?'🛡':d.kind==='mgmt_agreement'?'🤝':d.kind==='tax_notice'?'🏛':'📄'}</span><div class="grow">
+        <a href="/api/property-docs/${d.id}" target="_blank" rel="noopener"><b>${esc(d.filename)}</b></a>
+        <div class="sub">${esc(d.kind_label)} · uploaded ${fmtDate(d.uploaded_at.slice(0,10))}${d.uploaded_by_name?' by '+esc(d.uploaded_by_name):''}${d.expires?` · expires ${fmtDate(d.expires)}`:''}</div>
+        ${d.kind==='insurance'?`<div class="sub">${d.insured_ok===1?'✅ Foresite named additional insured':d.insured_ok===0?'⚠️ Foresite not named additional insured':'❔ Additional insured not verified'}${d.verified_by_name?` (checked by ${esc(d.verified_by_name)})`:d.insured_ok!=null?' (read by Claude)':''}</div>
+          ${mg?`<div class="row" style="margin:4px 0 0;gap:4px"><button class="b ghost sm" onclick="docPatch(${d.id},{insured_ok:true})">✓ Foresite is named</button><button class="b ghost sm" onclick="docPatch(${d.id},{insured_ok:false})">✗ Not named</button></div>`:''}`:''}
+        ${d.summary?`<div class="sub">${esc(d.summary)}</div>`:''}</div>${mg?`<button class="b ghost sm" style="color:var(--bad)" title="Delete file" onclick="docDel(${d.id})">✕</button>`:''}</div>`).join('')||(p.insurance.state==='missing'?'':'<div class="empty">No documents yet.</div>')}</div></div>
+    <div class="panel"><header><h3>📇 Contacts</h3><span class="cnt">${p.contacts.length}</span></header><div class="body">
+      ${p.contacts.map(c=>`<div class="row2"><span class="ico">👤</span><div class="grow"><span class="mute" style="font-size:12px">${esc(c.role)}</span><div><b>${esc(c.name||c.company||'')}</b>${c.name&&c.company?` · ${esc(c.company)}`:''}</div>
+        <div class="sub">${c.email?`<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`:''}${c.email&&c.phone?' · ':''}${c.phone?`<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>`:''}${c.notes?' · '+esc(c.notes):''}</div></div>${mg?`<button class="b ghost sm" style="color:var(--bad)" onclick="ctDel(${c.id})">✕</button>`:''}</div>`).join('')||'<div class="empty">No contacts yet.</div>'}
+      ${mg?`<details style="margin-top:8px"><summary class="mute" style="cursor:pointer">+ Add a contact</summary><div class="team-grid" style="margin-top:8px">
+        <label>Role<select id="ctRole">${p.contact_roles.map(r=>`<option>${esc(r)}</option>`).join('')}</select></label><label>Name<input id="ctName"></label>
+        <label>Company<input id="ctCompany"></label><label>Email<input id="ctEmail" type="email"></label><label>Phone<input id="ctPhone" type="tel"></label><label>Notes<input id="ctNotes"></label></div>
+        <div class="row" style="justify-content:flex-end"><button class="b" onclick="ctAdd()">Add contact</button></div></details>`:''}</div></div>
     <div class="panel"><header><h3>👥 Property team</h3><span class="cnt">${p.roles.filter(r=>r.user_id).length}/${p.roles.length}</span></header><div class="body">
       <p class="mute" style="margin:4px 0 8px;font-size:12.5px">Every project at this address uses these people. Change someone here and their open tasks in all of this property's projects move over (they get a Blink message).</p>
       <div class="team-grid">${p.roles.map(r=>{const n=p.tasks.filter(t=>t.role_id===r.role_id).length;return `<label>${esc(r.role)}${n?` <span class="via">· ${n} open task${n>1?'s':''}</span>`:''}<select ${mg?'':'disabled'} onchange="propTeamSet(${r.role_id},this.value)">${userOpts(r.user_id,'—')}</select></label>`}).join('')}</div></div></div>
+    <div class="panel"><header><h3>📁 Projects</h3><span class="cnt">${p.projects.length}</span></header><div class="body">
+      ${p.projects.map(x=>{const pct=x.total?Math.round(100*x.done/x.total):0;return `<div class="row2" style="cursor:pointer;display:block" onclick="openProject(${x.id})"><div class="row" style="justify-content:space-between;margin:0"><b>${esc(x.name)}</b><span class="mute" style="font-size:12px">${x.done}/${x.total}${x.status==='done'?' · finished':''}</span></div><div class="bar" style="margin:6px 0 0"><i style="width:${pct}%"></i></div>${x.overdue?`<span class="risk hi" style="margin-top:6px;display:inline-block">${x.overdue} overdue</span>`:''}</div>`}).join('')||'<div class="empty">No projects at this address yet. Projects whose address matches are linked automatically.</div>'}</div></div>
   </div></div>
-  ${mg?`<details class="danger"><summary>Danger zone</summary><p>Deleting removes this property page and its critical dates. Projects and tasks are kept (just unlinked).</p>
+  ${mg?`<details class="danger"><summary>Danger zone</summary><p>Deleting removes this property page with its critical dates, contacts and documents. Projects and tasks are kept (just unlinked).</p>
     <label>Type the property name <b>${esc(p.name)}</b> to confirm<input id="propDelConfirm" autocomplete="off"></label>
-    <button class="b" style="background:var(--bad);border-color:var(--bad);margin-top:8px" onclick="delProperty()">Delete property page</button></details>`:''}`;}
+    <button class="b" style="background:var(--bad);border-color:var(--bad);margin-top:8px" onclick="delProperty()">Delete property page</button></details>`:''}`;
+  if(LEASE)renderLease();}
 function cdRow(d){const mg=isMgr(),mine=d.assignee_id===ME.id;
   return `<div class="cdrow ${d.status!=='open'?'isdone':''}"><span class="ico">${d.icon}</span><div class="grow">
-    <div><b>${esc(d.title)}</b>${d.source==='lease'?' <span class="chip2" title="Found by reading a lease">from lease</span>':''}</div>
+    <div><b>${esc(d.title)}</b>${d.repeat_label?` <span class="chip2">🔁 ${esc(d.repeat_label)}</span>`:''}${d.source==='lease'?' <span class="chip2" title="Found by reading a document">from document</span>':''}</div>
     <div class="sub">${esc(d.kind_label)}${d.tenant?' · '+esc(d.tenant):''} · ${esc(d.assignee_name||'No one assigned')}${d.task_id?` · <span class="tlink" onclick="openTask(${d.task_id})">task #${d.task_id}</span>`:''}</div>
     ${d.notes?`<div class="sub">${esc(d.notes)}</div>`:''}${d.quote?`<div class="note">“${esc(d.quote)}”</div>`:''}
     <div class="sub">🔔 Reminders ${esc(d.remind_days.split(',').map(x=>x+'d').join(' / '))} before</div></div>
     <div class="cdact"><div style="font-weight:600">${new Date(d.date+'T12:00').toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}</div>${d.status==='open'?daysBadge(d.days_left):'<span class="dl">handled</span>'}
       <div class="row" style="margin:6px 0 0;gap:4px;justify-content:flex-end">${d.status==='open'&&(mg||mine)?`<button class="b ghost sm" onclick="cdPatch(${d.id},{status:'handled'})">✓ Handled</button>`:''}${d.status!=='open'&&mg?`<button class="b ghost sm" onclick="cdPatch(${d.id},{status:'open'})">Reopen</button>`:''}
       ${mg?`<button class="b ghost sm" onclick="dateForm(${d.id})">Edit</button><button class="b ghost sm" style="color:var(--bad)" onclick="cdDel(${d.id})">✕</button>`:''}</div></div></div>`;}
-const kindOpts=sel=>Object.entries(PROP.kinds).map(([k,v])=>`<option value="${k}" ${k===sel?'selected':''}>${esc(v)}</option>`).join('');
-function dateForm(id){const d=id?PROP.dates.find(x=>x.id===id):{kind:'option_notice',remind_days:'90,30,7'};
+const kindOpts=sel=>[...PROP.offered,...(sel&&!PROP.offered.includes(sel)?[sel]:[])].map(k=>`<option value="${k}" ${k===sel?'selected':''}>${esc(PROP.kinds[k])}</option>`).join('');
+const repOpts=sel=>[['','Once'],['monthly','🔁 Every month'],['quarterly','🔁 Every quarter'],['yearly','🔁 Every year']].map(([v,l])=>`<option value="${v}" ${v===(sel||'')?'selected':''}>${l}</option>`).join('');
+function dateForm(id){const d=id?PROP.dates.find(x=>x.id===id):{kind:'tax_protest',remind_days:'90,30,7'};
   $('#cdForm').innerHTML=`<div class="cdform"><div class="team-grid">
     <label>Type<select id="cdKind">${kindOpts(d.kind)}</select></label><label>Date<input type="date" id="cdDate" value="${d.date||''}"></label>
-    <label>What is it?<input id="cdTitle" value="${esc(d.title||'')}" placeholder="e.g. Renewal option notice due"></label><label>Tenant / suite<input id="cdTenant" value="${esc(d.tenant||'')}"></label>
+    <label>What is it?<input id="cdTitle" value="${esc(d.title||'')}" placeholder="e.g. Monthly owner report due"></label><label>Repeats<select id="cdRepeat">${repOpts(d.repeat)}</select></label>
     <label>Who's responsible<select id="cdWho">${userOpts(d.assignee_id,'— (managers get the reminder)')}</select></label><label>Remind (days before)<input id="cdRemind" value="${esc(d.remind_days)}" placeholder="90,30,7"></label></div>
     <label class="mute" style="font-size:12px">Notes</label><textarea id="cdNotes" rows="2">${esc(d.notes||'')}</textarea>
     <div class="row" style="justify-content:flex-end"><button class="b ghost" onclick="$('#cdForm').innerHTML=''">Cancel</button><button class="b" onclick="saveDate(${id||0})">${id?'Save':'Add date'}</button></div></div>`;
   $('#cdForm').scrollIntoView({behavior:'smooth',block:'nearest'});}
-async function saveDate(id){const b={kind:$('#cdKind').value,date:$('#cdDate').value,title:$('#cdTitle').value,tenant:$('#cdTenant').value,assignee_id:+$('#cdWho').value||null,remind_days:$('#cdRemind').value,notes:$('#cdNotes').value};
+async function saveDate(id){const b={kind:$('#cdKind').value,date:$('#cdDate').value,title:$('#cdTitle').value,repeat:$('#cdRepeat').value,assignee_id:+$('#cdWho').value||null,remind_days:$('#cdRemind').value,notes:$('#cdNotes').value};
   if(!b.date){toast('Pick a date');return;}
   if(id)await api('/api/critical-dates/'+id,{method:'PATCH',body:b});else await api(`/api/properties/${PROP.id}/dates`,{method:'POST',body:{dates:[b]}});
   toast(id?'Saved':'Date added — reminders are set');openProperty(PROP.id);}
-async function cdPatch(id,b){await api('/api/critical-dates/'+id,{method:'PATCH',body:b});await refresh();openProperty(PROP.id);}
+async function cdPatch(id,b){const d=PROP.dates.find(x=>x.id===id);await api('/api/critical-dates/'+id,{method:'PATCH',body:b});await refresh();
+  if(b.status==='handled'&&d&&d.repeat)toast('Handled — next one scheduled 🔁');openProperty(PROP.id);}
 async function cdDel(id){if(!confirm('Remove this critical date? (Its task, if any, stays.)'))return;await api('/api/critical-dates/'+id,{method:'DELETE'});openProperty(PROP.id);}
 async function propTeamSet(rid,uid){const r=await api(`/api/properties/${PROP.id}/team/${rid}`,{method:'PUT',body:{user_id:+uid||null}});
   toast(r.moved?`Updated — ${r.moved} open task${r.moved>1?'s':''} moved`:'Updated');await refresh();openProperty(PROP.id);}
 async function propPatch(b){await api('/api/properties/'+PROP.id,{method:'PATCH',body:b});PROPS=[];await refresh();openProperty(PROP.id);toast('Saved');}
 async function delProperty(){await api(`/api/properties/${PROP.id}?confirm=${encodeURIComponent($('#propDelConfirm').value)}`,{method:'DELETE'});PROPS=[];toast('Property page deleted');show('properties');}
-function leasePick(){const i=document.createElement('input');i.type='file';i.accept='.pdf,.doc,.docx,.txt,image/*';i.onchange=()=>leaseRead(i.files[0]);i.click();}
-async function leaseRead(f){if(!f)return;$('#leaseBox').innerHTML=`<div class="cdform"><b>📄 Reading ${esc(f.name)}…</b><div class="mute">Claude is finding the critical dates. This takes about 20–60 seconds.</div></div>`;
+async function ctAdd(){await api(`/api/properties/${PROP.id}/contacts`,{method:'POST',body:{role:$('#ctRole').value,name:$('#ctName').value,company:$('#ctCompany').value,email:$('#ctEmail').value,phone:$('#ctPhone').value,notes:$('#ctNotes').value}});toast('Contact added');openProperty(PROP.id);}
+async function ctDel(id){if(!confirm('Remove this contact?'))return;await api('/api/property-contacts/'+id,{method:'DELETE'});openProperty(PROP.id);}
+async function docPatch(id,b){await api('/api/property-docs/'+id,{method:'PATCH',body:b});PROPS=[];openProperty(PROP.id);toast('Saved');}
+async function docDel(id){if(!confirm('Delete this file from the property?'))return;await api('/api/property-docs/'+id,{method:'DELETE'});PROPS=[];openProperty(PROP.id);}
+function docPick(){const i=document.createElement('input');i.type='file';i.accept='.pdf,.doc,.docx,.txt,image/*';i.onchange=()=>leaseRead(i.files[0]);i.click();}
+async function leaseRead(f){if(!f)return;if(f.size>25e6){alert('That file is over 25 MB.');return;}
+  $('#leaseBox').innerHTML=`<div class="cdform"><b>📄 Reading ${esc(f.name)}…</b><div class="mute">Claude is reading it for dates, the spend limit, reporting requirements, contacts and insurance. About 20–60 seconds.</div></div>`;
+  $('#leaseBox').scrollIntoView({behavior:'smooth',block:'nearest'});
   const b64=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result.split(',')[1]);fr.readAsDataURL(f)});
-  try{LEASE=await api(`/api/properties/${PROP.id}/read-lease`,{method:'POST',body:{filename:f.name,content_type:f.type,data_b64:b64}});}
+  try{LEASE=await api(`/api/properties/${PROP.id}/read-document`,{method:'POST',body:{filename:f.name,content_type:f.type,data_b64:b64}});}
   catch(e){$('#leaseBox').innerHTML=`<div class="cdform" style="color:var(--bad)">${esc(e.message||e)}</div>`;return;}
-  renderLease();}
-function renderLease(){const L=LEASE;
-  $('#leaseBox').innerHTML=`<div class="cdform"><h3 style="margin:0 0 4px">📄 Found ${L.dates.length} date${L.dates.length===1?'':'s'} — check them before adding</h3><p class="mute" style="margin:0 0 8px">${esc(L.summary)}</p>
+  PROP=await api('/api/properties/'+PROP.id);renderProperty();}
+function renderLease(){const L=LEASE,ins=L.insurance||{},isIns=L.doc_kind==='insurance';
+  const n=L.dates.length+(L.spend_limit?1:0)+(L.report_notes?1:0)+L.contacts.length;
+  $('#leaseBox').innerHTML=`<div class="cdform"><h3 style="margin:0 0 4px">📄 ${esc(L.doc_kind==='mgmt_agreement'?'Management agreement':L.doc_kind==='insurance'?'Insurance policy':L.doc_kind==='tax_notice'?'Tax notice':'Document')} read — the file is saved on this property</h3>
+    <p class="mute" style="margin:0 0 8px">${esc(L.summary)}</p>
+    ${isIns?`<div class="warnbox ${ins.foresite_additional_insured==='yes'?'okbox':ins.foresite_additional_insured==='no'?'bad':''}">${ins.foresite_additional_insured==='yes'?'✅ Foresite is named additional insured':ins.foresite_additional_insured==='no'?'⚠️ Foresite is NOT named additional insured — ask the agent for an endorsement':'❔ Couldn\'t tell whether Foresite is named additional insured — please check'}${ins.carrier?` · ${esc(ins.carrier)}`:''}${ins.expires?` · expires ${fmtDate(ins.expires)}`:''}${ins.evidence?`<div class="sub">${esc(ins.evidence)}</div>`:''}</div>`:''}
+    ${n?`<p style="margin:10px 0 4px"><b>Found ${n} thing${n>1?'s':''} to add — untick anything that's wrong:</b></p>`:'<div class="empty">Nothing else to add from this document.</div>'}
     ${L.dates.map((d,i)=>`<div class="lrow"><input type="checkbox" id="lx${i}" checked style="width:auto">
-      <div class="grow"><div class="row" style="margin:0;gap:6px"><select id="lk${i}" style="width:auto">${kindOpts(d.kind)}</select><input type="date" id="ld${i}" value="${d.date}" style="width:auto"><span class="conf ${d.confidence}">${d.confidence==='high'?'stated in lease':d.confidence==='medium'?'calculated — double-check':'unclear — check'}</span></div>
-      <input id="lt${i}" value="${esc(d.title)}" style="margin-top:6px"><div class="sub">${esc(d.tenant||'')}${d.notes?' · '+esc(d.notes):''}</div>${d.quote?`<div class="note">“${esc(d.quote)}”</div>`:''}</div></div>`).join('')||'<div class="empty">No dates found in that document.</div>'}
-    ${L.dates.length?`<div class="row" style="margin-top:10px"><label>Who's responsible <select id="lWho">${userOpts('','— (managers get the reminder)')}</select></label><label>Remind <input id="lRemind" value="90,30,7" style="width:110px"> days before</label></div>
-    <div class="row" style="justify-content:flex-end"><button class="b ghost" onclick="LEASE=null;$('#leaseBox').innerHTML=''">Discard</button><button class="b" onclick="leaseSave()">Add checked dates</button></div>`:''}</div>`;}
-async function leaseSave(){const who=+$('#lWho').value||null,rem=$('#lRemind').value;
-  const dates=LEASE.dates.map((d,i)=>$('#lx'+i).checked?{...d,kind:$('#lk'+i).value,date:$('#ld'+i).value,title:$('#lt'+i).value,assignee_id:who,remind_days:rem}:null).filter(Boolean);
-  if(!dates.length){toast('Tick at least one date');return;}
-  await api(`/api/properties/${PROP.id}/dates`,{method:'POST',body:{dates,source:'lease'}});toast(`Added ${dates.length} date${dates.length>1?'s':''} — reminders are set`);await refresh();openProperty(PROP.id);}
+      <div class="grow"><div class="row" style="margin:0;gap:6px"><select id="lk${i}" style="width:auto">${kindOpts(d.kind)}</select><input type="date" id="ld${i}" value="${d.date}" style="width:auto"><select id="lr${i}" style="width:auto">${repOpts(d.repeat)}</select><span class="conf ${d.confidence}">${d.confidence==='high'?'stated':d.confidence==='medium'?'calculated — double-check':'unclear — check'}</span></div>
+      <input id="lt${i}" value="${esc(d.title)}" style="margin-top:6px">${d.notes?`<div class="sub">${esc(d.notes)}</div>`:''}${d.quote?`<div class="note">“${esc(d.quote)}”</div>`:''}</div></div>`).join('')}
+    ${L.spend_limit?`<div class="lrow"><input type="checkbox" id="lxSpend" checked style="width:auto"><div class="grow">💲 Owner approval needed over <b>${money(L.spend_limit)}</b>${PROP.spend_limit&&PROP.spend_limit!==L.spend_limit?` <span class="mute">(currently ${money(PROP.spend_limit)})</span>`:''}</div></div>`:''}
+    ${L.report_notes?`<div class="lrow"><input type="checkbox" id="lxRep" checked style="width:auto"><div class="grow">📊 Reporting requirements<div class="sub">${esc(L.report_notes)}</div></div></div>`:''}
+    ${L.contacts.map((c,i)=>`<div class="lrow"><input type="checkbox" id="lc${i}" checked style="width:auto"><div class="grow">📇 ${esc(c.role)}: <b>${esc(c.name||c.company)}</b>${c.name&&c.company?' · '+esc(c.company):''}<div class="sub">${esc([c.email,c.phone].filter(Boolean).join(' · '))}</div></div></div>`).join('')}
+    ${L.dates.length?`<div class="row" style="margin-top:10px"><label>Dates go to <select id="lWho">${userOpts('','— (managers get the reminder)')}</select></label><label>Remind <input id="lRemind" value="90,30,7" style="width:110px"> days before</label></div>`:''}
+    <div class="row" style="justify-content:flex-end"><button class="b ghost" onclick="LEASE=null;$('#leaseBox').innerHTML=''">${n?'Skip':'Close'}</button>${n?`<button class="b" onclick="leaseSave()">Add checked items</button>`:''}</div></div>`;}
+async function leaseSave(){const L=LEASE,who=$('#lWho')?+$('#lWho').value||null:null,rem=$('#lRemind')?$('#lRemind').value:'90,30,7';let added=0;
+  const dates=L.dates.map((d,i)=>$('#lx'+i).checked?{...d,kind:$('#lk'+i).value,date:$('#ld'+i).value,repeat:$('#lr'+i).value,title:$('#lt'+i).value,assignee_id:who,remind_days:rem}:null).filter(Boolean);
+  if(dates.length){await api(`/api/properties/${PROP.id}/dates`,{method:'POST',body:{dates,source:'lease'}});added+=dates.length;}
+  const patch={};if(L.spend_limit&&$('#lxSpend').checked)patch.spend_limit=L.spend_limit;
+  if(L.report_notes&&$('#lxRep').checked)patch.report_notes=(PROP.report_notes?PROP.report_notes+'\n\n':'')+L.report_notes;
+  if(Object.keys(patch).length){await api('/api/properties/'+PROP.id,{method:'PATCH',body:patch});added+=Object.keys(patch).length;}
+  for(const [i,c] of L.contacts.entries())if($('#lc'+i).checked){await api(`/api/properties/${PROP.id}/contacts`,{method:'POST',body:c}).catch(()=>0);added++;}
+  LEASE=null;PROPS=[];toast(`Added ${added} item${added===1?'':'s'}`);await refresh();openProperty(PROP.id);}
 async function delProject(pid){const typed=$('#delConfirm').value;
   await api(`/api/projects/${pid}?confirm=${encodeURIComponent(typed)}`,{method:'DELETE'});taskDlg.close();await refresh();toast('Project deleted');}
 async function removeSamples(){if(!confirm('Remove all sample projects and their tasks? Your real projects are not affected.'))return;

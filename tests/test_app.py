@@ -734,18 +734,57 @@ def test_property_page_and_critical_dates(mgr, staff):
     assert mgr.delete(f"/api/properties/{pid}").status_code == 400          # must type the name
 
 
-def test_read_lease_returns_dates_for_review(mgr):
-    pid = ids(mgr.post("/api/properties", json={"address": "1 Lease Test Way, Austin, TX"}))["id"]
-    CLAUDE.append({"summary": "Coastal Coffee, Suite 110, 5-year term.", "dates": [
-        {"kind": "option_notice", "title": "Renewal notice due", "date": "2031-06-30", "tenant": "Coastal Coffee",
-         "notes": "180 days before expiration", "quote": "no later than 180 days", "confidence": "medium"},
-        {"kind": "rent_increase", "title": "Rent bump", "date": "not a date", "tenant": "", "notes": "", "quote": "",
-         "confidence": "low"}]})
+def test_read_property_document_and_insurance_check(mgr, staff):
     import base64
-    out = ids(mgr.post(f"/api/properties/{pid}/read-lease", json={
-        "filename": "lease.txt", "content_type": "text/plain", "data_b64": base64.b64encode(b"LEASE ...").decode()}))
-    assert [d["date"] for d in out["dates"]] == ["2031-06-30"]               # bad dates dropped
-    assert not ids(mgr.get(f"/api/properties/{pid}"))["dates"]               # nothing saved until reviewed
+    pid = ids(mgr.post("/api/properties", json={"address": "1 Doc Test Way, Austin, TX"}))["id"]
+    assert ids(mgr.get(f"/api/properties/{pid}"))["insurance"]["state"] == "missing"
+    CLAUDE.append({"doc_type": "insurance", "summary": "Commercial property policy, Travelers.",
+                   "dates": [{"kind": "tax_protest", "title": "x", "date": "not a date", "repeat": "", "notes": "",
+                              "quote": "", "confidence": "low"}],
+                   "spend_limit": 0, "report_notes": "", "contacts": [
+                       {"role": "Insurance agent", "name": "Pat Lee", "company": "Alamo Insurance", "email": "pat@x.com", "phone": ""}],
+                   "insurance": {"carrier": "Travelers", "policy_number": "P-123", "expires": "2031-03-01",
+                                 "foresite_additional_insured": "yes", "evidence": "Additional Insured endorsement CG 20 26"}})
+    out = ids(mgr.post(f"/api/properties/{pid}/read-document", json={
+        "filename": "policy.pdf", "content_type": "application/pdf", "data_b64": base64.b64encode(b"%PDF-1.4 ...").decode()}))
+    assert [d["kind"] for d in out["dates"]] == ["insurance_renewal"]          # bad date dropped, renewal offered
+    assert out["dates"][0]["date"] == "2031-03-01" and out["dates"][0]["repeat"] == "yearly"
+    page = ids(mgr.get(f"/api/properties/{pid}"))
+    assert page["insurance"]["state"] == "ok" and page["insurance"]["expires"] == "2031-03-01"   # check recorded
+    assert len(page["docs"]) == 1 and not page["dates"] and not page["contacts"]               # rest awaits review
+    assert mgr.get(f"/api/property-docs/{page['docs'][0]['id']}").content.startswith(b"%PDF")
+    # a manager can override the check after looking themselves
+    ids(mgr.patch(f"/api/property-docs/{page['docs'][0]['id']}", json={"insured_ok": False}))
+    assert ids(mgr.get(f"/api/properties/{pid}"))["insurance"]["state"] == "not_named"
+    # owner requirements + contacts
+    ids(mgr.patch(f"/api/properties/{pid}", json={"spend_limit": 5000, "report_notes": "PDF by the 15th to owner + CPA"}))
+    cid = ids(mgr.post(f"/api/properties/{pid}/contacts", json={"role": "CPA", "name": "Dana Cho", "company": "Cho CPA"}))["id"]
+    assert mgr.post(f"/api/properties/{pid}/contacts", json={"role": "CPA"}).status_code == 400
+    assert staff.post(f"/api/properties/{pid}/contacts", json={"role": "CPA", "name": "x"}).status_code == 403
+    page = ids(mgr.get(f"/api/properties/{pid}"))
+    assert page["spend_limit"] == 5000 and page["contacts"][0]["id"] == cid
+
+
+def test_repeating_property_date_rolls_forward(mgr):
+    from datetime import date, timedelta
+    from app import properties
+    pid = ids(mgr.post("/api/properties", json={"address": "2 Report Rd, Austin, TX"}))["id"]
+    due = (date.today() + timedelta(days=5)).isoformat()
+    did = ids(mgr.post(f"/api/properties/{pid}/dates", json={"dates": [
+        {"kind": "owner_report", "title": "Monthly owner report due", "date": due, "repeat": "monthly"}]}))["ids"][0]
+    ids(mgr.patch(f"/api/critical-dates/{did}", json={"status": "handled"}))
+    ds = ids(mgr.get(f"/api/properties/{pid}"))["dates"]
+    nxt = [d for d in ds if d["status"] == "open"]
+    assert len(nxt) == 1
+    from app.recur import add_months
+    assert nxt[0]["date"] == add_months(date.fromisoformat(due), 1).isoformat() and nxt[0]["repeat"] == "monthly"
+    # finishing the next one's task also rolls it
+    properties.run_alerts()
+    with tx() as c:
+        tid = c.execute("SELECT task_id FROM critical_dates WHERE id=?", (nxt[0]["id"],)).fetchone()["task_id"]
+        c.execute("UPDATE tasks SET status='done' WHERE id=?", (tid,))
+    properties.run_alerts()
+    assert len([d for d in ids(mgr.get(f"/api/properties/{pid}"))["dates"] if d["status"] == "open"]) == 1
 
 
 def test_roles_live_on_the_property(mgr):

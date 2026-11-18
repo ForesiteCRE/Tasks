@@ -139,25 +139,37 @@ def load(me_id: int) -> dict:
         if hq and hq["property_id"]:
             t0 = date.today()
             may15 = date(t0.year + (t0 >= date(t0.year, 5, 15)), 5, 15)
-            for kind, title, days, tenant, who, notes in [
-                ("coi_expiry", "Tenant insurance certificate expires", 12, "Suite 110 – Coastal Coffee", "Alex Rivera",
-                 "Request an updated COI naming owner and Foresite as additional insured."),
-                ("option_notice", "Renewal option notice deadline", 25, "Suite 204 – Lone Star Dental", None,
-                 "Tenant must give written notice 180 days before expiration to exercise its 5-year option."),
-                ("rent_increase", "Scheduled rent increase (3%)", 75, "Suite 110 – Coastal Coffee", "Maria Garza",
-                 "Base rent $4,850 → $4,995.50/mo. Update rent roll and send tenant notice 30 days ahead."),
-                ("cam_recon", "CAM reconciliation due to tenants", 130, "All tenants", "Jordan Lee",
-                 "Lease requires the annual reconciliation within 120 days of year-end."),
-                ("tax_protest", "Property tax protest deadline (Bexar CAD)", (may15 - t0).days, "", None,
-                 "Review the appraisal notice; file protest or hire tax consultant."),
-                ("lease_expiration", "Lease expires", 400, "Suite 204 – Lone Star Dental", None, "")]:
+            nxt15 = date(t0.year, t0.month, 15) if t0.day < 15 else (date(t0.year + (t0.month == 12), t0.month % 12 + 1, 15))
+            for kind, title, when, rep, who, notes in [
+                ("owner_report", "Monthly owner report due", nxt15, "monthly", "Jordan Lee",
+                 "P&L, balance sheet, rent roll, aged delinquency and GL detail as one PDF to owner + CPA."),
+                ("insurance_renewal", "Property insurance renewal", t0 + timedelta(days=40), "yearly", None,
+                 "Get renewal quotes; confirm Foresite stays named additional insured on the new policy."),
+                ("loan", "Quarterly lender reporting (rent roll + operating statement)", t0 + timedelta(days=55), "quarterly", "Jordan Lee",
+                 "Send to Frost Bank loan servicing within 45 days of quarter end."),
+                ("tax_protest", "Property tax protest deadline (Bexar CAD)", may15, "yearly", None,
+                 "Review the appraisal notice; file protest or send to the tax consultant."),
+                ("budget_due", "Annual operating budget due to owner", t0 + timedelta(days=150), "yearly", "Maria Garza",
+                 "Draft budget with CAM estimates; owner wants it 60 days before year start."),
+                ("cam_recon", "CAM reconciliation due to tenants", t0 + timedelta(days=130), "yearly", "Jordan Lee",
+                 "Within 120 days of year-end.")]:
                 did = properties.add_date(hq["property_id"], {
-                    "kind": kind, "title": title, "date": (t0 + timedelta(days=days)).isoformat(), "tenant": tenant,
-                    "notes": notes, "assignee_id": ids.get(who) if who else me_id,
-                    "quote": "…shall deliver written notice no later than one hundred eighty (180) days prior to the "
-                             "expiration of the Term…" if kind == "option_notice" else ""}, me_id,
-                    "lease" if kind in ("option_notice", "rent_increase", "lease_expiration") else "manual")
+                    "kind": kind, "title": title, "date": when.isoformat(), "repeat": rep, "notes": notes,
+                    "assignee_id": ids.get(who) if who else me_id,
+                    "quote": "Manager shall deliver monthly reports to Owner no later than the fifteenth (15th) day of each month"
+                             if kind == "owner_report" else ""}, me_id, "lease" if kind == "owner_report" else "manual")
                 m.setdefault("dates", []).append(did)
+            properties.update(hq["property_id"], {
+                "spend_limit": 5000,
+                "report_notes": "One combined PDF by the 15th: P&L (month + YTD vs budget), balance sheet, rent roll, aged "
+                                "delinquency, GL detail. Email to owner and copy the CPA. Variance comments on anything over "
+                                "10% / $1,000.",
+                "notes": "Owner prefers calls before 10am. Emergency repairs: call owner first if over the spend limit."})
+            for ct in [("Owner contact", "Rebecca Torres", "Sonterra Commons Owner LLC", "rtorres@example.com", "(210) 555-0142"),
+                       ("CPA", "Dana Cho", "Cho & Partners CPAs", "dana@example.com", "(210) 555-0188"),
+                       ("Insurance agent", "Pat Lee", "Alamo Commercial Insurance", "pat@example.com", "(210) 555-0110"),
+                       ("Lender", "Loan servicing", "Frost Bank", "servicing@example.com", "")]:
+                properties.add_contact(hq["property_id"], dict(zip(("role", "name", "company", "email", "phone"), ct)))
             properties.run_alerts()
             with tx() as c:
                 m["tasks"] += [r[0] for r in c.execute(
@@ -196,11 +208,11 @@ def remove() -> dict:
     from . import properties
     for did in m.get("dates", []):
         properties.delete_date(did)
-    with tx() as c:   # property pages that only existed because of the sample projects
-        for pid in m.get("properties", []):
-            if not c.execute("SELECT 1 FROM projects WHERE property_id=?", (pid,)).fetchone() and \
-               not c.execute("SELECT 1 FROM critical_dates WHERE property_id=?", (pid,)).fetchone():
-                c.execute("DELETE FROM properties WHERE id=?", (pid,))
+    for pid in m.get("properties", []):   # property pages that only existed because of the sample projects
+        with tx() as c:
+            empty = not c.execute("SELECT 1 FROM projects WHERE property_id=?", (pid,)).fetchone()
+        if empty:
+            properties.delete(pid)
     with tx() as c:
         for rid in m["reminders"]:
             c.execute("DELETE FROM reminders WHERE id=?", (rid,))

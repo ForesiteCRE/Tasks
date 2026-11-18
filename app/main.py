@@ -820,6 +820,8 @@ class PropertyPatch(BaseModel):
     name: str | None = None
     client: str | None = None
     notes: str | None = None
+    report_notes: str | None = None
+    spend_limit: float | None = None
 
 class DateIn(BaseModel):
     kind: str = "other"
@@ -830,6 +832,7 @@ class DateIn(BaseModel):
     quote: str | None = None
     assignee_id: int | None = None
     remind_days: str | None = None
+    repeat: str | None = None
 
 class DatesIn(BaseModel):
     dates: list[DateIn]
@@ -844,6 +847,7 @@ class DatePatch(BaseModel):
     assignee_id: int | None = None
     remind_days: str | None = None
     status: str | None = None
+    repeat: str | None = None
 
 
 @app.get("/api/properties")
@@ -963,18 +967,91 @@ def delete_date(did: int, request: Request):
     return {"ok": True}
 
 
-@app.post("/api/properties/{pid}/read-lease")
-def read_lease(pid: int, body: DocIn, request: Request):
-    """Upload a lease (or amendment / COI / tax notice) → Claude lists its critical dates for review. Nothing is saved."""
+@app.post("/api/properties/{pid}/read-document")
+def read_document(pid: int, body: DocIn, request: Request):
+    """Upload a management agreement / insurance policy / tax notice: the file is kept on the property, the
+    insurance check is recorded, and dates, spend limit, report notes and contacts come back for review."""
     _require_manager(request)
     import base64
     data = base64.b64decode(body.data_b64)
     if len(data) > intake.MAX_DOC_BYTES:
         raise HTTPException(413, "File too large (25 MB max).")
     try:
-        return properties.extract_from_document(data, body.content_type, body.filename)
+        return properties.read_document(pid, data, body.content_type, body.filename, _me_id(request))
     except RuntimeError as e:
         raise HTTPException(400, str(e))
+
+
+@app.post("/api/properties/{pid}/docs")
+def upload_property_doc(pid: int, body: DocIn, request: Request, kind: str = "other"):
+    """Just keep a file on the property (no reading)."""
+    _require_manager(request)
+    import base64
+    data = base64.b64decode(body.data_b64)
+    if len(data) > intake.MAX_DOC_BYTES:
+        raise HTTPException(413, "File too large (25 MB max).")
+    did = properties.save_doc(pid, data, body.filename, body.content_type, _me_id(request))
+    properties.update_doc(did, {"kind": kind})
+    return {"id": did}
+
+
+@app.get("/api/property-docs/{did}")
+def download_property_doc(did: int):
+    got = properties.doc_file(did)
+    if not got:
+        raise HTTPException(404, "File not found")
+    d, path = got
+    return FileResponse(path, media_type=d["content_type"] or "application/octet-stream", filename=d["filename"])
+
+
+class DocPatch(BaseModel):
+    kind: str | None = None
+    insured_ok: bool | None = None
+    expires: str | None = None
+
+@app.patch("/api/property-docs/{did}")
+def patch_property_doc(did: int, body: DocPatch, request: Request):
+    _require_manager(request)
+    properties.update_doc(did, body.model_dump(exclude_unset=True), _me_id(request))
+    return {"ok": True}
+
+
+@app.delete("/api/property-docs/{did}")
+def delete_property_doc(did: int, request: Request):
+    _require_manager(request)
+    properties.delete_doc(did)
+    return {"ok": True}
+
+
+class ContactIn(BaseModel):
+    role: str = "Other"
+    name: str | None = None
+    company: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    notes: str | None = None
+
+@app.post("/api/properties/{pid}/contacts")
+def add_property_contact(pid: int, body: ContactIn, request: Request):
+    _require_manager(request)
+    try:
+        return {"id": properties.add_contact(pid, body.model_dump())}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.patch("/api/property-contacts/{cid}")
+def patch_property_contact(cid: int, body: ContactIn, request: Request):
+    _require_manager(request)
+    properties.update_contact(cid, body.model_dump(exclude_unset=True))
+    return {"ok": True}
+
+
+@app.delete("/api/property-contacts/{cid}")
+def delete_property_contact(cid: int, request: Request):
+    _require_manager(request)
+    properties.delete_contact(cid)
+    return {"ok": True}
 
 
 # ---------- dashboards, reminders, daily recap ----------
