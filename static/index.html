@@ -66,10 +66,13 @@ textarea{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius
 <main>
 
 <section id="v-projects">
-  <div class="card mgr"><h2>Start a project</h2>
+  <div class="card mgr"><div class="row" style="justify-content:space-between;margin:0"><h2 style="margin:0">Start a project</h2>
+    <label class="b ghost" style="cursor:pointer;border:1px solid var(--acc);border-radius:6px;padding:6px 10px;color:var(--acc)">📄 From document<input type="file" id="pDoc" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg" class="hidden" onchange="fromDoc(this)"></label></div>
+    <p id="pDocInfo" class="mute" style="margin:6px 0"></p>
     <div class="row"><input id="pName" placeholder="Project name (e.g. 123 Main St Listing)" style="flex:1;min-width:220px">
       <select id="pTpl" onchange="renderPreview()"></select><label class="mute">Start <input id="pStart" type="date" onchange="renderPreview()"></label></div>
     <div class="row"><input id="pProp" placeholder="Property / address" style="flex:1;min-width:200px"><input id="pClient" placeholder="Client / owner" style="flex:1;min-width:200px"></div>
+    <textarea id="pNotes" rows="2" placeholder="Summary / key terms (optional)"></textarea>
     <details id="pTeamBox"><summary class="mute" style="cursor:pointer">👥 Project team <span id="pTeamSum"></span></summary><div id="pTeam" class="team-grid"></div></details>
     <div id="pPreview"></div>
     <div class="row" style="justify-content:flex-end"><button class="b" onclick="newProject()">Create project</button></div></div>
@@ -406,8 +409,18 @@ async function saveTemplate(){const items=[...document.querySelectorAll('.ti')].
   for(const it of items)await api(`/api/templates/${tid}/items`,{method:'POST',body:it});$('#tItems').innerHTML='';$('#tName').value='';refresh();}
 async function delTpl(id){if(confirm('Delete template?')){await api('/api/templates/'+id,{method:'DELETE'});refresh();}}
 async function newProject(){const name=$('#pName').value.trim();if(!name){alert('Give the project a name.');return;}
-  await api('/api/projects',{method:'POST',body:{name,template_id:+$('#pTpl').value||null,start_date:$('#pStart').value||null,property:$('#pProp').value||null,client:$('#pClient').value||null,team:newTeam()}});
-  ['#pName','#pProp','#pClient'].forEach(x=>$(x).value='');$('#pTpl').value='';$('#pTeam').innerHTML='';await refresh();toast('Project created');}
+  await api('/api/projects',{method:'POST',body:{name,template_id:+$('#pTpl').value||null,start_date:$('#pStart').value||null,property:$('#pProp').value||null,client:$('#pClient').value||null,description:$('#pNotes').value||null,team:newTeam()}});
+  ['#pName','#pProp','#pClient','#pNotes'].forEach(x=>$(x).value='');$('#pDocInfo').textContent='';$('#pTpl').value='';$('#pTeam').innerHTML='';await refresh();toast('Project created');}
+async function fromDoc(inp){const f=inp.files[0];inp.value='';if(!f)return;
+  if(f.size>25e6){alert('That file is over 25 MB.');return;}
+  $('#pDocInfo').textContent=`⏳ Reading ${f.name}… (can take ~30 seconds)`;
+  const b64=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result.split(',')[1]);fr.readAsDataURL(f)});
+  let r;try{r=await api('/api/intake/extract',{method:'POST',body:{filename:f.name,content_type:f.type,data_b64:b64}})}catch(e){$('#pDocInfo').textContent='';return;}
+  const d=r.draft;$('#pName').value=d.project_name||'';$('#pProp').value=d.property||'';$('#pClient').value=d.client||'';$('#pNotes').value=d.notes||'';
+  if(d.start_date)$('#pStart').value=d.start_date;$('#pTpl').value=d.template_id||'';
+  $('#pTeam').querySelectorAll('select').forEach(x=>{const m=d.team.find(m=>m.role_id==x.dataset.role);if(m)x.value=m.user_id});teamSum();
+  $('#pTeamBox').open=true;renderPreview();
+  $('#pDocInfo').innerHTML=`📄 <b>${esc(f.name)}</b> — ${esc(r.summary).replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>')}<br><span class="mute">Check the fields, team and preview below, then Create project.</span>`;}
 async function saveAsTpl(id,n){const name=prompt('Template name',n+' checklist');if(name){await api(`/api/projects/${id}/save-as-template`,{method:'POST',body:{name}});refresh();}}
 async function patch(id,b){try{await api('/api/tasks/'+id,{method:'PATCH',body:b})}finally{await refresh()}}
 const setStatus=(id,s)=>patch(id,{status:s});

@@ -3,7 +3,7 @@ import calendar
 import os
 from datetime import date, timedelta
 
-from . import automations, blink, chat, collab, tpl
+from . import automations, blink, chat, collab, intake, tpl
 from .db import rows, tx
 
 LOOKAHEAD = int(os.getenv("REMINDER_LOOKAHEAD_DAYS", "2"))
@@ -130,9 +130,9 @@ def send_reminders(today: date | None = None, force: bool = False) -> int:
     return sum(map(len, by_user.values()))
 
 
-def handle_inbound(blink_user_id: str, text: str) -> str:
+def handle_inbound(blink_user_id: str, text: str, files: list[dict] | None = None) -> str:
     """Process a chat message from Blink; reply is DM'd back and returned."""
-    blink.log_inbound(blink_user_id, text)
+    blink.log_inbound(blink_user_id, text or f"📎 {len(files or [])} attachment(s)")
     with tx() as c:
         u = c.execute("SELECT * FROM users WHERE blink_user_id=?", (blink_user_id,)).fetchone()
     if not u:
@@ -142,8 +142,17 @@ def handle_inbound(blink_user_id: str, text: str) -> str:
         blink.send_dm(blink_user_id, reply)
         return reply
 
+    # Managers can start a project by chatting (document, pasted terms, or "new project for ...").
+    # Task commands like "done 12" still work in the middle of that conversation.
+    rule = chat.parse_rules(text or "")
+    if u["role"] == "manager" and rule is None and (
+            intake.get_session(u["id"]) or intake.wants_to_start(text or "", bool(files))):
+        reply = intake.handle(dict(u), text or "", files)
+        blink.send_dm(blink_user_id, reply)
+        return reply
+
     mine = open_tasks_for(u["id"])
-    parsed = chat.parse_rules(text) or chat.parse_with_claude(text, mine)
+    parsed = rule or chat.parse_with_claude(text, mine)
 
     if parsed is None:
         reply = "Sorry, I couldn't match that to a task.\n" + chat.help_text()

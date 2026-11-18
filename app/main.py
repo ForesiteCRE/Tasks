@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, automations, blink, chat, collab, maintenance, services, team, tpl
+from . import auth, automations, blink, chat, collab, intake, maintenance, services, team, tpl
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
 logging.basicConfig(level=logging.INFO)
@@ -594,6 +594,24 @@ def remove_dependency(tid: int, dep: int, request: Request):
     return {"ok": True}
 
 
+class DocIn(BaseModel):
+    filename: str = ""
+    content_type: str = ""
+    data_b64: str
+
+@app.post("/api/intake/extract")
+def intake_extract(body: DocIn):
+    """Web: upload a document, get a pre-filled project draft back (managers only)."""
+    import base64
+    data = base64.b64decode(body.data_b64)
+    if len(data) > intake.MAX_DOC_BYTES:
+        raise HTTPException(413, "File too large (25 MB max).")
+    try:
+        return intake.extract_for_web(data, body.content_type, body.filename)
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))
+
+
 @app.get("/api/automations")
 def get_automations():
     return automations.settings()
@@ -670,8 +688,9 @@ def _process_chat_message(chat_id: str, message_id: str):
         with tx() as c:
             c.execute("UPDATE users SET blink_chat_id=? WHERE blink_user_id=?", (chat_id, user_id))
     text = blink.message_text(msg)
-    if text:
-        services.handle_inbound(user_id, text)
+    files = [f for f in (msg.get("files") or []) if f.get("attachment_id")]
+    if text or files:
+        services.handle_inbound(user_id, text, files)
 
 
 @app.post("/api/blink/simulate")

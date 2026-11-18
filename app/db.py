@@ -163,8 +163,9 @@ def init_db():
 
 
 def _init_extras():
-    from . import tpl  # template structure tables (kept in tpl.py)
+    from . import intake, tpl  # tables kept next to their features
     tpl.init()
+    intake.init()
 
 
 def get_setting(key: str) -> str | None:
