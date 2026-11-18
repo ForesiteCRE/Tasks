@@ -18,7 +18,9 @@ def create_project_from_template(template_id: int, name: str, start: date, recur
                                  assignee_overrides: dict | None = None, team: dict | None = None,
                                  details: dict | None = None) -> int:
     """New project from a template: tasks, subtasks, checklist items, 'waiting on' links and role-based assignees."""
+    from . import properties
     pid = tpl.create_project(template_id, name, start, recurrence_id, assignee_overrides, team, details)
+    properties.after_project_created(pid, None if recurrence_id else team)
     notify_new_assignments(pid)
     return pid
 

@@ -79,7 +79,7 @@ def create_project(template_id: int, name: str, start: date, recurrence_id=None,
                    team_overrides: dict | None = None, details: dict | None = None) -> int:
     from . import team as team_mod
     overrides, details = overrides or {}, details or {}
-    team = team_mod.resolve_team(team_overrides)
+    team = team_mod.resolve_team(team_overrides, details.get("property"), property_wins=recurrence_id is not None)
     with tx() as c:
         pid = c.execute(
             "INSERT INTO projects(name, template_id, recurrence_id, start_date, property, client, description) VALUES(?,?,?,?,?,?,?)",

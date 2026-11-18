@@ -257,7 +257,9 @@ def create_from_draft(d: dict) -> int:
     with tx() as c:
         pid = c.execute("INSERT INTO projects(name,start_date,property,client,description) VALUES(?,?,?,?,?)",
                         (name, start.isoformat(), details["property"], details["client"], details["description"])).lastrowid
-    team.save_team(pid, team.resolve_team(team_map))
+    team.save_team(pid, team.resolve_team(team_map, details["property"]))
+    from . import properties
+    properties.after_project_created(pid, team_map)
     return pid
 
 

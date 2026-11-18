@@ -445,7 +445,8 @@ def _create_project(p: ProjectIn) -> int:
     with tx() as c:
         pid = c.execute("INSERT INTO projects(name,start_date,property,client,description) VALUES(?,?,?,?,?)",
                         (p.name, start.isoformat(), p.property, p.client, p.description)).lastrowid
-    team.save_team(pid, team.resolve_team(p.team))
+    team.save_team(pid, team.resolve_team(p.team, p.property))
+    properties.after_project_created(pid, p.team)
     return pid
 
 
@@ -862,6 +863,25 @@ def create_property(body: PropertyIn, request: Request):
 @app.get("/api/properties/upcoming-dates")
 def upcoming_dates(days: int = 120, mine: bool = False, request: Request = None):
     return properties.upcoming(days, _me_id(request) if mine else None)
+
+
+@app.get("/api/properties/team-for")
+def team_for_address(address: str = ""):
+    """New project dialog: if this address is a known property, its team (so the pickers can be pre-filled)."""
+    pid = properties.property_for_address(address)
+    if not pid:
+        return {"property_id": None, "team": {}}
+    p = properties.get(pid)
+    return {"property_id": pid, "name": p["name"], "team": {str(k): v for k, v in properties.team_map(pid).items()}}
+
+
+class PropTeamIn(BaseModel):
+    user_id: int | None = None
+
+@app.put("/api/properties/{pid}/team/{role_id}")
+def set_property_member(pid: int, role_id: int, body: PropTeamIn, request: Request):
+    _require_manager(request)
+    return {"moved": properties.set_member(pid, role_id, body.user_id)}
 
 
 @app.get("/api/properties/{pid}")

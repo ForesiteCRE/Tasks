@@ -85,11 +85,16 @@ def delete_role(role_id: int):
 
 # ---------- a project's team ----------
 
-def resolve_team(overrides: dict | None) -> dict:
-    """role_id -> user_id for a new project: role defaults, overridden by what was picked."""
+def resolve_team(overrides: dict | None, address: str | None = None, property_wins: bool = False) -> dict:
+    """role_id -> user_id for a new project: role defaults, then the property's team (if the address is a known
+    property), then what was picked. property_wins=True (repeating projects) lets the property's current team
+    beat the team saved when the repeat was set up."""
+    from . import properties
     team = {r["id"]: r["default_user_id"] for r in list_roles()}
-    for k, v in (overrides or {}).items():
-        team[int(k)] = int(v) if v else None
+    prop = properties.team_map(properties.property_for_address(address))
+    picked = {int(k): (int(v) if v else None) for k, v in (overrides or {}).items()}
+    for layer in ([picked, prop] if property_wins else [prop, picked]):
+        team.update({k: v for k, v in layer.items() if v or layer is picked})
     return team
 
 
@@ -107,9 +112,16 @@ def project_team(project_id: int) -> list[dict]:
                LEFT JOIN users u ON u.id=t.user_id ORDER BY r.position, r.id""", (project_id,)))
 
 
-def set_member(project_id: int, role_id: int, user_id) -> int:
+def set_member(project_id: int, role_id: int, user_id, _from_property: bool = False) -> int:
     """Change who holds a role on a project; open tasks assigned by that role move to the new person.
+    Projects at a property follow the property's team, so a change there goes to the property instead.
     Returns how many tasks moved."""
+    if not _from_property:
+        from . import properties
+        with tx() as c:
+            p = c.execute("SELECT property_id FROM projects WHERE id=?", (project_id,)).fetchone()
+        if p and p["property_id"]:
+            return properties.set_member(p["property_id"], role_id, user_id)
     with tx() as c:
         if user_id:
             c.execute("INSERT OR REPLACE INTO project_team(project_id, role_id, user_id) VALUES(?,?,?)",

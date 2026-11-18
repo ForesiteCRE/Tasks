@@ -746,3 +746,29 @@ def test_read_lease_returns_dates_for_review(mgr):
         "filename": "lease.txt", "content_type": "text/plain", "data_b64": base64.b64encode(b"LEASE ...").decode()}))
     assert [d["date"] for d in out["dates"]] == ["2031-06-30"]               # bad dates dropped
     assert not ids(mgr.get(f"/api/properties/{pid}"))["dates"]               # nothing saved until reviewed
+
+
+def test_roles_live_on_the_property(mgr):
+    with tx() as c:
+        sam = c.execute("SELECT id FROM users WHERE blink_user_id='u-sam'").fetchone()["id"]
+        jo = c.execute("SELECT id FROM users WHERE blink_user_id='u-jo'").fetchone()["id"]
+    pm = S["pm"]
+    a = ids(mgr.post("/api/projects", json={"name": "Elm takeover", "property": "500 Elm Ave, Austin, TX", "team": {str(pm): jo}}))["id"]
+    pid = ids(mgr.get("/api/properties/team-for", params={"address": "500 Elm Avenue, Austin, Texas"}))["property_id"]
+    assert pid and ids(mgr.get("/api/properties/team-for", params={"address": "500 Elm Ave, Austin, TX"}))["team"][str(pm)] == jo
+    # a second project at the same address picks up the property's team without choosing anyone
+    b = ids(mgr.post("/api/projects", json={"name": "Elm CAM", "property": "500 Elm Avenue, Austin, TX"}))["id"]
+    team_of = lambda p: {m["role_id"]: m["user_id"] for m in [x for x in ids(mgr.get("/api/projects")) if x["id"] == p][0]["team"]}
+    assert team_of(b)[pm] == jo
+    with tx() as c:   # role-assigned open tasks in both projects
+        ta = c.execute("INSERT INTO tasks(project_id,title,assignee_id,role_id) VALUES(?,?,?,?)", (a, "PM thing A", jo, pm)).lastrowid
+        tb = c.execute("INSERT INTO tasks(project_id,title,assignee_id,role_id) VALUES(?,?,?,?)", (b, "PM thing B", jo, pm)).lastrowid
+    # change the role on the property → both projects' teams and tasks follow
+    assert ids(mgr.put(f"/api/properties/{pid}/team/{pm}", json={"user_id": sam}))["moved"] == 2
+    assert ids_task(ta)["assignee_id"] == sam and ids_task(tb)["assignee_id"] == sam
+    assert team_of(a)[pm] == sam and team_of(b)[pm] == sam
+    roles = {r["role_id"]: r["user_id"] for r in ids(mgr.get(f"/api/properties/{pid}"))["roles"]}
+    assert roles[pm] == sam
+    # changing it from a project's panel changes the property (and so the other project) too
+    ids(mgr.put(f"/api/projects/{b}/team/{pm}", json={"user_id": jo}))
+    assert ids_task(ta)["assignee_id"] == jo and team_of(a)[pm] == jo

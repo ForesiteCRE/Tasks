@@ -159,6 +159,7 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 .kpi.clk .l::after{content:" ›";opacity:.5}
 @keyframes flash{0%{box-shadow:0 0 0 3px var(--acc)}100%{box-shadow:0 0 0 3px transparent}}.flash{animation:flash 1.6s ease-out;scroll-margin-top:80px}
 .xclose{display:none}
+.rolelist{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px}.rolelist>div{display:flex;flex-direction:column;background:#f7fafc;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px}.rolelist .via{font-size:11.5px}
 .propgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
 .nextd{margin-top:8px;font-size:12.5px;padding-top:8px;border-top:1px solid var(--line)}
 .dl{display:inline-block;font-size:11.5px;padding:1px 7px;border-radius:99px;background:#eef1f4;color:var(--mute);white-space:nowrap}.dl.red{background:#fde8e8;color:var(--bad)}.dl.amber{background:#fdf1e2;color:#b26a12}
@@ -374,9 +375,9 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
       <select id="pTpl" onchange="renderPreview();repeatHint()"></select><label class="mute">Start <input id="pStart" type="date" onchange="renderPreview()"></label>
       <select id="pRepeat" onchange="repeatHint()" title="Repeat this project"><option value="">Doesn't repeat</option><option value="monthly">🔁 Every month</option><option value="quarterly">🔁 Every quarter</option><option value="yearly">🔁 Every year</option></select></div>
     <p id="pRepeatHint" class="mute hidden" style="margin:2px 0 6px;font-size:12.5px"></p>
-    <div class="row"><input id="pProp" placeholder="Property / address" style="flex:1;min-width:200px"><input id="pClient" placeholder="Client / owner" style="flex:1;min-width:200px"></div>
+    <div class="row"><input id="pProp" placeholder="Property / address" style="flex:1;min-width:200px" oninput="clearTimeout(window._pp);window._pp=setTimeout(propTeamFill,450)"><input id="pClient" placeholder="Client / owner" style="flex:1;min-width:200px"></div>
     <textarea id="pNotes" rows="2" placeholder="Summary / key terms (optional)"></textarea>
-    <details id="pTeamBox"><summary class="mute" style="cursor:pointer">👥 Project team <span id="pTeamSum"></span></summary><div id="pTeam" class="team-grid"></div></details>
+    <details id="pTeamBox"><summary class="mute" style="cursor:pointer">👥 Team <span id="pTeamSum"></span></summary><div id="pTeam" class="team-grid"></div></details>
     <div id="pPreview"></div>
   <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="b ghost" onclick="newProjDlg.close()">Cancel</button><button class="b" onclick="newProject()">Create project</button></div></dialog>
 <dialog id="taskDlg"><button class="xclose" aria-label="Close" onclick="taskDlg.close()">✕</button><div id="taskDlgBody"></div><div class="row" style="justify-content:flex-end;margin-top:12px"><button class="b ghost" onclick="taskDlg.close()">Close</button></div></dialog>
@@ -494,7 +495,13 @@ function projSummary(p){const team=(p.team||[]).filter(m=>m.user_name);const bit
 const roleName=id=>(ROLES.find(r=>r.id===id)||{}).name||'role';
 function renderNewTeam(){const box=$('#pTeam');const cur={};box.querySelectorAll('select').forEach(x=>cur[x.dataset.role]=x.value);
   box.innerHTML=ROLES.map(r=>`<label>${esc(r.name)}<select data-role="${r.id}" onchange="renderPreview();teamSum()">${userOpts(cur[r.id]!==undefined?cur[r.id]:r.default_user_id,'—')}</select></label>`).join('');teamSum();}
-function teamSum(){const n=[...$('#pTeam').querySelectorAll('select')].filter(x=>x.value).length;$('#pTeamSum').textContent=n?`· ${n} assigned`:'';}
+function teamSum(){const n=[...$('#pTeam').querySelectorAll('select')].filter(x=>x.value).length;
+  $('#pTeamSum').textContent=(n?`· ${n} assigned`:'')+(window.PTEAM_FROM?` · from ${PTEAM_FROM} (changes here update the property)`:'');}
+async function propTeamFill(){const a=$('#pProp').value.trim();const r=a?await api('/api/properties/team-for?address='+encodeURIComponent(a)):{property_id:null};
+  window.PTEAM_FROM=r.property_id?r.name:null;
+  if(r.property_id)$('#pTeam').querySelectorAll('select').forEach(x=>{if(r.team[x.dataset.role])x.value=r.team[x.dataset.role]});
+  if(r.property_id&&!$('#pClient').value&&PROPS.length){const pr=PROPS.find(x=>x.id===r.property_id);if(pr&&pr.client)$('#pClient').value=pr.client;}
+  teamSum();renderPreview();}
 function newTeam(){const t={};$('#pTeam').querySelectorAll('select').forEach(x=>t[x.dataset.role]=+x.value||null);return t;}
 function tplItemWho(i,team){if(i.default_role_id){const u=USERS.find(u=>u.id===team[i.default_role_id]);return `${u?esc(u.name):'<span class="over">nobody yet</span>'} <span class="via">via ${esc(roleName(i.default_role_id))}</span>`;}
   return esc((USERS.find(u=>u.id===i.default_assignee_id)||{}).name||'Unassigned');}
@@ -520,9 +527,14 @@ async function openProject(pid){const p=PROJECTS.find(x=>x.id===pid);if(!p)retur
    <label class="mute" style="font-size:12px">Summary / notes</label><textarea ${dis} rows="3" onchange="projPatch(${p.id},{description:this.value})">${esc(p.description||'')}</textarea>
    ${p.property_id?`<div class="row" style="margin:6px 0 0"><button class="b ghost" onclick="openProperty(${p.property_id})">🏢 Property page — critical dates &amp; everything at this address</button></div>`:''}
    ${projTaskPreview(p)}
-   <div class="sec"><h3>👥 Project team</h3><p class="mute" style="margin:0 0 6px;font-size:12px">Tasks assigned by role follow the person in that role — change someone here and their open tasks move over (they get a Blink message).</p>
+   ${p.property_id?`<div class="sec"><div class="row" style="justify-content:space-between;margin:0"><h3 style="margin:0">👥 Team <span class="mute" style="font-weight:400;font-size:12.5px;margin-left:6px">from the property</span></h3>
+     <button class="b ghost sm" onclick="openProperty(${p.property_id})">${mg?'Change on property page →':'Property page →'}</button></div>
+     <p class="mute" style="margin:4px 0 6px;font-size:12px">Roles are set once per property, so every project at this address uses the same people.</p>
+     <div class="rolelist">${p.team.map(m=>{const n=p.tasks.filter(t=>t.role_id===m.role_id&&t.status!=='done').length;
+       return `<div><span class="mute">${esc(m.role)}</span><b>${esc(m.user_name||'—')}</b>${n?`<span class="via">${n} open</span>`:''}</div>`}).join('')}</div></div>`
+   :`<div class="sec"><h3>👥 Project team</h3><p class="mute" style="margin:0 0 6px;font-size:12px">Tasks assigned by role follow the person in that role — change someone here and their open tasks move over (they get a Blink message). Add an address above to share one team across every project at that property.</p>
    <div class="team-grid">${p.team.map(m=>{const n=p.tasks.filter(t=>t.role_id===m.role_id&&t.status!=='done').length;
-     return `<label>${esc(m.role)} ${n?`<span class="via">· ${n} open task${n>1?'s':''}</span>`:''}<select ${dis} onchange="teamSet(${p.id},${m.role_id},this.value)">${userOpts(m.user_id,'—')}</select></label>`}).join('')}</div></div>
+     return `<label>${esc(m.role)} ${n?`<span class="via">· ${n} open task${n>1?'s':''}</span>`:''}<select ${dis} onchange="teamSet(${p.id},${m.role_id},this.value)">${userOpts(m.user_id,'—')}</select></label>`}).join('')}</div></div>`}
    ${(mg||p.created_by===ME.id)?`<details class="danger"><summary>Danger zone</summary>
      <p>Deleting removes this project and all ${p.tasks.length} of its tasks for everyone. It can't be undone (only restored from a nightly backup).</p>
      <label>Type the project name <b>${esc(p.name)}</b> to confirm<input id="delConfirm" autocomplete="off" oninput="$('#delBtn').disabled=this.value.trim().toLowerCase()!==${esc(JSON.stringify(p.name.trim().toLowerCase()))}"></label>
@@ -583,8 +595,9 @@ function renderProperty(){const p=PROP,mg=isMgr(),dis=mg?'':'disabled',open=p.da
   </div><div>
     <div class="panel"><header><h3>📁 Projects</h3><span class="cnt">${p.projects.length}</span></header><div class="body">
       ${p.projects.map(x=>{const pct=x.total?Math.round(100*x.done/x.total):0;return `<div class="row2" style="cursor:pointer;display:block" onclick="openProject(${x.id})"><div class="row" style="justify-content:space-between;margin:0"><b>${esc(x.name)}</b><span class="mute" style="font-size:12px">${x.done}/${x.total}${x.status==='done'?' · finished':''}</span></div><div class="bar" style="margin:6px 0 0"><i style="width:${pct}%"></i></div>${x.overdue?`<span class="risk hi" style="margin-top:6px;display:inline-block">${x.overdue} overdue</span>`:''}</div>`}).join('')||'<div class="empty">No projects at this address yet. Projects whose address matches are linked automatically.</div>'}</div></div>
-    <div class="panel"><header><h3>👥 Team</h3><span class="cnt">${p.team.length}</span></header><div class="body">
-      ${p.team.map(m=>`<div class="row2"><span class="ico">👤</span><div class="grow">${esc(m.name)}<div class="sub">${m.roles.map(esc).join(', ')}</div></div></div>`).join('')||'<div class="empty">Set people in a project\'s team and they show here.</div>'}</div></div>
+    <div class="panel"><header><h3>👥 Property team</h3><span class="cnt">${p.roles.filter(r=>r.user_id).length}/${p.roles.length}</span></header><div class="body">
+      <p class="mute" style="margin:4px 0 8px;font-size:12.5px">Every project at this address uses these people. Change someone here and their open tasks in all of this property's projects move over (they get a Blink message).</p>
+      <div class="team-grid">${p.roles.map(r=>{const n=p.tasks.filter(t=>t.role_id===r.role_id).length;return `<label>${esc(r.role)}${n?` <span class="via">· ${n} open task${n>1?'s':''}</span>`:''}<select ${mg?'':'disabled'} onchange="propTeamSet(${r.role_id},this.value)">${userOpts(r.user_id,'—')}</select></label>`}).join('')}</div></div></div>
   </div></div>
   ${mg?`<details class="danger"><summary>Danger zone</summary><p>Deleting removes this property page and its critical dates. Projects and tasks are kept (just unlinked).</p>
     <label>Type the property name <b>${esc(p.name)}</b> to confirm<input id="propDelConfirm" autocomplete="off"></label>
@@ -613,6 +626,8 @@ async function saveDate(id){const b={kind:$('#cdKind').value,date:$('#cdDate').v
   toast(id?'Saved':'Date added — reminders are set');openProperty(PROP.id);}
 async function cdPatch(id,b){await api('/api/critical-dates/'+id,{method:'PATCH',body:b});await refresh();openProperty(PROP.id);}
 async function cdDel(id){if(!confirm('Remove this critical date? (Its task, if any, stays.)'))return;await api('/api/critical-dates/'+id,{method:'DELETE'});openProperty(PROP.id);}
+async function propTeamSet(rid,uid){const r=await api(`/api/properties/${PROP.id}/team/${rid}`,{method:'PUT',body:{user_id:+uid||null}});
+  toast(r.moved?`Updated — ${r.moved} open task${r.moved>1?'s':''} moved`:'Updated');await refresh();openProperty(PROP.id);}
 async function propPatch(b){await api('/api/properties/'+PROP.id,{method:'PATCH',body:b});PROPS=[];await refresh();openProperty(PROP.id);toast('Saved');}
 async function delProperty(){await api(`/api/properties/${PROP.id}?confirm=${encodeURIComponent($('#propDelConfirm').value)}`,{method:'DELETE'});PROPS=[];toast('Property page deleted');show('properties');}
 function leasePick(){const i=document.createElement('input');i.type='file';i.accept='.pdf,.doc,.docx,.txt,image/*';i.onchange=()=>leaseRead(i.files[0]);i.click();}
@@ -992,14 +1007,14 @@ function repeatHint(){const v=$('#pRepeat').value,h=$('#pRepeatHint');h.classLis
 function openNewProject(fromDoc){renderNewTeam();renderPreview();newProjDlg.showModal();setTimeout(()=>fromDoc?$('#pDoc').click():$('#pName').focus(),50);}
 async function newProject(){const name=$('#pName').value.trim();if(!name){alert('Give the project a name.');return;}
   await api('/api/projects',{method:'POST',body:{name,template_id:+$('#pTpl').value||null,start_date:$('#pStart').value||null,property:$('#pProp').value||null,client:$('#pClient').value||null,description:$('#pNotes').value||null,team:newTeam(),repeat:$('#pRepeat').value||null}});
-  ['#pName','#pProp','#pClient','#pNotes','#pRepeat'].forEach(x=>$(x).value='');repeatHint();$('#pDocInfo').textContent='';$('#pTpl').value='';$('#pTeam').innerHTML='';newProjDlg.close();await refresh();toast('Project created');show('projects');}
+  ['#pName','#pProp','#pClient','#pNotes','#pRepeat'].forEach(x=>$(x).value='');window.PTEAM_FROM=null;repeatHint();$('#pDocInfo').textContent='';$('#pTpl').value='';$('#pTeam').innerHTML='';newProjDlg.close();await refresh();toast('Project created');show('projects');}
 async function fromDoc(inp){const f=inp.files[0];inp.value='';if(!f)return;
   if(f.size>25e6){alert('That file is over 25 MB.');return;}
   $('#pDocInfo').textContent=`⏳ Reading ${f.name}… (can take ~30 seconds)`;
   const b64=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result.split(',')[1]);fr.readAsDataURL(f)});
   let r;try{r=await api('/api/intake/extract',{method:'POST',body:{filename:f.name,content_type:f.type,data_b64:b64}})}catch(e){$('#pDocInfo').textContent='';return;}
   const d=r.draft;$('#pName').value=d.project_name||'';$('#pProp').value=d.property||'';$('#pClient').value=d.client||'';$('#pNotes').value=d.notes||'';
-  if(d.start_date)$('#pStart').value=d.start_date;$('#pTpl').value=d.template_id||'';
+  if(d.start_date)$('#pStart').value=d.start_date;$('#pTpl').value=d.template_id||'';await propTeamFill();
   $('#pTeam').querySelectorAll('select').forEach(x=>{const m=d.team.find(m=>m.role_id==x.dataset.role);if(m)x.value=m.user_id});teamSum();
   $('#pTeamBox').open=true;renderPreview();
   $('#pDocInfo').innerHTML=`📄 <b>${esc(f.name)}</b> — ${esc(r.summary).replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>')}<br><span class="mute">Check the fields, team and preview below, then Create project.</span>`;}

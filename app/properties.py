@@ -50,7 +50,13 @@ def init():
             PRIMARY KEY(date_id, offset_days))""")
         if "property_id" not in {r[1] for r in c.execute("PRAGMA table_info(projects)")}:
             c.execute("ALTER TABLE projects ADD COLUMN property_id INTEGER")
-    link_all()
+        new_team_table = not c.execute("SELECT 1 FROM sqlite_master WHERE name='property_team'").fetchone()
+        c.execute("""CREATE TABLE IF NOT EXISTS property_team(
+            property_id INTEGER NOT NULL, role_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
+            PRIMARY KEY(property_id, role_id))""")
+    link_all(quiet=True)
+    if new_team_table:
+        migrate_teams()
 
 
 # ---------- properties ----------
@@ -83,18 +89,126 @@ def find_or_create(address: str, client: str | None = None, c=None) -> int | Non
         return go(c2)
 
 
-def link_all():
-    """Attach every project that has an address but no property yet (cheap; safe to call often)."""
+def link_all(quiet: bool = False):
+    """Attach every project that has an address but no property yet (cheap; safe to call often).
+    A newly attached project takes on the property's team."""
     with tx() as c:
+        linked = []
         for p in c.execute("""SELECT id, property, client FROM projects WHERE property_id IS NULL AND is_general=0
                               AND COALESCE(TRIM(property),'')!=''""").fetchall():
             c.execute("UPDATE projects SET property_id=? WHERE id=?", (find_or_create(p["property"], p["client"], c), p["id"]))
+            linked.append(p["id"])
+    for pid in linked:
+        if quiet:
+            with blink.quiet():
+                sync_project(pid)
+        else:
+            sync_project(pid)
 
 
 def relink(project_id: int):
     with tx() as c:
         c.execute("UPDATE projects SET property_id=NULL WHERE id=?", (project_id,))
     link_all()
+
+
+# ---------- the property's team (roles live here; projects at the address follow it) ----------
+
+def team_list(property_id: int) -> list[dict]:
+    with tx() as c:
+        return rows(c.execute(
+            """SELECT r.id AS role_id, r.name AS role, t.user_id, u.name AS user_name FROM project_roles r
+               LEFT JOIN property_team t ON t.role_id=r.id AND t.property_id=?
+               LEFT JOIN users u ON u.id=t.user_id ORDER BY r.position, r.id""", (property_id,)))
+
+
+def team_map(property_id: int | None) -> dict:
+    if not property_id:
+        return {}
+    with tx() as c:
+        return {r["role_id"]: r["user_id"] for r in c.execute(
+            "SELECT role_id, user_id FROM property_team WHERE property_id=?", (property_id,))}
+
+
+def property_for_address(address: str | None) -> int | None:
+    n = norm(address or "")
+    if not n:
+        return None
+    with tx() as c:
+        r = c.execute("SELECT id FROM properties WHERE norm=?", (n,)).fetchone()
+    return r["id"] if r else None
+
+
+def set_member(property_id: int, role_id: int, user_id) -> int:
+    """Change who holds a role at a property. Every active project there follows (open role tasks move, the new
+    person gets a Blink message per project). Returns how many tasks moved."""
+    from . import team
+    with tx() as c:
+        if user_id:
+            c.execute("INSERT OR REPLACE INTO property_team(property_id, role_id, user_id) VALUES(?,?,?)",
+                      (property_id, role_id, user_id))
+        else:
+            c.execute("DELETE FROM property_team WHERE property_id=? AND role_id=?", (property_id, role_id))
+        projects = [r[0] for r in c.execute(
+            "SELECT id FROM projects WHERE property_id=? AND status='active'", (property_id,))]
+    return sum(team.set_member(pid, role_id, user_id, _from_property=True) for pid in projects)
+
+
+def sync_project(project_id: int):
+    """Make one project's team match its property: roles the property doesn't have yet are adopted from the
+    project; roles the property has are applied to the project (moving open role tasks)."""
+    from . import team
+    with tx() as c:
+        p = c.execute("SELECT property_id FROM projects WHERE id=?", (project_id,)).fetchone()
+        if not p or not p["property_id"]:
+            return
+        prop = p["property_id"]
+        mine = {r["role_id"]: r["user_id"] for r in c.execute(
+            "SELECT role_id, user_id FROM project_team WHERE project_id=?", (project_id,))}
+        theirs = team_map_c(c, prop)
+        for role, user in mine.items():
+            if user and role not in theirs:
+                c.execute("INSERT INTO property_team(property_id, role_id, user_id) VALUES(?,?,?)", (prop, role, user))
+                theirs[role] = user
+    for role, user in theirs.items():
+        if mine.get(role) != user:
+            team.set_member(project_id, role, user, _from_property=True)
+
+
+def team_map_c(c, property_id: int) -> dict:
+    return {r["role_id"]: r["user_id"] for r in c.execute(
+        "SELECT role_id, user_id FROM property_team WHERE property_id=?", (property_id,))}
+
+
+def after_project_created(project_id: int, chosen: dict | None):
+    """A project was just created with a team picked in the dialog: those picks become the property's team
+    (so the whole address follows), then the project is synced."""
+    link_all()
+    with tx() as c:
+        p = c.execute("SELECT property_id FROM projects WHERE id=?", (project_id,)).fetchone()
+    if not p or not p["property_id"]:
+        return
+    current = team_map(p["property_id"])
+    for role, user in (chosen or {}).items():
+        role, user = int(role), (int(user) if user else None)
+        if user and current.get(role) != user:
+            set_member(p["property_id"], role, user)
+    sync_project(project_id)
+
+
+def migrate_teams():
+    """One-time: build each property's team from its projects (newest first wins), then line projects up."""
+    with tx() as c:
+        for prop in [r[0] for r in c.execute("SELECT id FROM properties")]:
+            for pr in c.execute("""SELECT pt.role_id, pt.user_id FROM project_team pt JOIN projects p ON p.id=pt.project_id
+                                   WHERE p.property_id=? AND pt.user_id IS NOT NULL
+                                   ORDER BY p.status='done', p.start_date DESC, p.id DESC""", (prop,)).fetchall():
+                c.execute("INSERT OR IGNORE INTO property_team(property_id, role_id, user_id) VALUES(?,?,?)",
+                          (prop, pr["role_id"], pr["user_id"]))
+        projects = [r[0] for r in c.execute("SELECT id FROM projects WHERE property_id IS NOT NULL AND status='active'")]
+    with blink.quiet():
+        for pid in projects:
+            sync_project(pid)
 
 
 def create(address: str, name: str | None = None, client: str | None = None, notes: str | None = None) -> int:
@@ -172,7 +286,7 @@ def get(pid: int) -> dict | None:
                                      FROM projects pr LEFT JOIN tasks t ON t.project_id=pr.id
                                      WHERE pr.property_id=? GROUP BY pr.id
                                      ORDER BY pr.status='done', pr.start_date DESC""", (today.isoformat(), pid)))
-        tasks = rows(c.execute("""SELECT t.id, t.title, t.status, t.due_date, t.assignee_id, t.project_id,
+        tasks = rows(c.execute("""SELECT t.id, t.title, t.status, t.due_date, t.assignee_id, t.project_id, t.role_id,
                                          COALESCE(u.name,'Unassigned') AS assignee_name, pr.name AS project_name
                                   FROM tasks t JOIN projects pr ON pr.id=t.project_id LEFT JOIN users u ON u.id=t.assignee_id
                                   WHERE pr.property_id=? AND t.status!='done' AND pr.status='active'
@@ -193,6 +307,7 @@ def get(pid: int) -> dict | None:
             team_by_person[x["id"]]["roles"].append(x["role"])
     photo = next((pr for pr in projects if pr["photo_path"]), projects[0] if projects else None)
     return {**p, "projects": projects, "tasks": tasks, "team": list(team_by_person.values()), "dates": dates,
+            "roles": team_list(pid),
             "photo_project_id": photo["id"] if photo else None, "photo_path": photo["photo_path"] if photo else None,
             "kinds": KINDS}
 
