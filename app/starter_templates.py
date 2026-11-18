@@ -273,6 +273,8 @@ def create_samples(keys: list[str]) -> list[str]:
             # make it look lived-in: tasks that were due a while ago are done
             c.execute("""UPDATE tasks SET status='done', completed_at=datetime('now'), actual_minutes=estimate_minutes
                          WHERE project_id=? AND due_date < date('now','-3 days')""", (pid,))
+            c.execute("""UPDATE task_checklist SET done=1 WHERE task_id IN
+                         (SELECT id FROM tasks WHERE project_id=? AND status='done')""", (pid,))
         made.append(name)
     return made
 
@@ -286,7 +288,8 @@ def remove_samples() -> int:
 
 
 def delete_project(pid: int):
-    from . import collab
+    from . import collab, photos
+    photos.remove_upload(pid)
     with tx() as c:
         tids = [r[0] for r in c.execute("SELECT id FROM tasks WHERE project_id=? AND parent_id IS NULL", (pid,))]
     for tid in tids:

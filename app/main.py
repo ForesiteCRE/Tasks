@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import (auth, automations, blink, chat, collab, dashboard, extras, intake, maintenance, services,
+from . import (auth, automations, blink, chat, collab, dashboard, extras, intake, maintenance, photos, services,
                starter_templates, team, timing, tpl)
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
@@ -202,6 +202,7 @@ def patch_user(uid: int, p: UserPatch):
 @app.get("/api/config")
 def config():
     return {"simulator": SIMULATOR, "blink_mock": blink.MOCK, "plain_english": chat.ai_enabled(),
+            "streetview": bool(photos.MAPS_KEY),
             "last_backup": get_setting("last_backup"), "last_summary_week": get_setting("last_summary_week")}
 
 
@@ -423,6 +424,42 @@ def delete_project(pid: int, request: Request):
         raise HTTPException(400, "That's the built-in “No project” list — delete its tasks instead.")
     starter_templates.delete_project(pid)
     return {"ok": True}
+
+
+class PhotoIn(BaseModel):
+    data_b64: str
+
+@app.post("/api/projects/{pid}/photo")
+def upload_photo(pid: int, body: PhotoIn, request: Request):
+    if not auth.is_manager(request):
+        raise HTTPException(403, "Only managers can change project photos.")
+    try:
+        return {"photo_path": photos.save_upload(pid, body.data_b64)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+@app.delete("/api/projects/{pid}/photo")
+def delete_photo(pid: int, request: Request):
+    if not auth.is_manager(request):
+        raise HTTPException(403, "Only managers can change project photos.")
+    photos.remove_upload(pid)
+    return {"ok": True}
+
+@app.get("/api/projects/{pid}/photo")
+def get_photo(pid: int):
+    path = photos.upload_file(pid)
+    if not path:
+        raise HTTPException(404, "No photo")
+    return FileResponse(path, headers={"Cache-Control": "private, max-age=86400"})
+
+@app.get("/api/projects/{pid}/streetview")
+def get_streetview(pid: int):
+    with tx() as c:
+        p = c.execute("SELECT property FROM projects WHERE id=?", (pid,)).fetchone()
+    path = photos.streetview_file(p["property"]) if p else None
+    if not path:
+        raise HTTPException(404, "No street view")
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=604800"})
 
 
 class TaskMove(BaseModel):

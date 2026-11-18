@@ -455,3 +455,39 @@ def test_starter_templates_and_samples(mgr, staff):
     assert ids(mgr.delete("/api/projects/samples"))["removed"] == len(keys) - 1
     assert not [p for p in ids(mgr.get("/api/projects")) if p["is_sample"]]
     assert ids(mgr.get(f"/api/tasks/{S['walk']}"))["id"] == S["walk"]                 # real projects untouched
+
+
+def test_project_photos_and_streetview(mgr, staff):
+    import base64
+    import types
+
+    from app import photos
+    jpg = b"\xff\xd8\xff\xe0" + b"0" * 200
+    b64 = base64.b64encode(jpg).decode()
+    assert staff.post(f"/api/projects/{S['p1']}/photo", json={"data_b64": b64}).status_code == 403
+    assert mgr.post(f"/api/projects/{S['p1']}/photo", json={"data_b64": base64.b64encode(b"not an image").decode()}).status_code == 400
+    name = ids(mgr.post(f"/api/projects/{S['p1']}/photo", json={"data_b64": "data:image/jpeg;base64," + b64}))["photo_path"]
+    r = staff.get(f"/api/projects/{S['p1']}/photo")
+    assert r.status_code == 200 and r.content == jpg
+    assert [p for p in ids(mgr.get("/api/projects")) if p["id"] == S["p1"]][0]["photo_path"] == name
+    ids(mgr.delete(f"/api/projects/{S['p1']}/photo"))
+    assert staff.get(f"/api/projects/{S['p1']}/photo").status_code == 404
+    # Street View: no key -> 404 (page falls back to a map)
+    photos.MAPS_KEY = ""
+    assert staff.get(f"/api/projects/{S['p1']}/streetview").status_code == 404
+    # with a key: metadata OK -> image fetched once and cached
+    calls = []
+
+    def fake_get(url, params=None, **kw):
+        calls.append(url)
+        if url.endswith("/metadata"):
+            return types.SimpleNamespace(json=lambda: {"status": "OK"})
+        return types.SimpleNamespace(status_code=200, content=jpg)
+    real_get, photos.httpx.get, photos.MAPS_KEY = photos.httpx.get, fake_get, "test-maps-key"
+    try:
+        assert staff.get(f"/api/projects/{S['p1']}/streetview").content == jpg
+        assert staff.get(f"/api/projects/{S['p1']}/streetview").status_code == 200
+        assert len(calls) == 2                                   # second request served from cache
+        assert ids(mgr.get("/api/config"))["streetview"] is True
+    finally:
+        photos.httpx.get, photos.MAPS_KEY = real_get, ""

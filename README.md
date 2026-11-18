@@ -52,6 +52,10 @@ Open http://localhost:8000 and use **Blink chat (simulator)** to test.
 - **Unread @mentions** – red count on Home; NEW tags on comments; clears when you open Home.
 - **Calendar sync** – ⚙︎ My settings → Add to Google Calendar (private iCal feed per person at
   `/calendar/<secret>.ics`; tasks with due dates, reminders, project starts; link can be regenerated).
+- **Starter templates** – Tasks → Templates → Browse: 8 ready-made CRE checklists (onboarding, sale hand-off,
+  sale retain, move-in/out, renewal, CAM rec, budget) + optional sample projects (one-click remove).
+- **Property photos** – each project shows a header image: uploaded photo → Google Street View
+  (`GOOGLE_MAPS_API_KEY`) → map of the address.
 - **Weekly summary** – Monday-morning Blink message (overdue / blocked / due this week) to anyone ticked
   "Weekly summary" on People. Preview or send now from **Reports & backups**.
 - **Daily backups** – a copy of the database every day in `/data/backups` (kept 14 days), downloadable from
@@ -97,6 +101,6 @@ Keep to **one instance** (the reminder scheduler runs inside the app).
 ```bash
 pip install pytest && cd tests && pytest -q
 ```
-29 end-to-end tests: sign-in & roles (admin/manager/staff permissions), projects/templates/roles, subtasks,
+31 end-to-end tests: sign-in & roles (admin/manager/staff permissions), projects/templates/roles, subtasks,
 checklists, comments, dependencies, automations, time tracking, Blink chat commands & webhook signatures,
 project intake from documents, dashboards, reminders, the 6pm recap and every scheduled job.
