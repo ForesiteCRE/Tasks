@@ -95,6 +95,7 @@ textarea{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius
 
 <section id="v-templates" class="hidden">
   <div class="card"><h2>New checklist template</h2>
+    <p class="mute" style="margin-top:0">Tip: the quickest way is to set up one real project the way you like it (subtasks, checklists, “waiting on”), then click <b>Save as template</b> on it. Everything is copied. Below, use <b>More…</b> on any item to add checklist items, subtasks or ordering.</p>
     <div class="row"><input id="tName" placeholder="Template name" style="flex:1"></div>
     <div id="tItems"></div>
     <div class="row"><button class="b ghost" onclick="addItemRow()">+ Item</button><button class="b" onclick="saveTemplate()">Save template</button></div></div>
@@ -104,7 +105,7 @@ textarea{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius
 <section id="v-recurring" class="hidden">
   <div class="card"><h2>New monthly recurring project</h2>
     <div class="row"><select id="rTpl"></select><input id="rPattern" value="{month} {year} – Month-End Close" style="flex:1"><label>Day <input id="rDay" type="number" min="1" max="31" value="1" style="width:60px"></label><button class="b" onclick="saveRecurrence()">Add</button></div>
-    <p class="mute">Use {month}, {year}, {mm} in the name. A project is created from the template on that day each month.</p></div>
+    <p class="mute">Recurring projects copy everything in the template — subtasks, checklists and “waiting on” order. Use {month}, {year}, {mm} in the name. A project is created from the template on that day each month.</p></div>
   <div class="card"><table id="recurring"></table></div>
 </section>
 
@@ -313,10 +314,33 @@ function renderPeople(){
 
 /* ---------- templates (managers) ---------- */
 function renderTemplates(){
-  $('#templates').innerHTML=TPLS.map(t=>`<div class="card"><div class="row" style="justify-content:space-between"><h3>${esc(t.name)}</h3><button class="b ghost" onclick="delTpl(${t.id})">Delete</button></div><p class="mute">${esc(t.description)}</p>
-  <table><tr><th>Item</th><th>Default assignee</th><th>Due (days after start)</th></tr>${t.items.map(i=>`<tr><td>${esc(i.title)}</td><td>${esc((USERS.find(u=>u.id===i.default_assignee_id)||{}).name||'—')}</td><td>+${i.due_offset_days}</td></tr>`).join('')}</table></div>`).join('');
+  $('#templates').innerHTML=TPLS.map(t=>{const byId=Object.fromEntries(t.items.map(i=>[i.id,i]));
+   return `<div class="card"><div class="row" style="justify-content:space-between"><h3>${esc(t.name)} <span class="mute" style="font-weight:400">· ${t.items.length} items</span></h3>
+    <div class="row"><button class="b ghost" onclick="tiAdd(${t.id},null)">+ Item</button><button class="b ghost" style="color:var(--bad)" onclick="delTpl(${t.id})">Delete template</button></div></div>
+    ${t.description?`<p class="mute" style="margin-top:0">${esc(t.description)}</p>`:''}
+    <table><tr><th>Item</th><th style="width:170px">Default assignee</th><th style="width:120px">Due (days after start)</th><th style="width:150px"></th></tr>
+    ${t.items.map(i=>`<tr><td style="padding-left:${8+i.depth*24}px">${i.depth?'<span class="mute">↳</span> ':''}<input value="${esc(i.title)}" style="width:calc(100% - 24px);border-color:transparent" onchange="tiPatch(${i.id},{title:this.value})">
+      <div class="badges" style="margin:2px 0 0 ${i.depth?18:0}px;flex-wrap:wrap">
+       ${i.checklist.map(k=>`<span class="pill">☑ ${esc(k.text)} <a style="cursor:pointer" onclick="tcDel(${k.id})">✕</a></span>`).join('')}
+       ${i.waiting_on.map(w=>`<span class="pill lock">🔒 after “${esc((byId[w]||{}).title||'#'+w)}” <a style="cursor:pointer" onclick="tdDel(${i.id},${w})">✕</a></span>`).join('')}</div></td>
+     <td><select onchange="tiPatch(${i.id},{default_assignee_id:+this.value||null})">${userOpts(i.default_assignee_id,'—')}</select></td>
+     <td>+<input type="number" min="0" value="${i.due_offset_days||0}" style="width:64px" onchange="tiPatch(${i.id},{due_offset_days:+this.value||0})"></td>
+     <td style="white-space:nowrap"><select title="More" onchange="tiAction(this,${t.id},${i.id})"><option value="">More…</option><option value="check">+ Checklist item</option><option value="sub">+ Subtask</option>
+       <optgroup label="Can't start until…">${t.items.filter(o=>o.id!==i.id&&!i.waiting_on.includes(o.id)).map(o=>`<option value="dep:${o.id}">🔒 ${esc(o.title)}</option>`).join('')}</optgroup>
+       <option value="del">🗑 Delete item</option></select></td></tr>`).join('')||'<tr><td colspan="4" class="mute">No items yet.</td></tr>'}
+    </table></div>`}).join('');
   if(!$('#tItems').children.length)addItemRow();
 }
+async function tiAction(sel,tid,iid){const v=sel.value;sel.value='';if(!v)return;
+  if(v==='check'){const x=prompt('Checklist item');if(x)await api(`/api/template-items/${iid}/checklist`,{method:'POST',body:{text:x}});}
+  else if(v==='sub'){await tiAdd(tid,iid);return;}
+  else if(v==='del'){if(!confirm('Delete this item (and its subtasks)?'))return;await api(`/api/template-items/${iid}`,{method:'DELETE'});}
+  else if(v.startsWith('dep:'))await api(`/api/template-items/${iid}/dependencies`,{method:'POST',body:{depends_on_item_id:+v.slice(4)}});
+  refresh();}
+async function tiAdd(tid,parent){const x=prompt(parent?'Subtask title':'Item title');if(!x)return;await api(`/api/templates/${tid}/items`,{method:'POST',body:{title:x,parent_item_id:parent}});refresh();}
+async function tiPatch(iid,b){await api(`/api/template-items/${iid}`,{method:'PATCH',body:b});const t=TPLS.flatMap(t=>t.items).find(i=>i.id===iid);if(t)Object.assign(t,b);}
+async function tcDel(cid){await api(`/api/template-checklist/${cid}`,{method:'DELETE'});refresh();}
+async function tdDel(iid,dep){await api(`/api/template-items/${iid}/dependencies/${dep}`,{method:'DELETE'});refresh();}
 function addItemRow(){const d=document.createElement('div');d.className='row ti';d.innerHTML=`<input placeholder="Checklist item" style="flex:1"><select>${userOpts()}</select><label>Due +<input type="number" value="0" style="width:60px"> days</label>`;$('#tItems').append(d);}
 async function saveTemplate(){const items=[...document.querySelectorAll('.ti')].map(r=>{const [a,b,c]=r.querySelectorAll('input,select');return{title:a.value,default_assignee_id:+b.value||null,due_offset_days:+c.value||0}}).filter(i=>i.title);
   await api('/api/templates',{method:'POST',body:{name:$('#tName').value||'Untitled',items}});$('#tItems').innerHTML='';$('#tName').value='';refresh();}

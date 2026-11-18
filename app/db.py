@@ -159,6 +159,12 @@ def init_db():
             c.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'staff'")  # manager | staff
         if "weekly_summary" not in cols:
             c.execute("ALTER TABLE users ADD COLUMN weekly_summary INTEGER NOT NULL DEFAULT 0")
+    _init_extras()
+
+
+def _init_extras():
+    from . import tpl  # template structure tables (kept in tpl.py)
+    tpl.init()
 
 
 def get_setting(key: str) -> str | None:

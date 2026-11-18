@@ -3,7 +3,7 @@ import calendar
 import os
 from datetime import date, timedelta
 
-from . import automations, blink, chat, collab
+from . import automations, blink, chat, collab, tpl
 from .db import rows, tx
 
 LOOKAHEAD = int(os.getenv("REMINDER_LOOKAHEAD_DAYS", "2"))
@@ -14,38 +14,15 @@ STATUS_LABEL = {"todo": "To do", "in_progress": "In progress", "blocked": "Block
 
 def create_project_from_template(template_id: int, name: str, start: date, recurrence_id=None,
                                  assignee_overrides: dict | None = None) -> int:
-    """Copy a template's checklist into a new project. assignee_overrides maps template_item_id -> user_id."""
-    overrides = assignee_overrides or {}
-    with tx() as c:
-        pid = c.execute(
-            "INSERT INTO projects(name, template_id, recurrence_id, start_date) VALUES(?,?,?,?)",
-            (name, template_id, recurrence_id, start.isoformat()),
-        ).lastrowid
-        items = rows(c.execute("SELECT * FROM template_items WHERE template_id=? ORDER BY position, id", (template_id,)))
-        for it in items:
-            c.execute(
-                "INSERT INTO tasks(project_id, title, assignee_id, due_date, position) VALUES(?,?,?,?,?)",
-                (pid, it["title"], overrides.get(it["id"], it["default_assignee_id"]),
-                 (start + timedelta(days=it["due_offset_days"] or 0)).isoformat(), it["position"]),
-            )
+    """New project from a template: tasks, subtasks, checklist items and 'waiting on' links."""
+    pid = tpl.create_project(template_id, name, start, recurrence_id, assignee_overrides)
     notify_new_assignments(pid)
     return pid
 
 
 def save_project_as_template(project_id: int, name: str) -> int:
-    """'This project went well — reuse its checklist next time.'"""
-    with tx() as c:
-        p = c.execute("SELECT * FROM projects WHERE id=?", (project_id,)).fetchone()
-        start = date.fromisoformat(p["start_date"])
-        tid = c.execute("INSERT INTO templates(name, description) VALUES(?,?)",
-                        (name, f"Saved from project '{p['name']}'")).lastrowid
-        for i, t in enumerate(rows(c.execute("SELECT * FROM tasks WHERE project_id=? ORDER BY position, id", (project_id,)))):
-            offset = (date.fromisoformat(t["due_date"]) - start).days if t["due_date"] else 0
-            c.execute(
-                "INSERT INTO template_items(template_id, title, default_assignee_id, due_offset_days, position) VALUES(?,?,?,?,?)",
-                (tid, t["title"], t["assignee_id"], offset, i),
-            )
-    return tid
+    """'This project went well — reuse its structure next time.'"""
+    return tpl.save_from_project(project_id, name)
 
 
 def run_recurrences(today: date | None = None) -> list[int]:

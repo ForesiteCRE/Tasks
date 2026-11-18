@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, automations, blink, chat, collab, maintenance, services
+from . import auth, automations, blink, chat, collab, maintenance, services, tpl
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
 logging.basicConfig(level=logging.INFO)
@@ -39,6 +39,7 @@ async def scheduler_loop():
 @asynccontextmanager
 async def lifespan(_):
     init_db()
+    tpl.init()
     task = asyncio.create_task(scheduler_loop())
     yield
     task.cancel()
@@ -242,11 +243,56 @@ def match_blink():
 # ---------- templates ----------
 @app.get("/api/templates")
 def list_templates():
-    with tx() as c:
-        ts = rows(c.execute("SELECT * FROM templates ORDER BY name"))
-        for t in ts:
-            t["items"] = rows(c.execute("SELECT * FROM template_items WHERE template_id=? ORDER BY position,id", (t["id"],)))
-        return ts
+    return tpl.list_templates()
+
+
+class TemplateItemNew(BaseModel):
+    title: str
+    parent_item_id: int | None = None
+    default_assignee_id: int | None = None
+    due_offset_days: int = 0
+
+@app.post("/api/templates/{tid}/items")
+def add_template_item(tid: int, body: TemplateItemNew):
+    return {"id": tpl.add_item(tid, body.title, body.parent_item_id, body.default_assignee_id, body.due_offset_days)}
+
+@app.patch("/api/template-items/{iid}")
+def patch_template_item(iid: int, body: dict):
+    tpl.update_item(iid, body)
+    return {"ok": True}
+
+@app.delete("/api/template-items/{iid}")
+def delete_template_item(iid: int):
+    tpl.delete_item(iid)
+    return {"ok": True}
+
+class TemplateChecklistIn(BaseModel):
+    text: str
+
+@app.post("/api/template-items/{iid}/checklist")
+def add_template_checklist(iid: int, body: TemplateChecklistIn):
+    return {"id": tpl.add_checklist(iid, body.text)}
+
+@app.delete("/api/template-checklist/{cid}")
+def delete_template_checklist(cid: int):
+    tpl.delete_checklist(cid)
+    return {"ok": True}
+
+class TemplateDepIn(BaseModel):
+    depends_on_item_id: int
+
+@app.post("/api/template-items/{iid}/dependencies")
+def add_template_dep(iid: int, body: TemplateDepIn):
+    try:
+        tpl.add_dependency(iid, body.depends_on_item_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+@app.delete("/api/template-items/{iid}/dependencies/{dep}")
+def remove_template_dep(iid: int, dep: int):
+    tpl.remove_dependency(iid, dep)
+    return {"ok": True}
 
 @app.post("/api/templates")
 def create_template(t: TemplateIn):
