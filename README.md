@@ -27,6 +27,12 @@ Open http://localhost:8000 and use **Blink chat (simulator)** to test.
   `note 5 …`, `list`. With `ANTHROPIC_API_KEY` set, free text ("finished the rent roll, still
   waiting on Joe for CAM") is mapped onto the person's tasks by Claude.
 - Web checkboxes and Blink updates share one history (`task_updates`).
+- **Task detail panel** – click any task: description, checklist, subtasks, “waiting on” dependencies,
+  comments with **@mentions** (the person gets a Blink DM; reply in Blink with `comment 12 …`), history.
+- **Dependencies** – a task waiting on others shows 🔒, is skipped by reminders, and its assignee gets a
+  “▶️ your turn” Blink message when the last blocker is done.
+- **Automations** (Reports & backups → Automations): Blink alerts to managers when a task is Blocked, N days
+  overdue, or a project completes; assignee alerts for “your turn” and new comments.
 - **Weekly summary** – Monday-morning Blink message (overdue / blocked / due this week) to anyone ticked
   "Weekly summary" on People. Preview or send now from **Reports & backups**.
 - **Daily backups** – a copy of the database every day in `/data/backups` (kept 14 days), downloadable from

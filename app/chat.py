@@ -24,7 +24,7 @@ STATUS_WORDS = {
 HELP = (
     "Reply with an update, e.g.\n"
     "• `done 12`\n• `12 in progress`\n• `blocked 7 waiting on lender`\n"
-    "• `note 5 called the tenant`\n• `list` – show your open tasks"
+    "• `note 5 called the tenant`\n• `comment 5 @sam can you send the photos?`\n• `list` – show your open tasks"
 )
 
 
@@ -35,6 +35,7 @@ _STATUS_RE = "|".join(sorted(map(re.escape, STATUS_WORDS), key=len, reverse=True
 CMD_A = re.compile(rf"^\s*({_STATUS_RE})\s*#?(\d+)\s*[:\-]?\s*(.*)$", re.I)  # done 12 note
 CMD_B = re.compile(rf"^\s*#?(\d+)\s*[:\-]?\s*({_STATUS_RE})\b\s*[:\-]?\s*(.*)$", re.I)  # 12 done note
 CMD_NOTE = re.compile(r"^\s*note\s*#?(\d+)\s*[:\-]?\s*(.+)$", re.I)
+CMD_COMMENT = re.compile(r"^\s*comment\s*#?(\d+)\s*[:\-]?\s*(.+)$", re.I | re.S)
 
 
 def parse_rules(text: str) -> dict | None:
@@ -45,6 +46,8 @@ def parse_rules(text: str) -> dict | None:
         return {"intent": "help", "updates": []}
     if low in {"list", "tasks", "my tasks", "status"}:
         return {"intent": "list", "updates": []}
+    if m := CMD_COMMENT.match(t):
+        return {"intent": "comment", "task_id": int(m[1]), "body": m[2].strip(), "updates": []}
     updates = []
     for line in filter(None, (l.strip() for l in re.split(r"[\n;]", t))):
         if m := CMD_NOTE.match(line):

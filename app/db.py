@@ -75,6 +75,40 @@ CREATE TABLE IF NOT EXISTS task_updates (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Checklist items inside a task (lightweight; no assignee/due)
+CREATE TABLE IF NOT EXISTS task_checklist (
+    id INTEGER PRIMARY KEY,
+    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    text TEXT NOT NULL,
+    done INTEGER NOT NULL DEFAULT 0,
+    position INTEGER NOT NULL DEFAULT 0
+);
+
+-- Discussion on a task; @mentions are notified in Blink
+CREATE TABLE IF NOT EXISTS task_comments (
+    id INTEGER PRIMARY KEY,
+    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id),
+    body TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'web',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- task_id can't really start until depends_on_id is done
+CREATE TABLE IF NOT EXISTS task_dependencies (
+    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    depends_on_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    PRIMARY KEY (task_id, depends_on_id)
+);
+
+-- Which automation already fired for which task (so managers aren't messaged twice)
+CREATE TABLE IF NOT EXISTS automation_log (
+    rule TEXT NOT NULL,
+    task_id INTEGER NOT NULL,
+    sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (rule, task_id)
+);
+
 -- Small key/value store for scheduler bookkeeping (last backup date, last summary week, ...)
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -116,6 +150,11 @@ def init_db():
         cols = {r[1] for r in c.execute("PRAGMA table_info(users)")}
         if "blink_chat_id" not in cols:  # migrate DBs created before this column existed
             c.execute("ALTER TABLE users ADD COLUMN blink_chat_id TEXT")
+        tcols = {r[1] for r in c.execute("PRAGMA table_info(tasks)")}
+        if "parent_id" not in tcols:  # subtasks are tasks with a parent
+            c.execute("ALTER TABLE tasks ADD COLUMN parent_id INTEGER")
+        if "description" not in tcols:
+            c.execute("ALTER TABLE tasks ADD COLUMN description TEXT")
         if "role" not in cols:
             c.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'staff'")  # manager | staff
         if "weekly_summary" not in cols:

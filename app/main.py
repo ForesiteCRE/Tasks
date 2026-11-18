@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, blink, chat, maintenance, services
+from . import auth, automations, blink, chat, collab, maintenance, services
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
 logging.basicConfig(level=logging.INFO)
@@ -28,7 +28,7 @@ async def scheduler_loop():
             except Exception:
                 logging.exception("scheduler job %s failed", job.__name__)
         if datetime.now().hour >= REMINDER_HOUR:
-            for job in (services.send_reminders, maintenance.send_weekly_summary):
+            for job in (services.send_reminders, maintenance.send_weekly_summary, automations.overdue_escalation):
                 try:
                     job()
                 except Exception:
@@ -97,12 +97,16 @@ class ProjectIn(BaseModel):
     start_date: date | None = None
 
 class TaskIn(BaseModel):
-    project_id: int
+    project_id: int | None = None
+    parent_id: int | None = None
     title: str
+    description: str | None = None
     assignee_id: int | None = None
     due_date: date | None = None
 
 class TaskPatch(BaseModel):
+    title: str | None = None
+    description: str | None = None
     status: str | None = None
     assignee_id: int | None = None
     due_date: date | None = None
@@ -290,7 +294,12 @@ def list_projects():
             p["tasks"] = rows(c.execute(
                 """SELECT t.*, u.name AS assignee_name,
                           (SELECT note FROM task_updates tu WHERE tu.task_id=t.id AND note IS NOT NULL
-                           ORDER BY tu.id DESC LIMIT 1) AS last_note
+                           ORDER BY tu.id DESC LIMIT 1) AS last_note,
+                          (SELECT COUNT(*) FROM task_checklist k WHERE k.task_id=t.id) AS check_total,
+                          (SELECT COUNT(*) FROM task_checklist k WHERE k.task_id=t.id AND k.done) AS check_done,
+                          (SELECT COUNT(*) FROM task_comments m WHERE m.task_id=t.id) AS comments,
+                          (SELECT GROUP_CONCAT(b.id) FROM task_dependencies d JOIN tasks b ON b.id=d.depends_on_id
+                           WHERE d.task_id=t.id AND b.status!='done') AS waiting_on
                    FROM tasks t LEFT JOIN users u ON u.id=t.assignee_id
                    WHERE project_id=? ORDER BY position,id""", (p["id"],)))
         return ps
@@ -310,13 +319,30 @@ def save_as_template(pid: int, body: SaveAsTemplate):
 
 # ---------- tasks ----------
 @app.post("/api/tasks")
-def create_task(t: TaskIn, background: BackgroundTasks):
+def create_task(t: TaskIn, background: BackgroundTasks, request: Request):
+    me = auth.current_user(request) or {}
     with tx() as c:
-        tid = c.execute("INSERT INTO tasks(project_id,title,assignee_id,due_date,position) VALUES(?,?,?,?,999)",
-                        (t.project_id, t.title, t.assignee_id, t.due_date and t.due_date.isoformat())).lastrowid
+        if t.parent_id:
+            parent = c.execute("SELECT project_id, assignee_id FROM tasks WHERE id=?", (t.parent_id,)).fetchone()
+            if not parent:
+                raise HTTPException(404, "Parent task not found")
+            t.project_id = parent["project_id"]
+            allowed = me.get("role") == "manager" or parent["assignee_id"] == me.get("id")
+        else:
+            allowed = me.get("role") == "manager"
+        if not allowed:
+            raise HTTPException(403, "Only managers (or the parent task's assignee, for subtasks) can add tasks.")
+        if not t.project_id:
+            raise HTTPException(400, "project_id or parent_id is required")
+        tid = c.execute(
+            "INSERT INTO tasks(project_id,parent_id,title,description,assignee_id,due_date,position) VALUES(?,?,?,?,?,?,999)",
+            (t.project_id, t.parent_id, t.title, t.description, t.assignee_id,
+             t.due_date and t.due_date.isoformat())).lastrowid
+        c.execute("UPDATE projects SET status='active' WHERE id=?", (t.project_id,))
         u = c.execute("SELECT blink_user_id FROM users WHERE id=?", (t.assignee_id,)).fetchone() if t.assignee_id else None
-    if u and u["blink_user_id"]:
-        text = f"📌 New task assigned: #{tid} {t.title}" + (f" – due {t.due_date:%b %d}" if t.due_date else "")
+    if u and u["blink_user_id"] and t.assignee_id != me.get("id"):
+        kind = "subtask" if t.parent_id else "task"
+        text = f"📌 New {kind} assigned: #{tid} {t.title}" + (f" – due {t.due_date:%b %d}" if t.due_date else "")
         background.add_task(_notify, u["blink_user_id"], text)
     return {"id": tid}
 
@@ -333,20 +359,134 @@ def patch_task(tid: int, p: TaskPatch, request: Request):
     me = auth.current_user(request) or {}
     p.user_id = me.get("id")
     if me.get("role") != "manager":
-        with tx() as c:
-            t = c.execute("SELECT assignee_id FROM tasks WHERE id=?", (tid,)).fetchone()
-        if not t or t["assignee_id"] != me.get("id"):
-            raise HTTPException(403, "You can only update tasks assigned to you.")
-        if p.assignee_id is not None or p.due_date is not None:
-            raise HTTPException(403, "Only managers can reassign tasks or change due dates.")
+        _require_task_editor(request, tid)
+        if p.assignee_id is not None or p.due_date is not None or p.title is not None:
+            raise HTTPException(403, "Only managers can rename, reassign or change due dates.")
     with tx() as c:
+        if p.title:
+            c.execute("UPDATE tasks SET title=? WHERE id=?", (p.title.strip(), tid))
+        if p.description is not None:
+            c.execute("UPDATE tasks SET description=? WHERE id=?", (p.description, tid))
         if p.assignee_id is not None:
             c.execute("UPDATE tasks SET assignee_id=? WHERE id=?", (p.assignee_id, tid))
         if p.due_date is not None:
             c.execute("UPDATE tasks SET due_date=? WHERE id=?", (p.due_date.isoformat(), tid))
+    if p.due_date is not None:
+        automations.reset_overdue_flag(tid)
     if p.status or p.note:
         services.apply_update(tid, p.user_id, "web", p.status, p.note)
     return {"ok": True}
+
+def _require_task_editor(request: Request, tid: int):
+    """Managers, the task's assignee, or the assignee of its parent task."""
+    me = auth.current_user(request) or {}
+    if me.get("role") == "manager":
+        return me
+    with tx() as c:
+        t = c.execute("""SELECT t.assignee_id, p.assignee_id AS parent_assignee FROM tasks t
+                         LEFT JOIN tasks p ON p.id=t.parent_id WHERE t.id=?""", (tid,)).fetchone()
+    if not t:
+        raise HTTPException(404, "Task not found")
+    if me.get("id") not in (t["assignee_id"], t["parent_assignee"]):
+        raise HTTPException(403, "You can only change tasks assigned to you.")
+    return me
+
+
+def _require_manager(request: Request):
+    if not auth.is_manager(request):
+        raise HTTPException(403, "Only managers can do that.")
+
+
+@app.get("/api/tasks/{tid}")
+def get_task(tid: int):
+    d = collab.task_detail(tid)
+    if not d:
+        raise HTTPException(404, "Task not found")
+    return d
+
+
+@app.delete("/api/tasks/{tid}")
+def delete_task(tid: int, request: Request):
+    _require_manager(request)
+    collab.delete_task(tid)
+    return {"ok": True}
+
+
+class ChecklistIn(BaseModel):
+    text: str
+
+class ChecklistPatch(BaseModel):
+    done: bool | None = None
+    text: str | None = None
+
+@app.post("/api/tasks/{tid}/checklist")
+def add_checklist(tid: int, body: ChecklistIn, request: Request):
+    _require_task_editor(request, tid)
+    return {"id": collab.add_checklist_item(tid, body.text)}
+
+@app.patch("/api/checklist/{cid}")
+def patch_checklist(cid: int, body: ChecklistPatch, request: Request):
+    tid = collab.checklist_task_id(cid) or 0
+    _require_task_editor(request, tid)
+    collab.update_checklist_item(cid, body.done, body.text)
+    return {"ok": True}
+
+@app.delete("/api/checklist/{cid}")
+def delete_checklist(cid: int, request: Request):
+    tid = collab.checklist_task_id(cid) or 0
+    _require_task_editor(request, tid)
+    collab.delete_checklist_item(cid)
+    return {"ok": True}
+
+
+class CommentIn(BaseModel):
+    body: str
+
+@app.post("/api/tasks/{tid}/comments")
+def add_comment(tid: int, body: CommentIn, request: Request):
+    """Anyone signed in can comment on any task (that's how people ask each other questions)."""
+    if not body.body.strip():
+        raise HTTPException(400, "Comment is empty")
+    if not collab.task_detail(tid):
+        raise HTTPException(404, "Task not found")
+    return collab.add_comment(tid, (auth.current_user(request) or {}).get("id"), body.body)
+
+@app.get("/api/handles")
+def handles():
+    """@mention handles for the comment box autocomplete."""
+    with tx() as c:
+        us = rows(c.execute("SELECT id, name, email FROM users ORDER BY lower(name)"))
+    return [{"id": u["id"], "name": u["name"], "handle": collab.handle_for(u)} for u in us]
+
+
+class DependencyIn(BaseModel):
+    depends_on_id: int
+
+@app.post("/api/tasks/{tid}/dependencies")
+def add_dependency(tid: int, body: DependencyIn, request: Request):
+    _require_manager(request)
+    try:
+        collab.add_dependency(tid, body.depends_on_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+@app.delete("/api/tasks/{tid}/dependencies/{dep}")
+def remove_dependency(tid: int, dep: int, request: Request):
+    _require_manager(request)
+    collab.remove_dependency(tid, dep)
+    return {"ok": True}
+
+
+@app.get("/api/automations")
+def get_automations():
+    return automations.settings()
+
+@app.put("/api/automations")
+def put_automations(body: dict):
+    automations.update_settings(body)
+    return automations.settings()
+
 
 @app.get("/api/tasks/{tid}/updates")
 def task_updates(tid: int):

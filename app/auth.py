@@ -62,14 +62,15 @@ def _apply_role_rules(uid: int, email: str):
 
 # Staff (non-managers) may read everything but only change their own tasks.
 # Everything else that writes, plus these read-only-but-sensitive paths, is manager-only.
-MANAGER_ONLY_GET_PREFIXES = ("/api/backups", "/api/summary", "/api/blink/messages")
+MANAGER_ONLY_GET_PREFIXES = ("/api/backups", "/api/summary", "/api/blink/messages", "/api/automations")
 
 
 def _staff_allowed(request: Request) -> bool:
     path, method = request.url.path, request.method
     if method == "GET":
         return not path.startswith(MANAGER_ONLY_GET_PREFIXES)
-    return method == "PATCH" and path.startswith("/api/tasks/")  # ownership checked in the endpoint
+    # Task-level writes: each endpoint checks ownership / manager itself.
+    return path.startswith(("/api/tasks", "/api/checklist/"))
 
 
 async def require_login(request: Request, call_next):

@@ -34,7 +34,15 @@ table{width:100%;border-collapse:collapse}td,th{padding:6px 8px;border-top:1px s
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
 .tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}.tile b{display:block;font-size:24px}.tile.bad b{color:var(--bad)}.tile.warn b{color:var(--warn)}
 .counts{display:flex;gap:6px;flex-wrap:wrap}
-dialog{border:1px solid var(--line);border-radius:12px;padding:18px;max-width:440px;width:92vw}dialog::backdrop{background:rgba(20,24,33,.35)}
+dialog{border:1px solid var(--line);border-radius:12px;padding:18px;max-width:700px;width:94vw;max-height:90vh}
+.tlink{cursor:pointer}.tlink:hover{color:var(--acc);text-decoration:underline}
+.badges{display:inline-flex;gap:4px;margin-left:6px;vertical-align:middle}.badges .pill{font-size:10.5px}
+.lock{background:#fff4e6;color:#b35c00}.sub td:nth-child(2){padding-left:28px}
+.sec{margin-top:14px}.sec h3{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.ck{display:flex;align-items:center;gap:8px;padding:3px 0}.ck.done span{text-decoration:line-through;color:var(--mute)}.ck .x{margin-left:auto;cursor:pointer;color:var(--mute);border:0;background:none}
+.cm{padding:8px 10px;background:#f6f7f9;border-radius:8px;margin:6px 0}.cm .who{font-weight:600;font-size:12px}.cm .when{color:var(--mute);font-size:11px;margin-left:6px}.cm b.at{color:var(--acc)}
+.ac{position:absolute;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.08);z-index:5;min-width:200px}.ac div{padding:6px 10px;cursor:pointer}.ac div:hover,.ac div.on{background:#e7ecff}
+textarea{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius:6px;width:100%;resize:vertical}dialog::backdrop{background:rgba(20,24,33,.35)}
 @media (max-width:700px){.cal .day{min-height:70px}.chip{font-size:11px}main{padding:12px}}
 </style>
 </head>
@@ -116,6 +124,9 @@ dialog{border:1px solid var(--line);border-radius:12px;padding:18px;max-width:44
     <p class="mute">A copy of the whole task database is saved automatically every day and kept for 14 days. Download one now and then to keep an off-site copy.</p>
     <div class="row"><button class="b" onclick="runBackup()">Back up now</button><span id="bkInfo" class="mute"></span></div>
     <table id="backups"></table></div>
+  <div class="card"><h2>⚡ Automations</h2>
+    <p class="mute">Blink messages sent automatically. “Managers” = everyone with the Manager role who has a Blink ID (the person who triggered it isn't messaged).</p>
+    <table id="autoTbl"></table></div>
   <div class="card"><h2>💬 Plain-English updates in Blink</h2><p id="aiInfo" class="mute"></p></div>
 </section>
 
@@ -148,7 +159,7 @@ const statusSel=(t)=>`<select class="pill ${t.status}" ${canEdit(t)?'':'disabled
 
 async function refresh(){
   [USERS,TPLS,PROJECTS]=await Promise.all([api('/api/users'),api('/api/templates'),api('/api/projects')]);
-  TASKS=PROJECTS.flatMap(p=>p.tasks.map(t=>({...t,project_name:p.name,project_status:p.status})));
+  TASKS=PROJECTS.flatMap(p=>p.tasks.map(t=>({...t,project_name:p.name,project_status:p.status})));HANDLES=[];
   document.querySelectorAll('.mgr').forEach(el=>el.classList.toggle('hidden',!isMgr()));
   $('#roleNote').textContent=isMgr()?'':'You can view everything and update tasks assigned to you.';
   const tOpts='<option value="">Blank (no template)</option>'+TPLS.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
@@ -166,6 +177,15 @@ async function refresh(){
 }
 
 /* ---------- projects ---------- */
+function orderTasks(ts){const kids={};ts.filter(t=>t.parent_id).forEach(t=>(kids[t.parent_id]=kids[t.parent_id]||[]).push(t));
+  const ids=new Set(ts.map(t=>t.id)),out=[];const walk=t=>{out.push(t);(kids[t.id]||[]).forEach(walk)};
+  ts.filter(t=>!t.parent_id||!ids.has(t.parent_id)).forEach(walk);return out;}
+function badges(t){const subs=TASKS.filter(x=>x.parent_id===t.id),b=[];
+  if(subs.length)b.push(`<span class="pill">↳ ${subs.filter(x=>x.status==='done').length}/${subs.length}</span>`);
+  if(t.check_total)b.push(`<span class="pill">☑ ${t.check_done}/${t.check_total}</span>`);
+  if(t.comments)b.push(`<span class="pill">💬 ${t.comments}</span>`);
+  if(t.waiting_on&&t.status!=='done')b.push(`<span class="pill lock" title="Waiting on #${String(t.waiting_on).split(',').join(', #')}">🔒 waiting on #${String(t.waiting_on).split(',').join(', #')}</span>`);
+  return b.length?`<span class="badges">${b.join('')}</span>`:'';}
 function renderProjects(){
   const mine=$('#pFilter').value==='mine', hideDone=$('#pHideDone').checked;
   const ps=PROJECTS.filter(p=>!(hideDone&&p.status==='done')).map(p=>({...p,shown:mine?p.tasks.filter(t=>t.assignee_id===ME.id):p.tasks})).filter(p=>!mine||p.shown.length);
@@ -174,7 +194,7 @@ function renderProjects(){
   <span class="mute">${done}/${p.tasks.length} done · started ${fmtDate(p.start_date)} ${isMgr()?`<button class="b ghost" onclick="saveAsTpl(${p.id},'${esc(p.name).replace(/'/g,"")}')">Save as template</button>`:''}</span></div>
   <div class="bar"><i style="width:${pct}%"></i></div>
   <table><tr><th>#</th><th>Task</th><th>Assignee</th><th>Due</th><th>Status</th></tr>
-  ${p.shown.map(t=>`<tr><td class="mute">${t.id}</td><td><label><input type="checkbox" ${t.status==='done'?'checked':''} ${canEdit(t)?'':'disabled'} onchange="setStatus(${t.id},this.checked?'done':'todo')"> ${esc(t.title)}</label>${t.last_note?`<div class="note">“${esc(t.last_note)}”</div>`:''}</td>
+  ${orderTasks(p.shown).map(t=>`<tr class="${t.parent_id?'sub':''}"><td class="mute">${t.id}</td><td><label><input type="checkbox" ${t.status==='done'?'checked':''} ${canEdit(t)?'':'disabled'} onchange="setStatus(${t.id},this.checked?'done':'todo')"></label> ${t.parent_id?'<span class="mute">↳</span> ':''}<span class="tlink" onclick="openTask(${t.id})">${esc(t.title)}</span>${badges(t)}${t.last_note?`<div class="note">“${esc(t.last_note)}”</div>`:''}</td>
    <td><select ${isMgr()?'':'disabled'} onchange="patch(${t.id},{assignee_id:+this.value||null})">${userOpts(t.assignee_id)}</select></td>
    <td>${isMgr()?`<input type="date" value="${t.due_date||''}" class="${isOver(t)?'over':''}" onchange="patch(${t.id},{due_date:this.value||null})">`:`<span class="${isOver(t)?'over':''}">${fmtDate(t.due_date)}</span>`}</td>
    <td>${statusSel(t)}</td></tr>`).join('')}
@@ -201,16 +221,66 @@ function renderCalendar(){
 }
 
 /* ---------- task details dialog ---------- */
-async function openTask(id){const t=TASKS.find(x=>x.id===id);if(!t)return;const who=(USERS.find(u=>u.id===t.assignee_id)||{}).name||'Unassigned';
-  const ups=await api(`/api/tasks/${id}/updates`);
-  $('#taskDlgBody').innerHTML=`<h2>#${t.id} ${esc(t.title)}</h2><p class="mute">${esc(t.project_name)}</p>
-   <table><tr><td>Assignee</td><td>${isMgr()?`<select onchange="patch(${t.id},{assignee_id:+this.value||null}).then(()=>openTask(${t.id}))">${userOpts(t.assignee_id)}</select>`:esc(who)}</td></tr>
-   <tr><td>Due</td><td>${isMgr()?`<input type="date" value="${t.due_date||''}" onchange="patch(${t.id},{due_date:this.value||null}).then(()=>openTask(${t.id}))">`:`<span class="${isOver(t)?'over':''}">${fmtDate(t.due_date)||'—'}</span>`}</td></tr>
-   <tr><td>Status</td><td>${statusSel(t).replace('onchange="setStatus('+t.id+',this.value)"',`onchange="setStatus(${t.id},this.value).then(()=>openTask(${t.id}))"`)}</td></tr></table>
-   ${canEdit(t)?`<div class="row"><input id="dlgNote" placeholder="Add a note…" style="flex:1"><button class="b ghost" onclick="addNote(${t.id})">Add note</button></div>`:''}
-   <h3 style="margin-top:12px">History</h3>${ups.length?`<table>${ups.slice(0,8).map(u=>`<tr><td class="mute" style="white-space:nowrap">${esc(u.created_at.slice(5,16))}</td><td>${esc(u.user_name||'')}${u.status?` → <span class="pill ${u.status}">${LBL[u.status]}</span>`:''} ${u.note?`<span class="note">“${esc(u.note)}”</span>`:''} <span class="mute">(${u.source})</span></td></tr>`).join('')}</table>`:'<p class="mute">No updates yet.</p>'}`;
+let HANDLES=[],OPEN_ID=null;
+const canEditDetail=d=>isMgr()||d.assignee_id===ME.id||(d.parent_id&&(TASKS.find(x=>x.id===d.parent_id)||{}).assignee_id===ME.id);
+const renderBody=b=>esc(b).replace(/@([A-Za-z][\w.\-]*)/g,(m,h)=>{const u=HANDLES.find(x=>x.handle===h.toLowerCase())||HANDLES.filter(x=>x.name.split(' ')[0].toLowerCase()===h.toLowerCase()).at(0);return u?`<b class="at">@${esc(u.name)}</b>`:m}).replace(/\n/g,'<br>');
+async function openTask(id){OPEN_ID=id;const [d,h]=await Promise.all([api(`/api/tasks/${id}`),HANDLES.length?HANDLES:api('/api/handles')]);HANDLES=h;
+  const ed=canEditDetail(d),mg=isMgr(),who=d.assignee_name||'Unassigned';
+  const depOpts=TASKS.filter(x=>x.id!==d.id&&x.project_id===d.project_id&&!d.waiting_on.some(w=>w.id===x.id)).map(x=>`<option value="${x.id}">#${x.id} ${esc(x.title)}</option>`).join('');
+  const st=TASKS.find(x=>x.id===id)||{...d};
+  $('#taskDlgBody').innerHTML=`
+   <div class="row" style="justify-content:space-between;align-items:flex-start"><div>
+     ${d.parent?`<div class="mute" style="font-size:12px">↳ subtask of <span class="tlink" onclick="openTask(${d.parent.id})">#${d.parent.id} ${esc(d.parent.title)}</span></div>`:''}
+     <h2 style="margin:0">#${d.id} ${mg?`<input value="${esc(d.title)}" style="font:inherit;font-weight:600;width:420px;max-width:70vw" onchange="patch(${d.id},{title:this.value}).then(()=>openTask(${d.id}))">`:esc(d.title)}</h2>
+     <div class="mute">${esc(d.project_name)}</div></div>
+     ${mg?`<button class="b ghost" style="color:var(--bad);border-color:#f3c4c4" onclick="delTask(${d.id})">Delete</button>`:''}</div>
+   <table style="margin-top:8px"><tr><td style="width:110px">Assignee</td><td>${mg?`<select onchange="patch(${d.id},{assignee_id:+this.value||null}).then(()=>openTask(${d.id}))">${userOpts(d.assignee_id)}</select>`:esc(who)}</td></tr>
+   <tr><td>Due</td><td>${mg?`<input type="date" value="${d.due_date||''}" onchange="patch(${d.id},{due_date:this.value||null}).then(()=>openTask(${d.id}))">`:`<span class="${isOver(d)?'over':''}">${fmtDate(d.due_date)||'—'}</span>`}</td></tr>
+   <tr><td>Status</td><td>${statusSel({...d,assignee_id:ed?ME.id:d.assignee_id}).replace(/onchange="setStatus\((\d+),this.value\)"/,`onchange="setStatus($1,this.value).then(()=>openTask($1))"`)}</td></tr></table>
+
+   <div class="sec"><h3>Description</h3>${ed?`<textarea rows="2" placeholder="Details, links to Drive files…" onchange="patch(${d.id},{description:this.value})">${esc(d.description||'')}</textarea>`:`<div>${esc(d.description||'—')}</div>`}</div>
+
+   <div class="sec"><h3>☑ Checklist <span class="mute" style="font-weight:400">${d.checklist.filter(c=>c.done).length}/${d.checklist.length}</span></h3>
+     ${d.checklist.map(c=>`<div class="ck ${c.done?'done':''}"><input type="checkbox" ${c.done?'checked':''} ${ed?'':'disabled'} onchange="ckPatch(${c.id},{done:this.checked})"><span>${esc(c.text)}</span>${ed?`<button class="x" title="Remove" onclick="ckDel(${c.id})">✕</button>`:''}</div>`).join('')||'<p class="mute" style="margin:0">No checklist items.</p>'}
+     ${ed?`<div class="row"><input id="ckNew" placeholder="+ Add checklist item" style="flex:1" onkeydown="if(event.key==='Enter')ckAdd(${d.id})"><button class="b ghost" onclick="ckAdd(${d.id})">Add</button></div>`:''}</div>
+
+   <div class="sec"><h3>↳ Subtasks <span class="mute" style="font-weight:400">${d.subtasks.filter(x=>x.status==='done').length}/${d.subtasks.length}</span></h3>
+     ${d.subtasks.length?`<table>${d.subtasks.map(x=>`<tr><td class="mute" style="width:40px">#${x.id}</td><td><span class="tlink" onclick="openTask(${x.id})">${esc(x.title)}</span></td><td class="mute">${esc(x.assignee_name||'Unassigned')}</td><td class="${isOver(x)?'over':''}">${fmtDate(x.due_date)}</td><td><span class="pill ${x.status}">${LBL[x.status]}</span></td></tr>`).join('')}</table>`:'<p class="mute" style="margin:0">No subtasks.</p>'}
+     ${ed?`<div class="row"><input id="subNew" placeholder="+ Add subtask" style="flex:1" onkeydown="if(event.key==='Enter')subAdd(${d.id})"><select id="subWho">${userOpts(d.assignee_id)}</select><input type="date" id="subDue"><button class="b ghost" onclick="subAdd(${d.id})">Add</button></div>`:''}</div>
+
+   <div class="sec"><h3>🔒 Waiting on</h3>
+     ${d.waiting_on.length?d.waiting_on.map(w=>`<div class="ck ${w.status==='done'?'done':''}"><span class="pill ${w.status}">${LBL[w.status]}</span><span class="tlink" onclick="openTask(${w.id})">#${w.id} ${esc(w.title)}</span><span class="mute">· ${esc(w.assignee_name||'Unassigned')}</span>${mg?`<button class="x" title="Remove" onclick="depDel(${d.id},${w.id})">✕</button>`:''}</div>`).join(''):'<p class="mute" style="margin:0">Not waiting on anything.</p>'}
+     ${mg&&depOpts?`<div class="row"><select id="depNew" style="flex:1"><option value="">Can't start until… (pick a task)</option>${depOpts}</select><button class="b ghost" onclick="depAdd(${d.id})">Add</button></div>`:''}
+     ${d.blocking.length?`<p class="mute" style="margin:6px 0 0">Blocking: ${d.blocking.map(b=>`<span class="tlink" onclick="openTask(${b.id})">#${b.id} ${esc(b.title)}</span>`).join(', ')} — they'll get a “your turn” Blink message when this is done.</p>`:''}</div>
+
+   <div class="sec"><h3>💬 Comments</h3>
+     ${d.comments.map(c=>`<div class="cm"><span class="who">${esc(c.user_name||'Someone')}</span><span class="when">${esc(c.created_at.slice(5,16))}${c.source==='blink'?' · via Blink':''}</span><div>${renderBody(c.body)}</div></div>`).join('')||'<p class="mute" style="margin:0">No comments yet.</p>'}
+     <div style="position:relative"><textarea id="cmNew" rows="2" placeholder="Write a comment… type @ to mention someone (they get a Blink message)"></textarea><div id="ac" class="ac hidden"></div></div>
+     <div class="row" style="justify-content:flex-end"><button class="b" onclick="cmAdd(${d.id})">Comment</button></div></div>
+
+   <details class="sec"><summary class="mute">History</summary>${d.updates.length?`<table>${d.updates.map(u=>`<tr><td class="mute" style="white-space:nowrap">${esc(u.created_at.slice(5,16))}</td><td>${esc(u.user_name||'')}${u.status?` → <span class="pill ${u.status}">${LBL[u.status]}</span>`:''} ${u.note?`<span class="note">“${esc(u.note)}”</span>`:''} <span class="mute">(${u.source})</span></td></tr>`).join('')}</table>`:'<p class="mute">No updates yet.</p>'}</details>`;
+  wireMentions($('#cmNew'));
   if(!taskDlg.open)taskDlg.showModal();}
-async function addNote(id){const n=$('#dlgNote').value.trim();if(!n)return;await patch(id,{note:n});openTask(id);}
+async function delTask(id){const n=TASKS.filter(x=>x.parent_id===id).length;if(!confirm(`Delete task #${id}${n?` and its ${n} subtask(s)`:''}? This can't be undone.`))return;await api('/api/tasks/'+id,{method:'DELETE'});taskDlg.close();refresh();}
+async function ckAdd(id){const v=$('#ckNew').value.trim();if(!v)return;await api(`/api/tasks/${id}/checklist`,{method:'POST',body:{text:v}});await refresh();openTask(id).then(()=>$('#ckNew').focus());}
+async function ckPatch(cid,b){await api(`/api/checklist/${cid}`,{method:'PATCH',body:b});await refresh();openTask(OPEN_ID);}
+async function ckDel(cid){await api(`/api/checklist/${cid}`,{method:'DELETE'});await refresh();openTask(OPEN_ID);}
+async function subAdd(id){const v=$('#subNew').value.trim();if(!v)return;await api('/api/tasks',{method:'POST',body:{parent_id:id,title:v,assignee_id:+$('#subWho').value||null,due_date:$('#subDue').value||null}});await refresh();openTask(id);}
+async function depAdd(id){const v=+$('#depNew').value;if(!v)return;await api(`/api/tasks/${id}/dependencies`,{method:'POST',body:{depends_on_id:v}});await refresh();openTask(id);}
+async function depDel(id,dep){await api(`/api/tasks/${id}/dependencies/${dep}`,{method:'DELETE'});await refresh();openTask(id);}
+async function cmAdd(id){const v=$('#cmNew').value.trim();if(!v)return;const r=await api(`/api/tasks/${id}/comments`,{method:'POST',body:{body:v}});await refresh();await openTask(id);
+  if(r.mentioned&&r.mentioned.length)toast(`Notified ${r.mentioned.join(', ')} in Blink`);}
+function toast(m){const t=document.createElement('div');t.textContent=m;t.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1d2330;color:#fff;padding:8px 14px;border-radius:8px;z-index:99';document.body.append(t);setTimeout(()=>t.remove(),2500);}
+function wireMentions(ta){const ac=$('#ac');let sel=0,list=[];
+  const close=()=>{ac.classList.add('hidden');list=[]};
+  const pick=u=>{const pos=ta.selectionStart,before=ta.value.slice(0,pos).replace(/@([\w.\-]*)$/,'@'+u.handle+' ');ta.value=before+ta.value.slice(pos);ta.focus();ta.selectionStart=ta.selectionEnd=before.length;close();};
+  ta.addEventListener('input',()=>{const m=ta.value.slice(0,ta.selectionStart).match(/@([\w.\-]*)$/);if(!m)return close();const q=m[1].toLowerCase();
+    list=HANDLES.filter(u=>u.name.toLowerCase().includes(q)||u.handle.includes(q)).slice(0,6);if(!list.length)return close();sel=0;
+    ac.innerHTML=list.map((u,i)=>`<div class="${i?'':'on'}" data-i="${i}">${esc(u.name)} <span class="mute">@${esc(u.handle)}</span></div>`).join('');ac.classList.remove('hidden');
+    ac.querySelectorAll('div').forEach(d=>d.onmousedown=e=>{e.preventDefault();pick(list[+d.dataset.i])});});
+  ta.addEventListener('keydown',e=>{if(!list.length)return;if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();sel=(sel+(e.key==='ArrowDown'?1:list.length-1))%list.length;ac.querySelectorAll('div').forEach((d,i)=>d.classList.toggle('on',i===sel));}
+    else if(e.key==='Enter'||e.key==='Tab'){e.preventDefault();pick(list[sel]);}else if(e.key==='Escape'){e.preventDefault();close();}});
+  ta.addEventListener('blur',()=>setTimeout(close,150));}
 
 /* ---------- team dashboard ---------- */
 function renderTeam(){
@@ -226,7 +296,7 @@ function renderTeam(){
     return `<div class="card"><div class="row" style="justify-content:space-between"><h3>${esc(p.name)}</h3>
      <div class="counts"><span class="pill">${p.ts.length} open</span>${p.od?`<span class="pill" style="background:#ffe3e3;color:var(--bad)">${p.od} overdue</span>`:''}${p.bl?`<span class="pill blocked">${p.bl} blocked</span>`:''}${p.soon?`<span class="pill in_progress">${p.soon} due this week</span>`:''}
      ${p.id?`<button class="b ghost" onclick="$('#calWho').value='${p.id}';show('calendar')">📅 Calendar</button>`:''}</div></div>
-     ${list.length?`<table><tr><th>#</th><th>Task</th><th>Project</th><th>Due</th><th>Status</th></tr>${list.map(t=>`<tr style="cursor:pointer" onclick="openTask(${t.id})"><td class="mute">${t.id}</td><td>${esc(t.title)}${t.last_note?`<div class="note">“${esc(t.last_note)}”</div>`:''}</td><td class="mute">${esc(t.project_name)}</td><td class="${isOver(t)?'over':''}">${fmtDate(t.due_date)||'—'}</td><td><span class="pill ${t.status}">${LBL[t.status]}</span></td></tr>`).join('')}</table>`:`<p class="mute">${p.ts.length?'Nothing overdue or blocked.':'Nothing outstanding 🎉'}</p>`}</div>`}).join('');
+     ${list.length?`<table><tr><th>#</th><th>Task</th><th>Project</th><th>Due</th><th>Status</th></tr>${list.map(t=>`<tr style="cursor:pointer" onclick="openTask(${t.id})"><td class="mute">${t.id}</td><td>${t.parent_id?'<span class="mute">↳</span> ':''}${esc(t.title)}${badges(t)}${t.last_note?`<div class="note">“${esc(t.last_note)}”</div>`:''}</td><td class="mute">${esc(t.project_name)}</td><td class="${isOver(t)?'over':''}">${fmtDate(t.due_date)||'—'}</td><td><span class="pill ${t.status}">${LBL[t.status]}</span></td></tr>`).join('')}</table>`:`<p class="mute">${p.ts.length?'Nothing overdue or blocked.':'Nothing outstanding 🎉'}</p>`}</div>`}).join('');
 }
 
 /* ---------- people (managers) ---------- */
@@ -267,11 +337,15 @@ async function matchBlink(){const r=await api('/api/users/match-blink',{method:'
   alert(`Checked ${r.checked}, linked ${r.found}.\n\n`+r.results.map(x=>`${x.email}: ${x.id||('✗ '+(x.status?x.status+' ':'')+x.detail)}`).join('\n'));}
 
 /* ---------- admin (managers) ---------- */
-async function loadAdmin(){const c=await api('/api/config');
+async function loadAdmin(){loadAutomations();const c=await api('/api/config');
   $('#sumInfo').textContent=c.last_summary_week?`Last automatic send: ${c.last_summary_week}`:'';
   $('#bkInfo').textContent=c.last_backup?`Last backup: ${c.last_backup}`:'No backup yet';
   $('#aiInfo').innerHTML=c.plain_english?'✅ On — people can reply like “finished the rent roll, still waiting on Joe for CAM” and Claude updates the right tasks.':'Off — add an <code>ANTHROPIC_API_KEY</code> variable in Railway to let people reply in plain English. Commands like <code>done 12</code> work either way.';
   const b=await api('/api/backups');$('#backups').innerHTML=b.length?'<tr><th>File</th><th>Size</th><th></th></tr>'+b.map(x=>`<tr><td>${esc(x.name)}</td><td>${x.size_kb} KB</td><td><a href="/api/backups/${encodeURIComponent(x.name)}">Download</a></td></tr>`).join(''):'';}
+const AUTO=[['blocked','⛔ Task marked Blocked','Managers'],['overdue_days','⚠️ Task overdue','Managers (once per task)'],['your_turn','▶️ “Your turn” when what a task was waiting on is done','The task\'s assignee'],['project_done','🎉 Project completed','Managers'],['comment_assignee','💬 Someone comments on your task','The task\'s assignee']];
+async function loadAutomations(){const a=await api('/api/automations');
+  $('#autoTbl').innerHTML='<tr><th>When</th><th>Who gets a Blink message</th><th>On</th></tr>'+AUTO.map(([k,l,w])=>`<tr><td>${l}</td><td class="mute">${w}</td><td>${k==='overdue_days'?`<select onchange="saveAuto('${k}',this.value)">${[0,1,2,3,5,7].map(n=>`<option value="${n}" ${+a[k]===n?'selected':''}>${n?`${n}+ day${n>1?'s':''} late`:'Off'}</option>`).join('')}</select>`:`<input type="checkbox" ${a[k]==='1'?'checked':''} onchange="saveAuto('${k}',this.checked?1:0)">`}</td></tr>`).join('');}
+async function saveAuto(k,v){await api('/api/automations',{method:'PUT',body:{[k]:v}});toast('Saved');}
 async function previewSummary(){const r=await api('/api/summary/preview');$('#sumPreview').textContent=r.text;$('#sumPreview').classList.remove('hidden');}
 async function sendSummary(){const r=await api('/api/summary/send',{method:'POST'});alert(r.sent_to?`Sent to ${r.sent_to} people.`:'Nobody is ticked for the weekly summary yet (People tab).');}
 async function runBackup(){await api('/api/backups/run',{method:'POST'});loadAdmin();}

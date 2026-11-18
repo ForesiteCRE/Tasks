@@ -3,7 +3,7 @@ import calendar
 import os
 from datetime import date, timedelta
 
-from . import blink, chat
+from . import automations, blink, chat, collab
 from .db import rows, tx
 
 LOOKAHEAD = int(os.getenv("REMINDER_LOOKAHEAD_DAYS", "2"))
@@ -72,6 +72,7 @@ def run_recurrences(today: date | None = None) -> list[int]:
 
 def apply_update(task_id: int, user_id: int | None, source: str, status: str | None, note: str | None) -> dict:
     with tx() as c:
+        old = c.execute("SELECT status FROM tasks WHERE id=?", (task_id,)).fetchone()["status"]
         if status:
             c.execute("UPDATE tasks SET status=? WHERE id=?", (status, task_id))
         c.execute("INSERT INTO task_updates(task_id, user_id, source, status, note) VALUES(?,?,?,?,?)",
@@ -82,6 +83,9 @@ def apply_update(task_id: int, user_id: int | None, source: str, status: str | N
                               (t["project_id"],)).fetchone()[0]
         if open_left == 0:
             c.execute("UPDATE projects SET status='done' WHERE id=?", (t["project_id"],))
+        elif status and status != "done":  # reopening a task reopens its project
+            c.execute("UPDATE projects SET status='active' WHERE id=? AND status='done'", (t["project_id"],))
+    automations.on_status_change(task_id, old, status, user_id, note)
     return t
 
 
@@ -99,7 +103,9 @@ def fmt_task(t: dict) -> str:
         d = date.fromisoformat(t["due_date"])
         flag = " ⚠️ OVERDUE" if d < date.today() else (" (due today)" if d == date.today() else "")
         flag = f" – due {d:%b %d}{flag}"
-    return f"#{t['id']} {t['title']} [{STATUS_LABEL[t['status']]}] · {t['project_name']}{flag}"
+    blockers = automations.open_blockers(t["id"]) if t.get("status") != "done" else []
+    wait = f" 🔒 waiting on {', '.join('#' + str(b['id']) for b in blockers)}" if blockers else ""
+    return f"#{t['id']} {t['title']} [{STATUS_LABEL[t['status']]}] · {t['project_name']}{flag}{wait}"
 
 
 # ---------- Blink messaging ----------
@@ -131,6 +137,8 @@ def send_reminders(today: date | None = None, force: bool = False) -> int:
                WHERE t.status!='done' AND p.status='active' AND u.blink_user_id IS NOT NULL
                  AND t.due_date IS NOT NULL AND t.due_date<=?
                  AND (? OR t.last_reminded_on IS NULL OR t.last_reminded_on<?)
+                 AND NOT EXISTS (SELECT 1 FROM task_dependencies d JOIN tasks b ON b.id=d.depends_on_id
+                                 WHERE d.task_id=t.id AND b.status!='done')
                ORDER BY t.due_date""", (horizon, int(force), today.isoformat())))
     by_user: dict[str, list] = {}
     for t in due:
@@ -163,6 +171,16 @@ def handle_inbound(blink_user_id: str, text: str) -> str:
         reply = "Sorry, I couldn't match that to a task.\n" + chat.help_text()
     elif parsed["intent"] == "help":
         reply = chat.help_text()
+    elif parsed["intent"] == "comment":
+        tid, body = parsed["task_id"], parsed["body"]
+        with tx() as c:
+            exists = c.execute("SELECT title FROM tasks WHERE id=?", (tid,)).fetchone()
+        if not exists:
+            reply = f"I couldn't find task #{tid}."
+        else:
+            r = collab.add_comment(tid, u["id"], body, source="blink")
+            reply = f"💬 Comment added to #{tid} {exists['title']}" + (
+                f" (notified {', '.join(r['mentioned'])})" if r["mentioned"] else "")
     elif parsed["intent"] == "list":
         reply = ("Your open tasks:\n" + "\n".join(map(fmt_task, mine))) if mine else "🎉 You have no open tasks."
     else:
