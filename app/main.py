@@ -121,7 +121,42 @@ class InboundMessage(BaseModel):
 @app.get("/api/users")
 def list_users():
     with tx() as c:
-        return rows(c.execute("SELECT * FROM users ORDER BY name"))
+        return rows(c.execute(
+            """SELECT u.*, (SELECT COUNT(*) FROM tasks t JOIN projects p ON p.id=t.project_id
+                            WHERE t.assignee_id=u.id AND t.status!='done' AND p.status='active') AS open_tasks
+               FROM users u ORDER BY lower(u.name)"""))
+
+
+@app.delete("/api/users/{uid}")
+def delete_user(uid: int, request: Request, merge_into: int | None = None):
+    """Remove a person. Their tasks, template defaults and history move to `merge_into`
+    (merging duplicates) or become unassigned. Blink id / email are copied to the target if it lacks them."""
+    me = (auth.current_user(request) or {}).get("id")
+    if uid == me:
+        raise HTTPException(400, "You can't remove yourself while signed in — merge the other entry into yours instead.")
+    if merge_into == uid:
+        raise HTTPException(400, "Pick a different person to merge into.")
+    with tx() as c:
+        src = c.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+        if not src:
+            raise HTTPException(404, "Person not found")
+        if merge_into:
+            dst = c.execute("SELECT * FROM users WHERE id=?", (merge_into,)).fetchone()
+            if not dst:
+                raise HTTPException(404, "Merge target not found")
+        c.execute("UPDATE tasks SET assignee_id=? WHERE assignee_id=?", (merge_into, uid))
+        c.execute("UPDATE template_items SET default_assignee_id=? WHERE default_assignee_id=?", (merge_into, uid))
+        c.execute("UPDATE task_updates SET user_id=? WHERE user_id=?", (merge_into, uid))
+        c.execute("DELETE FROM users WHERE id=?", (uid,))  # delete first: blink_user_id is UNIQUE
+        if merge_into:
+            c.execute("""UPDATE users SET
+                           blink_user_id = COALESCE(blink_user_id, ?),
+                           blink_chat_id = CASE WHEN blink_user_id IS NULL THEN ? ELSE blink_chat_id END,
+                           email = COALESCE(email, ?),
+                           weekly_summary = MAX(weekly_summary, ?)
+                         WHERE id=?""",
+                      (src["blink_user_id"], src["blink_chat_id"], src["email"], src["weekly_summary"], merge_into))
+    return {"ok": True}
 
 class UserPatch(BaseModel):
     name: str | None = None

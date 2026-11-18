@@ -55,7 +55,7 @@ table{width:100%;border-collapse:collapse}td,th{padding:6px 8px;border-top:1px s
 <section id="v-people" class="hidden">
   <div class="card"><h2>Add person</h2><div class="row"><input id="uName" placeholder="Name"><input id="uEmail" placeholder="name@foresitecre.com"><input id="uBlink" placeholder="Blink ID (optional – found by email)"><button class="b" onclick="addUser()">Add</button><button class="b ghost" onclick="matchBlink()">🔗 Find missing Blink IDs</button></div>
 <p class="mute">Add teammates by work email — their Blink account is found automatically, so you can assign them tasks before they ever sign in.</p></div>
-  <div class="card"><table id="people"></table><p class="mute">People who sign in with Google are added automatically — paste their Blink user ID (u-…, from their page in Blink Admin) so they get chat reminders.</p></div>
+  <div class="card"><table id="people"></table><p class="mute">Everyone in the system. Duplicate entry for the same person? Choose “Merge into …” on the extra row and click Remove — their tasks move over. People who sign in with Google are added automatically — paste their Blink user ID (u-…, from their page in Blink Admin) so they get chat reminders.</p></div>
 </section>
 
 <section id="v-admin" class="hidden">
@@ -82,7 +82,7 @@ table{width:100%;border-collapse:collapse}td,th{padding:6px 8px;border-top:1px s
 const $=s=>document.querySelector(s), api=(u,o={})=>fetch(u,{headers:{'Content-Type':'application/json'},...o,body:o.body&&JSON.stringify(o.body)}).then(async r=>{if(r.status===401){location.href='/login';throw 0}
   if(!r.ok){const t=await r.text();alert(`Something went wrong (${r.status}). ${t.slice(0,200)}`);throw new Error(t)}return r.json()});
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-let USERS=[],TPLS=[];const LBL={todo:'To do',in_progress:'In progress',blocked:'Blocked',done:'Done'};
+let USERS=[],TPLS=[],ME={};const LBL={todo:'To do',in_progress:'In progress',blocked:'Blocked',done:'Done'};
 $('#nav').onclick=e=>{const v=e.target.dataset.v;if(!v)return;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b===e.target));document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-'+v));if(v==='chat')loadChat();if(v==='admin')loadAdmin();};
 const userOpts=(sel)=>'<option value="">Unassigned</option>'+USERS.map(u=>`<option value="${u.id}" ${u.id==sel?'selected':''}>${esc(u.name)}</option>`).join('');
 const today=()=>new Date().toISOString().slice(0,10);
@@ -92,7 +92,12 @@ async function refresh(){
   const tOpts='<option value="">Blank (no template)</option>'+TPLS.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
   $('#pTpl').innerHTML=tOpts;$('#rTpl').innerHTML=TPLS.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
   $('#cUser').innerHTML=USERS.filter(u=>u.blink_user_id).map(u=>`<option value="${esc(u.blink_user_id)}">${esc(u.name)}</option>`).join('');
-  $('#people').innerHTML='<tr><th>Name</th><th>Email</th><th>Weekly summary</th><th>Blink user ID</th></tr>'+USERS.map(u=>`<tr><td>${esc(u.name)}</td><td>${esc(u.email)}</td><td><input type="checkbox" ${u.weekly_summary?'checked':''} ${u.blink_user_id?'':'disabled title="Needs a Blink ID"'} onchange="api('/api/users/${u.id}',{method:'PATCH',body:{weekly_summary:this.checked}})"></td><td><input value="${esc(u.blink_user_id)}" placeholder="u-…" style="width:100%" onchange="api('/api/users/${u.id}',{method:'PATCH',body:{blink_user_id:this.value}}).then(refresh)"></td></tr>`).join('');
+  $('#people').innerHTML='<tr><th>Name</th><th>Email</th><th>Open tasks</th><th>Weekly summary</th><th>Blink user ID</th><th></th></tr>'+USERS.map(u=>`<tr>
+    <td><input value="${esc(u.name)}" style="width:100%" onchange="api('/api/users/${u.id}',{method:'PATCH',body:{name:this.value}}).then(refresh)"></td>
+    <td>${esc(u.email)}${u.id===ME.id?' <span class="pill">you</span>':''}</td><td>${u.open_tasks}</td>
+    <td><input type="checkbox" ${u.weekly_summary?'checked':''} ${u.blink_user_id?'':'disabled title="Needs a Blink ID"'} onchange="api('/api/users/${u.id}',{method:'PATCH',body:{weekly_summary:this.checked}})"></td>
+    <td><input value="${esc(u.blink_user_id)}" placeholder="u-…" style="width:100%" onchange="api('/api/users/${u.id}',{method:'PATCH',body:{blink_user_id:this.value}}).then(refresh)"></td>
+    <td style="white-space:nowrap">${u.id===ME.id?'':`<select id="mg${u.id}"><option value="">Unassign their tasks</option>${USERS.filter(o=>o.id!==u.id).map(o=>`<option value="${o.id}">Merge into ${esc(o.name)}</option>`).join('')}</select> <button class="b ghost" onclick="removeUser(${u.id})">Remove</button>`}</td></tr>`).join('');
   renderProjects(await api('/api/projects'));renderTemplates();
   const rs=await api('/api/recurrences');
   $('#recurring').innerHTML='<tr><th>Name pattern</th><th>Template</th><th>Day</th><th>Last created</th><th></th></tr>'+rs.map(r=>`<tr><td>${esc(r.name_pattern)}</td><td>${esc(r.template_name)}</td><td>${r.day_of_month}</td><td>${r.last_period||'—'}</td><td><button class="b ghost" onclick="toggleRec(${r.id},${!r.active})">${r.active?'Pause':'Resume'}</button></td></tr>`).join('');
@@ -126,6 +131,9 @@ async function addTask(p){const t=$('#nt'+p).value;if(!t)return;await api('/api/
 async function saveRecurrence(){await api('/api/recurrences',{method:'POST',body:{template_id:+$('#rTpl').value,name_pattern:$('#rPattern').value,day_of_month:+$('#rDay').value}});refresh();}
 async function toggleRec(id,a){await api(`/api/recurrences/${id}?active=${a}`,{method:'PATCH'});refresh();}
 async function addUser(){await api('/api/users',{method:'POST',body:{name:$('#uName').value,email:$('#uEmail').value,blink_user_id:$('#uBlink').value||null}});refresh();}
+async function removeUser(id){const u=USERS.find(x=>x.id===id),to=$('#mg'+id).value,t=USERS.find(x=>x.id==to);
+  if(!confirm(`Remove ${u.name}?\n\n`+(t?`Their ${u.open_tasks} open task(s), history and Blink link move to ${t.name}.`:`Their ${u.open_tasks} open task(s) become unassigned.`)))return;
+  await api(`/api/users/${id}`+(to?`?merge_into=${to}`:''),{method:'DELETE'});refresh();}
 async function matchBlink(){const r=await api('/api/users/match-blink',{method:'POST'});refresh();
   if(!r.checked){alert('Everyone with an email already has a Blink ID (or nobody has an email yet).');return;}
   alert(`Checked ${r.checked}, linked ${r.found}.\n\n`+r.results.map(x=>`${x.email}: ${x.id||('✗ '+(x.status?x.status+' ':'')+x.detail)}`).join('\n'));}
@@ -141,7 +149,7 @@ async function loadChat(){const id=$('#cUser').value;if(!id)return;const ms=awai
   $('#chat').innerHTML=ms.map(m=>`<div class="msg ${m.direction}">${esc(m.text).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*([^*]+)\*/g,'<b>$1</b>')}</div>`).join('')||'<p class="mute">No messages yet.</p>';$('#chat').scrollTop=1e9;}
 async function sendChat(){const text=$('#cText').value;if(!text)return;$('#cText').value='';await api('/api/blink/simulate',{method:'POST',body:{blink_user_id:$('#cUser').value,text}});loadChat();refresh();}
 async function runReminders(){const r=await api('/api/reminders/run',{method:'POST'});loadChat();alert(`Reminders sent for ${r.sent} task(s)${r.mock?' (mock mode)':''}`);}
-api('/api/me').then(m=>$('#me').innerHTML=`${esc(m.name)}${m.auth_enabled?' · <a href="/logout">Sign out</a>':''}`);
+api('/api/me').then(m=>{ME=m;refresh();return m}).then(m=>$('#me').innerHTML=`${esc(m.name)}${m.auth_enabled?' · <a href="/logout">Sign out</a>':''}`);
 api('/api/config').then(c=>{if(!c.simulator)$('#chatTab').remove()});
 refresh();
 </script>
