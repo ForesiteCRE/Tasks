@@ -1,9 +1,10 @@
 """Business logic: templates, recurring projects, reminders, chat updates."""
 import calendar
 import os
-from datetime import date, timedelta
+import re
+from datetime import date, datetime, timedelta
 
-from . import automations, blink, chat, collab, intake, timing, tpl
+from . import automations, blink, chat, collab, dashboard, intake, timing, tpl
 from .db import rows, tx
 
 LOOKAHEAD = int(os.getenv("REMINDER_LOOKAHEAD_DAYS", "2"))
@@ -140,6 +141,20 @@ def handle_inbound(blink_user_id: str, text: str, files: list[dict] | None = Non
         url = os.getenv("PUBLIC_URL", "").rstrip("/")
         reply = ("I don't recognize your Blink account yet. Sign in to the task app once"
                  + (f" at {url}" if url else "") + " with your work Google account and I'll link you automatically.")
+        blink.send_dm(blink_user_id, reply)
+        return reply
+
+    # Personal reminders: "remind me Friday 9am to call the owner"
+    if re.match(r"^\s*remind\b", text or "", re.I):
+        r = dashboard.parse_reminder(text)
+        if not r:
+            reply = "Try `remind me 2026-12-01 9:00 call the owner` (or turn on plain-English mode for “remind me Friday 9am …”)."
+        elif not r.get("ok"):
+            reply = r.get("reply") or "When should I remind you?"
+        else:
+            dashboard.add_reminder(u["id"], r["text"], r["remind_at"])
+            when = datetime.fromisoformat(r["remind_at"])
+            reply = f"⏰ Got it — I'll remind you {when:%a %b %d at %-I:%M %p}: {r['text']}"
         blink.send_dm(blink_user_id, reply)
         return reply
 

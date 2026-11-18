@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, automations, blink, chat, collab, intake, maintenance, services, team, timing, tpl
+from . import auth, automations, blink, chat, collab, dashboard, intake, maintenance, services, team, timing, tpl
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
 logging.basicConfig(level=logging.INFO)
@@ -22,7 +22,8 @@ async def scheduler_loop():
     """Every 10 min: daily backup, spawn due monthly projects; after REMINDER_HOUR send daily
     reminders (once/day/task) and, on the summary weekday, the weekly summary (once/week)."""
     while True:
-        for job in (maintenance.daily_backup, services.run_recurrences):
+        for job in (maintenance.daily_backup, services.run_recurrences, dashboard.send_due_reminders,
+                    dashboard.send_daily_digests):
             try:
                 job()
             except Exception:
@@ -33,7 +34,7 @@ async def scheduler_loop():
                     job()
                 except Exception:
                     logging.exception("scheduler job %s failed", job.__name__)
-        await asyncio.sleep(600)
+        await asyncio.sleep(60)  # every job is idempotent (guarded per day/week/task)
 
 
 @asynccontextmanager
@@ -627,6 +628,73 @@ def intake_extract(body: DocIn):
 @app.get("/api/insights/time")
 def time_insights(days: int = 180):
     return timing.insights(days)
+
+
+# ---------- dashboards, reminders, daily recap ----------
+@app.get("/api/dashboard")
+def get_dashboard(request: Request, scope: str = "me"):
+    me = auth.current_user(request) or {}
+    if scope == "team":
+        if me.get("role") != "manager":
+            raise HTTPException(403, "Only managers can see the team view.")
+        return dashboard.team_dashboard()
+    uid = me.get("id")
+    if uid is None:  # local dev without sign-in: show the first person
+        with tx() as c:
+            r = c.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()
+        uid = r["id"] if r else 0
+    return dashboard.my_dashboard(uid)
+
+
+class ReminderIn(BaseModel):
+    text: str
+    remind_at: str            # "YYYY-MM-DDTHH:MM" local
+    task_id: int | None = None
+
+def _me_id(request: Request) -> int:
+    uid = (auth.current_user(request) or {}).get("id")
+    if uid is None:
+        with tx() as c:
+            r = c.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()
+        uid = r["id"] if r else None
+    if uid is None:
+        raise HTTPException(400, "No user")
+    return uid
+
+@app.post("/api/reminders")
+def add_reminder(body: ReminderIn, request: Request):
+    try:
+        return {"id": dashboard.add_reminder(_me_id(request), body.text, body.remind_at, body.task_id)}
+    except ValueError:
+        raise HTTPException(400, "Pick a date and time for the reminder.")
+
+@app.patch("/api/reminders/{rid}")
+def done_reminder(rid: int, request: Request):
+    with tx() as c:
+        c.execute("UPDATE reminders SET done=1 WHERE id=? AND user_id=?", (rid, _me_id(request)))
+    return {"ok": True}
+
+@app.delete("/api/reminders/{rid}")
+def delete_reminder(rid: int, request: Request):
+    with tx() as c:
+        c.execute("DELETE FROM reminders WHERE id=? AND user_id=?", (rid, _me_id(request)))
+    return {"ok": True}
+
+class PrefsIn(BaseModel):
+    daily_digest: bool | None = None
+
+@app.patch("/api/me/prefs")
+def my_prefs(body: PrefsIn, request: Request):
+    if body.daily_digest is not None:
+        with tx() as c:
+            c.execute("UPDATE users SET daily_digest=? WHERE id=?", (int(body.daily_digest), _me_id(request)))
+    return {"ok": True}
+
+@app.post("/api/me/digest-preview")
+def digest_preview(request: Request):
+    """Send my 6pm recap to me now (to see what it looks like)."""
+    uid = _me_id(request)
+    return {"sent": dashboard.send_daily_digests(force=True, only_user=uid), "text": dashboard.build_digest(uid)}
 
 
 @app.get("/api/automations")

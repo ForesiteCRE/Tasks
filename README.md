@@ -39,6 +39,12 @@ Open http://localhost:8000 and use **Blink chat (simulator)** to test.
 - **Time tracking** – estimate per task (and per template item), actual time + notes when done (web prompt or
   Blink `time 12 1h30 note` / plain English), turnaround; **Reports → ⏱ Time insights** shows estimate vs actual
   by task and person.
+- **🏠 Home dashboards** – *My day*: overdue/today/this-week agenda (tasks, reminders, project starts),
+  waiting on me, blocked for me, my projects, reminders, comments & mentions, done this week.
+  *Team* (managers): workload per person, projects at risk, blocked, overdue, unassigned, completed, time not logged.
+- **Reminders** – on Home or in Blink (“remind me Friday 9am to call the owner”); delivered in Blink.
+- **6pm daily recap** – each person gets done today / overdue / due today / next 7 days / waiting on them
+  (`DIGEST_HOUR`, opt-out on Home).
 - **Weekly summary** – Monday-morning Blink message (overdue / blocked / due this week) to anyone ticked
   "Weekly summary" on People. Preview or send now from **Reports & backups**.
 - **Daily backups** – a copy of the database every day in `/data/backups` (kept 14 days), downloadable from

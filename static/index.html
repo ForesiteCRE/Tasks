@@ -6,7 +6,10 @@
 <style>
 :root{--bg:#f6f7f9;--card:#fff;--ink:#1d2330;--mute:#6b7280;--line:#e3e6eb;--acc:#3b5bdb;--ok:#2f9e44;--warn:#e8590c;--bad:#c92a2a}
 *{box-sizing:border-box}body{margin:0;font:14px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--ink)}
-header{display:flex;gap:16px;align-items:center;padding:12px 20px;background:var(--card);border-bottom:1px solid var(--line);flex-wrap:wrap}
+header{display:flex;gap:18px;align-items:center;padding:10px 20px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+header h1{white-space:nowrap}#nav{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;flex:1;min-width:0}#nav::-webkit-scrollbar{display:none}nav button{white-space:nowrap}
+#me{white-space:nowrap;font-size:13px}
+@media (max-width:760px){header{flex-wrap:wrap;gap:6px;padding:10px 12px}header h1 .mute{display:none}#me{margin-left:auto}#nav{order:3;flex-basis:100%}}
 header h1{font-size:17px;margin:0}nav button{background:none;border:0;padding:8px 12px;border-radius:6px;cursor:pointer;font:inherit;color:var(--mute)}
 nav button.on{background:#e7ecff;color:var(--acc);font-weight:600}
 main{max-width:1200px;margin:0 auto;padding:20px 16px}.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
@@ -22,6 +25,36 @@ table{width:100%;border-collapse:collapse}td,th{padding:6px 8px;border-top:1px s
 .chat{display:flex;flex-direction:column;gap:8px;max-height:460px;overflow:auto;padding:10px;background:#f1f3f6;border-radius:8px}
 .msg{max-width:80%;padding:8px 11px;border-radius:10px;white-space:pre-wrap}.msg.out{background:#fff;border:1px solid var(--line)}.msg.in{background:var(--acc);color:#fff;align-self:flex-end}
 .hidden{display:none!important}
+/* home */
+.hero{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin:4px 0 18px}
+.hero h1{font-size:26px;margin:2px 0 4px;letter-spacing:-.01em}.eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute);font-weight:600}
+.hero-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.seg{display:inline-flex;background:#eceff4;border-radius:8px;padding:3px}.seg button{border:0;background:none;padding:6px 14px;border-radius:6px;font:inherit;color:var(--mute);cursor:pointer}.seg button.on{background:#fff;color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:18px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;position:relative;overflow:hidden;cursor:default}
+.kpi:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--k,#c9d1e0)}
+.kpi .n{font-size:28px;font-weight:700;line-height:1.1;margin-top:4px;font-variant-numeric:tabular-nums}.kpi .l{font-size:12px;color:var(--mute);font-weight:500}.kpi .s{font-size:11.5px;color:var(--mute);margin-top:2px}
+.kpi.red{--k:var(--bad)}.kpi.red .n{color:var(--bad)}.kpi.amber{--k:#f59f00}.kpi.blue{--k:var(--acc)}.kpi.green{--k:var(--ok)}.kpi.violet{--k:#7950f2}.kpi.zero .n{color:#c0c4cc}
+.hgrid{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:900px){.hgrid{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:16px;overflow:hidden}
+.panel>header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);background:#fcfcfd}
+.panel>header h3{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#4b5563}.panel>header .cnt{font-size:12px;color:var(--mute)}
+.panel .body{padding:6px 16px 12px}.empty{color:var(--mute);padding:14px 0;font-size:13px}
+.grp{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);margin:12px 0 4px;display:flex;gap:6px;align-items:center}.grp.red{color:var(--bad)}
+.it{display:grid;grid-template-columns:54px 1fr auto;gap:10px;align-items:center;padding:8px 6px;border-radius:8px;cursor:pointer}
+.it:hover{background:#f5f7fb}.it .d{font-size:12px;color:var(--mute);text-align:center;line-height:1.15}.it .d b{display:block;font-size:16px;color:var(--ink)}
+.it .t{min-width:0}.it .t div:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}.it .sub{font-size:12px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.it.od .d b{color:var(--bad)}.ico{display:inline-block;width:18px}
+.row2{display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-top:1px solid #f0f2f5}.row2:first-child{border-top:0}.row2 .grow{flex:1;min-width:0}.row2 .sub{font-size:12px;color:var(--mute)}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.pcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;cursor:pointer;transition:box-shadow .15s}.pcard:hover{box-shadow:0 4px 16px rgba(20,30,60,.08)}
+.pcard h4{margin:0 0 2px;font-size:14px}.pcard .sub{font-size:12px;color:var(--mute)}.pcard .bar{margin:10px 0 6px}
+.chips{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}.chip2{font-size:11px;padding:2px 8px;border-radius:99px;background:#eef1f6;color:#4b5563}
+.wl{display:grid;grid-template-columns:140px 1fr 110px;gap:10px;align-items:center;padding:7px 0}.wl .nm{font-weight:500;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wl .nm:hover{color:var(--acc)}
+.stack{display:flex;height:10px;border-radius:99px;overflow:hidden;background:#eef1f6}.stack i{display:block;height:100%}.wl .n{font-size:12px;color:var(--mute);text-align:right}
+.legend{display:flex;gap:12px;font-size:11.5px;color:var(--mute)}.legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+.mini{font-size:12px}.risk{font-size:11px;padding:2px 7px;border-radius:99px;font-weight:600}.risk.hi{background:#ffe3e3;color:var(--bad)}.risk.md{background:#fff3db;color:#b35c00}.risk.ok{background:#e6f6ea;color:var(--ok)}
 /* calendar */
 .cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border-left:1px solid var(--line);border-top:1px solid var(--line)}
 .cal .dow{font-size:12px;color:var(--mute);padding:6px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:#fafbfc}
@@ -53,19 +86,32 @@ textarea{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius
 <body>
 <header><h1>📋 Task Manager <span class="mute" style="font-weight:400">· Blink-connected</span></h1>
 <nav id="nav">
-  <button data-v="projects" class="on">Projects</button>
+  <button data-v="home" class="on">🏠 Home</button>
+  <button data-v="projects">Projects</button>
   <button data-v="calendar">Calendar</button>
-  <button data-v="team" class="mgr">Team</button>
+  <button data-v="team" class="mgr">By person</button>
   <button data-v="templates" class="mgr">Checklist templates</button>
   <button data-v="recurring" class="mgr">Monthly recurring</button>
   <button data-v="people" class="mgr">People</button>
   <button data-v="admin" class="mgr">Reports &amp; backups</button>
   <button data-v="chat" id="chatTab" class="mgr">Blink chat (simulator)</button>
 </nav>
-<span id="me" class="mute" style="margin-left:auto"></span></header>
+<span id="me" class="mute"></span></header>
 <main>
 
-<section id="v-projects">
+<section id="v-home">
+  <div class="hero">
+    <div><div class="eyebrow" id="hDate"></div><h1 id="hHello">Welcome</h1><div class="mute" id="hSub"></div></div>
+    <div class="hero-actions">
+      <div class="seg mgr" id="hSeg"><button class="on" data-s="me" onclick="homeScope('me')">My day</button><button data-s="team" onclick="homeScope('team')">Team</button></div>
+      <button class="b ghost" onclick="openReminder()">⏰ Reminder</button>
+      <button class="b ghost" onclick="previewDigest()" title="Send me today's 6pm recap now">🌆 6pm recap</button>
+    </div>
+  </div>
+  <div id="home"></div>
+</section>
+
+<section id="v-projects" class="hidden">
   <div class="card mgr"><div class="row" style="justify-content:space-between;margin:0"><h2 style="margin:0">Start a project</h2>
     <label class="b ghost" style="cursor:pointer;border:1px solid var(--acc);border-radius:6px;padding:6px 10px;color:var(--acc)">📄 From document<input type="file" id="pDoc" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg" class="hidden" onchange="fromDoc(this)"></label></div>
     <p id="pDocInfo" class="mute" style="margin:6px 0"></p>
@@ -170,7 +216,7 @@ const isOver=t=>t.due_date&&t.due_date<today()&&t.status!=='done';
 const fmtMin=m=>{if(!m)return'';const h=Math.floor(m/60),r=m%60;return h&&r?`${h}h ${r}m`:h?`${h}h`:`${r}m`};
 const fmtDate=d=>d?new Date(d+'T12:00').toLocaleDateString(undefined,{month:'short',day:'numeric'}):'';
 function show(v){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-'+v));
-  if(v==='chat')loadChat();if(v==='admin')loadAdmin();if(v==='calendar')renderCalendar();if(v==='team')renderTeam();}
+  if(v==='home')renderHome();if(v==='chat')loadChat();if(v==='admin')loadAdmin();if(v==='calendar')renderCalendar();if(v==='team')renderTeam();}
 $('#nav').onclick=e=>{const v=e.target.dataset.v;if(v)show(v)};
 const userOpts=(sel,blank='Unassigned')=>`<option value="">${blank}</option>`+USERS.map(u=>`<option value="${u.id}" ${u.id==sel?'selected':''}>${esc(u.name)}</option>`).join('');
 const statusSel=(t)=>`<select class="pill ${t.status}" ${canEdit(t)?'':'disabled'} onchange="setStatus(${t.id},this.value)">${Object.keys(LBL).map(s=>`<option value="${s}" ${s===t.status?'selected':''}>${LBL[s]}</option>`).join('')}</select>`;
@@ -270,6 +316,80 @@ function renderRoles(){$('#roles').innerHTML='<tr><th>Role</th><th>Default perso
 async function roleAdd(){const v=$('#roleNew').value.trim();if(!v)return;await api('/api/roles',{method:'POST',body:{name:v}});refresh();}
 const whoOpts=i=>`<option value="">—</option><optgroup label="Project role (auto-assign)">${ROLES.map(r=>`<option value="r:${r.id}" ${i&&i.default_role_id===r.id?'selected':''}>👥 ${esc(r.name)}</option>`).join('')}</optgroup><optgroup label="Specific person">${USERS.map(u=>`<option value="u:${u.id}" ${i&&!i.default_role_id&&i.default_assignee_id===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}</optgroup>`;
 const whoVal=v=>v.startsWith('r:')?{default_role_id:+v.slice(2),default_assignee_id:null}:v.startsWith('u:')?{default_assignee_id:+v.slice(2),default_role_id:null}:{default_assignee_id:null,default_role_id:null};
+
+/* ---------- home dashboard ---------- */
+let HSCOPE='me';
+function homeScope(s){HSCOPE=s;document.querySelectorAll('#hSeg button').forEach(b=>b.classList.toggle('on',b.dataset.s===s));renderHome();}
+const dayLabel=d=>{const t=today(),dd=new Date(d+'T12:00'),diff=Math.round((dd-new Date(t+'T12:00'))/864e5);return diff===0?'Today':diff===1?'Tomorrow':diff===-1?'Yesterday':dd.toLocaleDateString(undefined,{weekday:'short'})};
+const dateBox=d=>{if(!d)return'<div class="d">—</div>';const dd=new Date(d+'T12:00');return `<div class="d">${dd.toLocaleDateString(undefined,{month:'short'})}<b>${dd.getDate()}</b></div>`};
+const kpi=(cls,label,n,sub,click)=>`<div class="kpi ${cls} ${n?'':'zero'}" ${click?`style="cursor:pointer" onclick="${click}"`:''}><div class="l">${label}</div><div class="n">${n}</div>${sub?`<div class="s">${sub}</div>`:''}</div>`;
+const panel=(title,cnt,body,extra='')=>`<div class="panel"><header><h3>${title}</h3><span class="cnt">${extra||(cnt!=null?cnt:'')}</span></header><div class="body">${body}</div></div>`;
+function hello(){const h=new Date().getHours();return h<12?'Good morning':h<17?'Good afternoon':'Good evening';}
+async function renderHome(){
+  $('#hDate').textContent=new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+  $('#hHello').textContent=`${hello()}, ${(ME.name||'').split(' ')[0]||'there'}`;
+  if(HSCOPE==='team'&&isMgr())return renderTeamHome(await api('/api/dashboard?scope=team'));
+  const d=await api('/api/dashboard'),c=d.counts;
+  $('#hSub').innerHTML=c.overdue?`You have <b style="color:var(--bad)">${c.overdue} overdue</b> and ${c.due_today} due today.`:c.due_today?`${c.due_today} task${c.due_today>1?'s':''} due today — you're on track.`:c.open?`Nothing overdue — ${c.open} open task${c.open>1?'s':''}.`:'All clear 🎉';
+  const groups=[['Overdue',a=>a.kind==='task'&&a.overdue,'red'],['Today',a=>a.date===d.today&&!a.overdue],['Tomorrow',a=>dayLabel(a.date)==='Tomorrow'],
+    ['This week',a=>a.date>d.today&&dayLabel(a.date)!=='Tomorrow'&&a.date<=isoAdd(d.today,7)],['Later',a=>a.date>isoAdd(d.today,7)]];
+  const used=new Set();
+  const agenda=groups.map(([name,f,cls])=>{const items=d.agenda.filter(a=>!used.has(a)&&f(a));items.forEach(a=>used.add(a));if(!items.length)return'';
+    return `<div class="grp ${cls||''}">${name}<span class="mute" style="font-weight:500">· ${items.length}</span></div>`+items.map(agendaRow).join('')}).join('');
+  const reminders=d.reminders.filter(r=>!r.sent||r.remind_at>=d.today);
+  $('#home').innerHTML=`<div class="kpis">
+     ${kpi('red','Overdue',c.overdue,'',"show('projects')")}${kpi('blue','Due today',c.due_today)}${kpi('violet','Next 7 days',c.due_week)}
+     ${kpi('amber','Blocked for me',c.blocked)}${kpi('amber','Waiting on me',c.waiting_on_me,c.waiting_on_me?'teammates need these':'')}${kpi('green','Done this week',c.done_week,c.time_week?fmtMin(c.time_week)+' logged':'')}</div>
+   <div class="hgrid"><div>
+     ${panel('Agenda',null,agenda||'<div class="empty">Nothing scheduled in the next 3 weeks.</div>',`${d.agenda.length} items · tasks, reminders &amp; project starts`)}
+     ${d.no_date.length?panel('Open tasks without a due date',d.no_date.length,d.no_date.map(t=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><span class="pill ${t.status}">${LBL[t.status]}</span><div class="grow">${esc(t.title)}<div class="sub">${esc(t.project_name)}</div></div></div>`).join('')):''}
+     <div class="grp" style="margin:6px 0 10px">My projects <span class="mute" style="font-weight:500">· ${d.projects.length}</span></div>
+     <div class="pgrid">${d.projects.map(p=>{const pct=p.total?Math.round(100*p.done/p.total):0;return `<div class="pcard" onclick="openProject(${p.id})">
+        <h4>${esc(p.name)}</h4><div class="sub">${esc([p.property,p.client].filter(Boolean).join(' · ')||'\u00a0')}</div>
+        <div class="bar"><i style="width:${pct}%"></i></div>
+        <div class="row" style="justify-content:space-between;margin:0;font-size:12px"><span class="mute">${p.done}/${p.total} done</span><span>${p.my_open?`<b>${p.my_open}</b> mine`:'<span class="mute">nothing on you</span>'}${p.my_next_due?` · next ${fmtDate(p.my_next_due)}`:''}</span></div>
+        <div class="chips">${p.roles.map(r=>`<span class="chip2">${esc(r)}</span>`).join('')}${p.overdue?`<span class="risk hi">${p.overdue} overdue</span>`:''}</div></div>`}).join('')||'<div class="empty">You\'re not on any active projects.</div>'}</div>
+   </div><div>
+     ${panel('⏳ Waiting on me',d.waiting_on_me.length,d.waiting_on_me.map(w=>`<div class="row2" style="cursor:pointer" onclick="openTask(${w.my_task_id})"><span class="ico">▶️</span><div class="grow"><b>#${w.my_task_id} ${esc(w.my_task_title)}</b><div class="sub">${esc(w.assignee_name)} can't start <i>${esc(w.title)}</i> until this is done${w.my_due?` · due ${fmtDate(w.my_due)}`:''}</div></div></div>`).join('')||'<div class="empty">Nobody is waiting on you.</div>')}
+     ${panel('⛔ Blocked for me',d.blocked.length,d.blocked.map(b=>`<div class="row2" style="cursor:pointer" onclick="openTask(${b.id})"><span class="ico">🔒</span><div class="grow">${esc(b.title)}<div class="sub">${b.blockers.length?'Waiting on '+b.blockers.map(x=>`#${x.id} ${esc(x.title)} (${esc(x.assignee_name)})`).join(', '):''}${b.last_note?` “${esc(b.last_note)}”`:''}</div></div></div>`).join('')||'<div class="empty">Nothing blocked. 👍</div>')}
+     ${panel('⏰ Reminders',reminders.length,(reminders.map(r=>`<div class="row2"><input type="checkbox" title="Done" onchange="remDone(${r.id})"><div class="grow">${esc(r.text)}<div class="sub">${new Date(r.remind_at).toLocaleString(undefined,{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}${r.sent?' · sent':''}</div></div><button class="x" style="border:0;background:none;color:var(--mute);cursor:pointer" onclick="remDel(${r.id})">✕</button></div>`).join('')||'<div class="empty">No reminders. Add one here or tell the bot in Blink: “remind me Friday 9am to call the owner”.</div>')
+        +`<div class="row" style="margin-top:8px"><input id="remText" placeholder="Remind me to…" style="flex:1;min-width:140px"><input id="remAt" type="datetime-local" style="width:190px"><button class="b ghost" onclick="remAdd()">Add</button></div>`)}
+     ${panel('💬 Comments &amp; mentions',d.activity.length,d.activity.map(a=>`<div class="row2" style="cursor:pointer" onclick="openTask(${a.task_id})"><span class="ico">${a.mentioned?'＠':'💬'}</span><div class="grow"><b>${esc(a.who)}</b> <span class="sub">on ${esc(a.task_title)}</span><div class="sub" style="white-space:normal">${esc(a.body.length>140?a.body.slice(0,140)+'…':a.body)}</div></div></div>`).join('')||'<div class="empty">No new comments.</div>')}
+     ${panel('✅ Done this week',d.done_week.length,d.done_week.map(t=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><span class="ico">✓</span><div class="grow">${esc(t.title)}<div class="sub">${esc(t.project_name)}${t.actual_minutes?' · '+fmtMin(t.actual_minutes):' · <span class="over">log time</span>'}</div></div></div>`).join('')||'<div class="empty">Nothing yet this week.</div>')}
+     <div class="row mute" style="font-size:12.5px;margin:4px 2px"><label><input type="checkbox" ${d.user.daily_digest?'checked':''} onchange="api('/api/me/prefs',{method:'PATCH',body:{daily_digest:this.checked}}).then(()=>toast(this.checked?'6pm recap on':'6pm recap off'))"> Send me a 6pm recap in Blink every day</label></div>
+   </div></div>`;
+}
+const isoAdd=(d,n)=>{const x=new Date(d+'T12:00');x.setDate(x.getDate()+n);return iso(x)};
+function agendaRow(a){
+  if(a.kind==='reminder')return `<div class="it"><div class="d">${a.time||''}<b>⏰</b></div><div class="t"><div>${esc(a.title)}</div><div class="sub">Reminder · ${dayLabel(a.date)}</div></div><span class="pill">reminder</span></div>`;
+  if(a.kind==='project_start')return `<div class="it" onclick="openProject(${a.id})">${dateBox(a.date)}<div class="t"><div>🚀 ${esc(a.title)} starts</div><div class="sub">Project start</div></div><span class="pill in_progress">project</span></div>`;
+  return `<div class="it ${a.overdue?'od':''}" onclick="openTask(${a.id})">${dateBox(a.date)}<div class="t"><div>${a.waiting_on?'🔒 ':''}${esc(a.title)}</div><div class="sub">${esc(a.project_name)}${a.overdue?` · <span class="over">${Math.round((new Date(today()+'T12:00')-new Date(a.date+'T12:00'))/864e5)}d late</span>`:''}${a.estimate_minutes?' · est '+fmtMin(a.estimate_minutes):''}</div></div><span class="pill ${a.status}">${LBL[a.status]}</span></div>`;}
+function renderTeamHome(d){const c=d.counts;
+  $('#hSub').innerHTML=`${c.projects} active projects · ${c.open} open tasks${c.overdue?` · <b style="color:var(--bad)">${c.overdue} overdue</b>`:''}`;
+  const max=Math.max(1,...d.workload.map(w=>w.open));
+  const riskOf=p=>p.overdue>=3||p.blocked>=2?'hi':p.overdue||p.blocked?'md':'ok';
+  const trow=(t,extra='')=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><div class="grow">${esc(t.title)}<div class="sub">${esc(t.assignee_name)} · ${esc(t.project_name)}${t.due_date?` · <span class="${isOver(t)?'over':''}">${fmtDate(t.due_date)}</span>`:''}${extra}</div></div><span class="pill ${t.status}">${LBL[t.status]}</span></div>`;
+  $('#home').innerHTML=`<div class="kpis">${kpi('red','Overdue',c.overdue)}${kpi('amber','Blocked',c.blocked)}${kpi('violet','Due next 7 days',c.due_week)}${kpi('blue','Open tasks',c.open)}${kpi('','Unassigned',c.unassigned)}${kpi('green','Done this week',c.done_week,c.time_week?fmtMin(c.time_week)+' logged':'')}</div>
+   <div class="hgrid"><div>
+    ${panel('Workload',null,`<div class="legend" style="margin:8px 0 4px"><span><i style="background:var(--bad)"></i>Overdue</span><span><i style="background:#f59f00"></i>Blocked</span><span><i style="background:#91a7ff"></i>Other open</span></div>`+
+      d.workload.map(w=>{const other=Math.max(0,w.open-w.overdue-w.blocked);const pc=n=>100*n/max;return `<div class="wl"><span class="nm" onclick="$('#calWho').value='${w.id}';show('calendar')" title="Open ${esc(w.name)}'s calendar">${esc(w.name)}</span>
+        <div class="stack" title="${w.open} open"><i style="width:${pc(w.overdue)}%;background:var(--bad)"></i><i style="width:${pc(w.blocked)}%;background:#f59f00"></i><i style="width:${pc(other)}%;background:#91a7ff"></i></div>
+        <span class="n">${w.open} open${w.est_open?' · '+fmtMin(w.est_open):''}</span></div>`}).join(''),null,'click a name for their calendar')}
+    ${panel('Projects',d.projects.length,`<table class="mini"><tr><th>Project</th><th style="width:28%">Progress</th><th>Issues</th><th>Next due</th></tr>${d.projects.map(p=>{const pct=p.total?Math.round(100*p.done/p.total):0;
+      return `<tr style="cursor:pointer" onclick="openProject(${p.id})"><td><b>${esc(p.name)}</b>${p.property?`<div class="mute">${esc(p.property)}</div>`:''}</td><td><div class="bar" style="margin:0"><i style="width:${pct}%"></i></div><span class="mute">${p.done}/${p.total}</span></td>
+       <td><span class="risk ${riskOf(p)}">${p.overdue||p.blocked?[p.overdue?p.overdue+' overdue':'',p.blocked?p.blocked+' blocked':''].filter(Boolean).join(' · '):'on track'}</span></td><td>${fmtDate(p.next_due)||'—'}</td></tr>`}).join('')}</table>`)}
+    ${panel('⚠️ Overdue',d.overdue.length,d.overdue.map(t=>trow(t)).join('')||'<div class="empty">Nothing overdue. 🎉</div>')}
+   </div><div>
+    ${panel('⛔ Blocked',d.blocked.length,d.blocked.map(t=>trow(t,`${t.last_note?`<br>“${esc(t.last_note)}”`:''}${t.blockers.length?'<br>Waiting on '+t.blockers.map(x=>'#'+x.id+' '+esc(x.title)).join(', '):''}`)).join('')||'<div class="empty">Nothing blocked.</div>')}
+    ${panel('👤 Unassigned',d.unassigned.length,d.unassigned.map(t=>trow(t)).join('')||'<div class="empty">Everything has an owner.</div>')}
+    ${panel('✅ Completed this week',d.done_week.length,d.done_week.map(t=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><span class="ico">✓</span><div class="grow">${esc(t.title)}<div class="sub">${esc(t.assignee_name)} · ${esc(t.project_name)}${t.actual_minutes?' · '+fmtMin(t.actual_minutes):''}</div></div></div>`).join('')||'<div class="empty">Nothing yet this week.</div>',null,d.missing_time.length?`<span class="over">${d.missing_time.length} without time logged</span>`:'')}
+   </div></div>`;}
+function openReminder(){$('#remText')?($('#remText').focus()):(homeScope('me'),setTimeout(()=>$('#remText')&&$('#remText').focus(),400));}
+async function remAdd(){const t=$('#remText').value.trim(),at=$('#remAt').value;if(!t||!at){alert('Add what to remind you about and when.');return;}await api('/api/reminders',{method:'POST',body:{text:t,remind_at:at}});toast('⏰ Reminder set — you\'ll get it in Blink');renderHome();}
+async function remDone(id){await api(`/api/reminders/${id}`,{method:'PATCH'});renderHome();}
+async function remDel(id){await api(`/api/reminders/${id}`,{method:'DELETE'});renderHome();}
+async function previewDigest(){const r=await api('/api/me/digest-preview',{method:'POST'});
+  $('#taskDlgBody').innerHTML=`<h2>🌆 Your 6pm recap</h2><p class="mute">${r.sent?'Sent to you in Blink just now. ':''}Everyone with a Blink ID gets this at 6pm each day (they can turn it off on their Home page).</p><div class="cm" style="white-space:pre-wrap">${r.text?esc(r.text).replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>'):'Nothing to report for you today.'}</div>`;taskDlg.showModal();}
 
 /* ---------- calendar ---------- */
 let CAL=(()=>{const d=new Date();return{y:d.getFullYear(),m:d.getMonth()}})();
@@ -495,7 +615,7 @@ async function runReminders(){const r=await api('/api/reminders/run',{method:'PO
 (async()=>{ME=await api('/api/me');
   $('#me').innerHTML=`${esc(ME.name)} <span class="pill">${ME.role==='manager'?'Manager':'Staff'}</span>${ME.auth_enabled?' · <a href="/logout">Sign out</a>':''}`;
   if(!isMgr())$('#pFilter').value='mine';
-  await refresh();
+  await refresh();renderHome();
   const c=await api('/api/config');if(!c.simulator)$('#chatTab').remove();})();
 </script>
 </body></html>

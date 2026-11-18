@@ -70,7 +70,7 @@ def _staff_allowed(request: Request) -> bool:
     if method == "GET":
         return not path.startswith(MANAGER_ONLY_GET_PREFIXES)
     # Task-level writes: each endpoint checks ownership / manager itself.
-    return path.startswith(("/api/tasks", "/api/checklist/"))
+    return path.startswith(("/api/tasks", "/api/checklist/", "/api/reminders", "/api/me/"))
 
 
 async def require_login(request: Request, call_next):
