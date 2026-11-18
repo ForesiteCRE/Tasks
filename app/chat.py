@@ -7,8 +7,11 @@
    user's open tasks.
 """
 import json
+import logging
 import os
 import re
+
+log = logging.getLogger("chat")
 
 STATUS_WORDS = {
     "done": "done", "complete": "done", "completed": "done", "finished": "done", "x": "done",
@@ -21,9 +24,12 @@ STATUS_WORDS = {
 HELP = (
     "Reply with an update, e.g.\n"
     "• `done 12`\n• `12 in progress`\n• `blocked 7 waiting on lender`\n"
-    "• `note 5 called the tenant`\n• `list` – show your open tasks\n"
-    "Or just tell me in plain English what you got done."
+    "• `note 5 called the tenant`\n• `list` – show your open tasks"
 )
+
+
+def help_text() -> str:
+    return HELP + ("\nOr just tell me in plain English what you got done." if ai_enabled() else "")
 
 _STATUS_RE = "|".join(sorted(map(re.escape, STATUS_WORDS), key=len, reverse=True))
 CMD_A = re.compile(rf"^\s*({_STATUS_RE})\s*#?(\d+)\s*[:\-]?\s*(.*)$", re.I)  # done 12 note
@@ -52,6 +58,14 @@ def parse_rules(text: str) -> dict | None:
     return {"intent": "update", "updates": updates} if updates else None
 
 
+MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-5-5")
+
+
+def ai_enabled() -> bool:
+    return bool(os.getenv("ANTHROPIC_API_KEY"))
+
+
+# "unchanged" / "" instead of nulls keeps the schema simple for structured outputs.
 UPDATE_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -65,8 +79,8 @@ UPDATE_SCHEMA = {
                 "required": ["task_id", "status", "note"],
                 "properties": {
                     "task_id": {"type": "integer"},
-                    "status": {"type": ["string", "null"], "enum": ["todo", "in_progress", "blocked", "done", None]},
-                    "note": {"type": ["string", "null"]},
+                    "status": {"type": "string", "enum": ["unchanged", "todo", "in_progress", "blocked", "done"]},
+                    "note": {"type": "string"},
                 },
             },
         },
@@ -74,28 +88,30 @@ UPDATE_SCHEMA = {
     },
 }
 
-SYSTEM = (
-    "You turn an employee's chat message into status updates on their assigned tasks. "
-    "Only reference task_ids from the provided list. Use status null when the message adds "
-    "information without changing status. Put useful details (who/what they're waiting on, "
-    "dates) in note. If the message is ambiguous about which task it means, return no updates "
-    "and use reply to ask a short clarifying question. Otherwise reply is a one-line friendly confirmation."
-)
+SYSTEM = """You read a chat message an employee sent to their team's task bot and turn it into status updates on the tasks assigned to them.
+
+Rules:
+- Only use task_ids from the employee's task list. Never invent one.
+- status: "done" when they say it's finished/sent/submitted/wrapped up; "in_progress" when started or working on it; "blocked" when waiting on someone or something; "todo" only if they say it needs to be redone or reopened; otherwise "unchanged".
+- note: a short factual note worth keeping (who/what they're waiting on, dates, amounts). Empty string if nothing to add.
+- One message can update several tasks. Match on meaning, not exact wording ("rent roll" matches "Reconcile rent roll").
+- If it's unclear which task they mean, or the message isn't a task update (a question, small talk), return no updates and use reply to answer briefly or ask one short clarifying question that names the candidate task numbers.
+- Otherwise reply is one short, friendly confirmation line. No emoji spam."""
 
 
 def parse_with_claude(text: str, open_tasks: list[dict]) -> dict | None:
-    if not os.getenv("ANTHROPIC_API_KEY"):
+    """Map free text onto the user's open tasks. Returns {"intent","updates","reply"} or None."""
+    if not ai_enabled() or not open_tasks:
         return None
     import anthropic
 
     client = anthropic.Anthropic()
     task_list = "\n".join(
-        f"#{t['id']} [{t['status']}] {t['title']} (project: {t['project_name']}, due {t['due_date']})"
-        for t in open_tasks
-    )
+        f"#{t['id']} [{t['status']}] {t['title']} (project: {t['project_name']}, due {t['due_date'] or 'none'})"
+        for t in open_tasks)
     try:
         resp = client.beta.messages.create(
-            model="claude-opus-5-5",
+            model=MODEL,
             max_tokens=2000,
             betas=["server-side-fallback-2026-07-01"],
             fallbacks="default",
@@ -103,9 +119,11 @@ def parse_with_claude(text: str, open_tasks: list[dict]) -> dict | None:
             system=SYSTEM,
             messages=[{"role": "user", "content": f"My open tasks:\n{task_list}\n\nMy message:\n{text}"}],
         )
-    except anthropic.APIError:
+    except anthropic.APIError as e:
+        log.warning("Claude parse failed: %s", e)
         return None
     if resp.stop_reason != "end_turn":
+        log.warning("Claude stopped with %s", resp.stop_reason)
         return None
     raw = next((b.text for b in resp.content if b.type == "text"), "")
     try:
@@ -113,6 +131,12 @@ def parse_with_claude(text: str, open_tasks: list[dict]) -> dict | None:
     except json.JSONDecodeError:
         return None
     valid = {t["id"] for t in open_tasks}
-    data["updates"] = [u for u in data["updates"] if u["task_id"] in valid]
-    data["intent"] = "update"
-    return data
+    updates = []
+    for u in data.get("updates", []):
+        if u.get("task_id") not in valid:
+            continue
+        status = None if u.get("status") in (None, "", "unchanged") else u["status"]
+        note = (u.get("note") or "").strip() or None
+        if status or note:
+            updates.append({"task_id": u["task_id"], "status": status, "note": note})
+    return {"intent": "update", "updates": updates, "reply": data.get("reply", "")}

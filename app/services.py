@@ -117,7 +117,7 @@ def notify_new_assignments(project_id: int):
         by_user.setdefault(t["blink_user_id"], []).append(t)
     for buid, ts in by_user.items():
         lines = "\n".join(fmt_task(t) for t in ts)
-        blink.send_dm(buid, f"📋 New project *{p['name']}* — you've been assigned:\n{lines}\n\n{chat.HELP}")
+        blink.send_dm(buid, f"📋 New project *{p['name']}* — you've been assigned:\n{lines}\n\n{chat.help_text()}")
 
 
 def send_reminders(today: date | None = None, force: bool = False) -> int:
@@ -158,9 +158,9 @@ def handle_inbound(blink_user_id: str, text: str) -> str:
     parsed = chat.parse_rules(text) or chat.parse_with_claude(text, mine)
 
     if parsed is None:
-        reply = "Sorry, I couldn't match that to a task.\n" + chat.HELP
+        reply = "Sorry, I couldn't match that to a task.\n" + chat.help_text()
     elif parsed["intent"] == "help":
-        reply = chat.HELP
+        reply = chat.help_text()
     elif parsed["intent"] == "list":
         reply = ("Your open tasks:\n" + "\n".join(map(fmt_task, mine))) if mine else "🎉 You have no open tasks."
     else:

@@ -25,7 +25,7 @@ table{width:100%;border-collapse:collapse}td,th{padding:6px 8px;border-top:1px s
 </head>
 <body>
 <header><h1>📋 Task Manager <span class="mute" style="font-weight:400">· Blink-connected</span></h1>
-<nav id="nav"><button data-v="projects" class="on">Projects</button><button data-v="templates">Checklist templates</button><button data-v="recurring">Monthly recurring</button><button data-v="people">People</button><button data-v="chat" id="chatTab">Blink chat (simulator)</button></nav>
+<nav id="nav"><button data-v="projects" class="on">Projects</button><button data-v="templates">Checklist templates</button><button data-v="recurring">Monthly recurring</button><button data-v="people">People</button><button data-v="admin">Reports &amp; backups</button><button data-v="chat" id="chatTab">Blink chat (simulator)</button></nav>
 <span id="me" class="mute" style="margin-left:auto"></span></header>
 <main>
 
@@ -58,6 +58,18 @@ table{width:100%;border-collapse:collapse}td,th{padding:6px 8px;border-top:1px s
   <div class="card"><table id="people"></table><p class="mute">People who sign in with Google are added automatically — paste their Blink user ID (u-…, from their page in Blink Admin) so they get chat reminders.</p></div>
 </section>
 
+<section id="v-admin" class="hidden">
+  <div class="card"><h2>📊 Weekly summary</h2>
+    <p class="mute">Sent in Blink every Monday morning to anyone ticked “Weekly summary” on the People tab: overdue, blocked and due-this-week tasks across the team.</p>
+    <div class="row"><button class="b ghost" onclick="previewSummary()">Preview</button><button class="b" onclick="sendSummary()">Send now</button><span id="sumInfo" class="mute"></span></div>
+    <pre id="sumPreview" class="hidden" style="white-space:pre-wrap;background:#f1f3f6;padding:12px;border-radius:8px;font:13px/1.5 system-ui"></pre></div>
+  <div class="card"><h2>💾 Backups</h2>
+    <p class="mute">A copy of the whole task database is saved automatically every day and kept for 14 days. Download one now and then to keep an off-site copy.</p>
+    <div class="row"><button class="b" onclick="runBackup()">Back up now</button><span id="bkInfo" class="mute"></span></div>
+    <table id="backups"></table></div>
+  <div class="card"><h2>💬 Plain-English updates in Blink</h2><p id="aiInfo" class="mute"></p></div>
+</section>
+
 <section id="v-chat" class="hidden">
   <div class="card"><h2>Blink chat simulator</h2>
     <p class="mute">Shows exactly what each person sees in their Blink DM with the task bot. Type as that person to test status updates.</p>
@@ -70,7 +82,7 @@ table{width:100%;border-collapse:collapse}td,th{padding:6px 8px;border-top:1px s
 const $=s=>document.querySelector(s), api=(u,o={})=>fetch(u,{headers:{'Content-Type':'application/json'},...o,body:o.body&&JSON.stringify(o.body)}).then(r=>{if(r.status===401){location.href='/login';throw 0}return r.json()});
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let USERS=[],TPLS=[];const LBL={todo:'To do',in_progress:'In progress',blocked:'Blocked',done:'Done'};
-$('#nav').onclick=e=>{const v=e.target.dataset.v;if(!v)return;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b===e.target));document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-'+v));if(v==='chat')loadChat();};
+$('#nav').onclick=e=>{const v=e.target.dataset.v;if(!v)return;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b===e.target));document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-'+v));if(v==='chat')loadChat();if(v==='admin')loadAdmin();};
 const userOpts=(sel)=>'<option value="">Unassigned</option>'+USERS.map(u=>`<option value="${u.id}" ${u.id==sel?'selected':''}>${esc(u.name)}</option>`).join('');
 const today=()=>new Date().toISOString().slice(0,10);
 
@@ -79,7 +91,7 @@ async function refresh(){
   const tOpts='<option value="">Blank (no template)</option>'+TPLS.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
   $('#pTpl').innerHTML=tOpts;$('#rTpl').innerHTML=TPLS.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
   $('#cUser').innerHTML=USERS.filter(u=>u.blink_user_id).map(u=>`<option value="${esc(u.blink_user_id)}">${esc(u.name)}</option>`).join('');
-  $('#people').innerHTML='<tr><th>Name</th><th>Email</th><th>Blink user ID</th></tr>'+USERS.map(u=>`<tr><td>${esc(u.name)}</td><td>${esc(u.email)}</td><td><input value="${esc(u.blink_user_id)}" placeholder="u-…" style="width:100%" onchange="api('/api/users/${u.id}',{method:'PATCH',body:{blink_user_id:this.value}}).then(refresh)"></td></tr>`).join('');
+  $('#people').innerHTML='<tr><th>Name</th><th>Email</th><th>Weekly summary</th><th>Blink user ID</th></tr>'+USERS.map(u=>`<tr><td>${esc(u.name)}</td><td>${esc(u.email)}</td><td><input type="checkbox" ${u.weekly_summary?'checked':''} ${u.blink_user_id?'':'disabled title="Needs a Blink ID"'} onchange="api('/api/users/${u.id}',{method:'PATCH',body:{weekly_summary:this.checked}})"></td><td><input value="${esc(u.blink_user_id)}" placeholder="u-…" style="width:100%" onchange="api('/api/users/${u.id}',{method:'PATCH',body:{blink_user_id:this.value}}).then(refresh)"></td></tr>`).join('');
   renderProjects(await api('/api/projects'));renderTemplates();
   const rs=await api('/api/recurrences');
   $('#recurring').innerHTML='<tr><th>Name pattern</th><th>Template</th><th>Day</th><th>Last created</th><th></th></tr>'+rs.map(r=>`<tr><td>${esc(r.name_pattern)}</td><td>${esc(r.template_name)}</td><td>${r.day_of_month}</td><td>${r.last_period||'—'}</td><td><button class="b ghost" onclick="toggleRec(${r.id},${!r.active})">${r.active?'Pause':'Resume'}</button></td></tr>`).join('');
@@ -116,6 +128,14 @@ async function addUser(){await api('/api/users',{method:'POST',body:{name:$('#uN
 async function matchBlink(){const r=await api('/api/users/match-blink',{method:'POST'});refresh();
   if(!r.checked){alert('Everyone with an email already has a Blink ID (or nobody has an email yet).');return;}
   alert(`Checked ${r.checked}, linked ${r.found}.\n\n`+r.results.map(x=>`${x.email}: ${x.id||('✗ '+(x.status?x.status+' ':'')+x.detail)}`).join('\n'));}
+async function loadAdmin(){const c=await api('/api/config');
+  $('#sumInfo').textContent=c.last_summary_week?`Last automatic send: ${c.last_summary_week}`:'';
+  $('#bkInfo').textContent=c.last_backup?`Last backup: ${c.last_backup}`:'No backup yet';
+  $('#aiInfo').innerHTML=c.plain_english?'✅ On — people can reply like “finished the rent roll, still waiting on Joe for CAM” and Claude updates the right tasks.':'Off — add an <code>ANTHROPIC_API_KEY</code> variable in Railway to let people reply in plain English. Commands like <code>done 12</code> work either way.';
+  const b=await api('/api/backups');$('#backups').innerHTML=b.length?'<tr><th>File</th><th>Size</th><th></th></tr>'+b.map(x=>`<tr><td>${esc(x.name)}</td><td>${x.size_kb} KB</td><td><a href="/api/backups/${encodeURIComponent(x.name)}">Download</a></td></tr>`).join(''):'';}
+async function previewSummary(){const r=await api('/api/summary/preview');$('#sumPreview').textContent=r.text;$('#sumPreview').classList.remove('hidden');}
+async function sendSummary(){const r=await api('/api/summary/send',{method:'POST'});alert(r.sent_to?`Sent to ${r.sent_to} people.`:'Nobody is ticked for the weekly summary yet (People tab).');}
+async function runBackup(){const r=await api('/api/backups/run',{method:'POST'});loadAdmin();}
 async function loadChat(){const id=$('#cUser').value;if(!id)return;const ms=await api('/api/blink/messages?blink_user_id='+encodeURIComponent(id));
   $('#chat').innerHTML=ms.map(m=>`<div class="msg ${m.direction}">${esc(m.text).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*([^*]+)\*/g,'<b>$1</b>')}</div>`).join('')||'<p class="mute">No messages yet.</p>';$('#chat').scrollTop=1e9;}
 async function sendChat(){const text=$('#cText').value;if(!text)return;$('#cText').value='';await api('/api/blink/simulate',{method:'POST',body:{blink_user_id:$('#cUser').value,text}});loadChat();refresh();}

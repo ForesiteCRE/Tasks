@@ -10,8 +10,8 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, blink, services
-from .db import init_db, rows, tx
+from . import auth, blink, chat, maintenance, services
+from .db import get_setting, init_db, rows, tx
 
 logging.basicConfig(level=logging.INFO)
 REMINDER_HOUR = int(os.getenv("REMINDER_HOUR", "9"))
@@ -19,14 +19,20 @@ STATIC = os.path.join(os.path.dirname(__file__), "..", "static")
 
 
 async def scheduler_loop():
-    """Every 10 min: spawn due monthly projects; after REMINDER_HOUR send daily reminders (once/day/task)."""
+    """Every 10 min: daily backup, spawn due monthly projects; after REMINDER_HOUR send daily
+    reminders (once/day/task) and, on the summary weekday, the weekly summary (once/week)."""
     while True:
-        try:
-            services.run_recurrences()
-            if datetime.now().hour >= REMINDER_HOUR:
-                services.send_reminders()
-        except Exception:
-            logging.exception("scheduler tick failed")
+        for job in (maintenance.daily_backup, services.run_recurrences):
+            try:
+                job()
+            except Exception:
+                logging.exception("scheduler job %s failed", job.__name__)
+        if datetime.now().hour >= REMINDER_HOUR:
+            for job in (services.send_reminders, maintenance.send_weekly_summary):
+                try:
+                    job()
+                except Exception:
+                    logging.exception("scheduler job %s failed", job.__name__)
         await asyncio.sleep(600)
 
 
@@ -119,6 +125,7 @@ def list_users():
 class UserPatch(BaseModel):
     name: str | None = None
     blink_user_id: str | None = None
+    weekly_summary: bool | None = None
 
 @app.patch("/api/users/{uid}")
 def patch_user(uid: int, p: UserPatch):
@@ -128,11 +135,39 @@ def patch_user(uid: int, p: UserPatch):
         if p.blink_user_id is not None:  # changing the Blink id resets the cached 1:1 chat
             c.execute("UPDATE users SET blink_user_id=?, blink_chat_id=NULL WHERE id=?",
                       (p.blink_user_id.strip() or None, uid))
+        if p.weekly_summary is not None:
+            c.execute("UPDATE users SET weekly_summary=? WHERE id=?", (int(p.weekly_summary), uid))
     return {"ok": True}
 
 @app.get("/api/config")
 def config():
-    return {"simulator": SIMULATOR, "blink_mock": blink.MOCK}
+    return {"simulator": SIMULATOR, "blink_mock": blink.MOCK, "plain_english": chat.ai_enabled(),
+            "last_backup": get_setting("last_backup"), "last_summary_week": get_setting("last_summary_week")}
+
+
+# ---------- weekly summary & backups ----------
+@app.get("/api/summary/preview")
+def summary_preview():
+    return {"text": maintenance.build_summary()}
+
+@app.post("/api/summary/send")
+def summary_send():
+    return {"sent_to": maintenance.send_weekly_summary(force=True)}
+
+@app.get("/api/backups")
+def backups_list():
+    return maintenance.list_backups()
+
+@app.post("/api/backups/run")
+def backups_run():
+    return {"file": os.path.basename(maintenance.backup_now())}
+
+@app.get("/api/backups/{name}")
+def backups_download(name: str):
+    if name not in {b["name"] for b in maintenance.list_backups()}:  # only files we listed - no path tricks
+        raise HTTPException(404)
+    return FileResponse(os.path.join(maintenance.BACKUP_DIR, name), filename=name,
+                        media_type="application/octet-stream")
 
 @app.post("/api/users")
 def create_user(u: UserIn):

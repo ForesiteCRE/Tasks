@@ -70,6 +70,12 @@ CREATE TABLE IF NOT EXISTS task_updates (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Small key/value store for scheduler bookkeeping (last backup date, last summary week, ...)
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
+
 -- Log of every message to/from Blink (doubles as the mock outbox)
 CREATE TABLE IF NOT EXISTS blink_messages (
     id INTEGER PRIMARY KEY,
@@ -105,6 +111,20 @@ def init_db():
         cols = {r[1] for r in c.execute("PRAGMA table_info(users)")}
         if "blink_chat_id" not in cols:  # migrate DBs created before this column existed
             c.execute("ALTER TABLE users ADD COLUMN blink_chat_id TEXT")
+        if "weekly_summary" not in cols:
+            c.execute("ALTER TABLE users ADD COLUMN weekly_summary INTEGER NOT NULL DEFAULT 0")
+
+
+def get_setting(key: str) -> str | None:
+    with tx() as c:
+        r = c.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    return r["value"] if r else None
+
+
+def set_setting(key: str, value: str):
+    with tx() as c:
+        c.execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                  (key, value))
 
 
 def rows(cur) -> list[dict]:

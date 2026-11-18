@@ -27,6 +27,10 @@ Open http://localhost:8000 and use **Blink chat (simulator)** to test.
   `note 5 …`, `list`. With `ANTHROPIC_API_KEY` set, free text ("finished the rent roll, still
   waiting on Joe for CAM") is mapped onto the person's tasks by Claude.
 - Web checkboxes and Blink updates share one history (`task_updates`).
+- **Weekly summary** – Monday-morning Blink message (overdue / blocked / due this week) to anyone ticked
+  "Weekly summary" on People. Preview or send now from **Reports & backups**.
+- **Daily backups** – a copy of the database every day in `/data/backups` (kept 14 days), downloadable from
+  **Reports & backups**. For off-site safety also enable Railway's volume backups (service → Backups tab).
 
 ## Connecting to real Blink (Chat API, App Identity)
 Uses Blink's Chat API: https://developer.joinblink.com/docs/using-chat-api
