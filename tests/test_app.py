@@ -238,6 +238,22 @@ def test_blink_commands():
     assert ids_task(S["late"])["actual_minutes"] == 30
 
 
+def test_blink_follow_up_comment_uses_conversation(mgr):
+    """“Add it to #141” → bot asks what → next message becomes a comment (bot remembers the exchange)."""
+    with tx() as c:
+        sam = c.execute("SELECT id FROM users WHERE blink_user_id='u-sam'").fetchone()["id"]
+    tid = ids(mgr.post("/api/tasks", json={"title": "Property tax & insurance projections", "assignee_id": sam}))["id"]
+    CLAUDE.append({"updates": [], "comments": [], "reply": f"Sure. What should I add to #{tid}?"})
+    assert f"#{tid}" in services.handle_inbound("u-sam", f"Add it to #{tid}")
+    CLAUDE.append({"updates": [], "comments": [{"task_id": tid, "body": "This is a test comment from Blink"}], "reply": ""})
+    r = services.handle_inbound("u-sam", "This is a test comment from Blink")
+    assert "Comment added" in r and "test comment from Blink" in r
+    sent = CLAUDE_CALLS[-1]["messages"]
+    assert sent[-3]["content"] == f"Add it to #{tid}" and "What should I add" in sent[-2]["content"]   # earlier turn included
+    with tx() as c:
+        assert c.execute("SELECT 1 FROM task_comments WHERE task_id=? AND body LIKE 'This is a test comment%'", (tid,)).fetchone()
+
+
 def ids_task(tid):
     with tx() as c:
         return dict(c.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone())

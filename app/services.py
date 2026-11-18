@@ -177,7 +177,7 @@ def handle_inbound(blink_user_id: str, text: str, files: list[dict] | None = Non
         return reply
 
     mine = open_tasks_for(u["id"])
-    parsed = rule or chat.parse_with_claude(text, mine)
+    parsed = rule or chat.parse_with_claude(text, mine, chat.recent(u["id"]))
 
     if parsed is None:
         reply = "Sorry, I couldn't match that to a task.\n" + chat.help_text()
@@ -226,6 +226,15 @@ def handle_inbound(blink_user_id: str, text: str, files: list[dict] | None = Non
                               + (f" (note: {up['note']})" if up.get("note") else ""))
             if nxt:
                 done_lines.append(f"🔁 Next one scheduled: #{nxt['id']} due {date.fromisoformat(nxt['due_date']):%a %b %d}")
+        for cm in parsed.get("comments") or []:
+            if cm["task_id"] not in allowed:
+                skipped.append(cm["task_id"])
+                continue
+            r = collab.add_comment(cm["task_id"], u["id"], cm["body"], source="blink")
+            with tx() as c:
+                title = c.execute("SELECT title FROM tasks WHERE id=?", (cm["task_id"],)).fetchone()["title"]
+            done_lines.append(f"💬 Comment added to #{cm['task_id']} {title}: “{cm['body']}”"
+                              + (f" (notified {', '.join(r['mentioned'])})" if r["mentioned"] else ""))
         reply = "\n".join(done_lines) or parsed.get("reply") or "No changes made."
         need_time = [up["task_id"] for up in parsed["updates"] if up.get("status") == "done" and not up.get("actual_minutes")
                      and up["task_id"] in allowed]
@@ -238,6 +247,7 @@ def handle_inbound(blink_user_id: str, text: str, files: list[dict] | None = Non
             reply += f"\n(Skipped #{', #'.join(map(str, skipped))} — not assigned to you.)"
         if parsed.get("reply") and done_lines:
             reply = parsed["reply"] + "\n" + reply
+    chat.remember(u["id"], text, reply)
     blink.send_dm(blink_user_id, reply)
     return reply
 

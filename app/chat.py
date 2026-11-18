@@ -77,7 +77,7 @@ def ai_enabled() -> bool:
 UPDATE_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["updates", "reply"],
+    "required": ["updates", "comments", "reply"],
     "properties": {
         "updates": {
             "type": "array",
@@ -94,6 +94,12 @@ UPDATE_SCHEMA = {
                 },
             },
         },
+        "comments": {
+            "type": "array",
+            "description": "comments to post on a task's discussion thread (visible to the team, @names notify people)",
+            "items": {"type": "object", "additionalProperties": False, "required": ["task_id", "body"],
+                      "properties": {"task_id": {"type": "integer"}, "body": {"type": "string"}}},
+        },
         "reply": {"type": "string"},
     },
 }
@@ -106,11 +112,13 @@ Rules:
 - note: a short factual note worth keeping (who/what they're waiting on, dates, amounts). Empty string if nothing to add.
 - If they say how long something took ("took about 2 hours", "spent 45 min"), put it in actual_minutes and any reason in time_note; otherwise 0 and "".
 - One message can update several tasks. Match on meaning, not exact wording ("rent roll" matches "Reconcile rent roll").
+- comments: when they ask to comment / leave a message / "add this to #12" / tell or ask a teammate something on a task, put the exact text in comments (keep any @names). Don't also copy it into note. A comment alone is a complete action — no status change needed.
+- Use the earlier conversation to resolve follow-ups. If you just asked which task or what to add, their next message is the answer: act on it (e.g. you asked "what should I add to #141?" and they send text → that text is a comment on #141). Never treat such an answer as a test or small talk.
 - If it's unclear which task they mean, or the message isn't a task update (a question, small talk), return no updates and use reply to answer briefly or ask one short clarifying question that names the candidate task numbers.
 - Otherwise reply is one short, friendly confirmation line. No emoji spam."""
 
 
-def parse_with_claude(text: str, open_tasks: list[dict]) -> dict | None:
+def parse_with_claude(text: str, open_tasks: list[dict], history: list[dict] | None = None) -> dict | None:
     """Map free text onto the user's open tasks. Returns {"intent","updates","reply"} or None."""
     if not ai_enabled() or not open_tasks:
         return None
@@ -128,7 +136,7 @@ def parse_with_claude(text: str, open_tasks: list[dict]) -> dict | None:
             fallbacks="default",
             output_config={"effort": "low", "format": {"type": "json_schema", "schema": UPDATE_SCHEMA}},
             system=SYSTEM,
-            messages=[{"role": "user", "content": f"My open tasks:\n{task_list}\n\nMy message:\n{text}"}],
+            messages=_with_history(history, f"My open tasks:\n{task_list}\n\nMy message:\n{text}"),
         )
     except anthropic.APIError as e:
         log.warning("Claude parse failed: %s", e)
@@ -153,4 +161,39 @@ def parse_with_claude(text: str, open_tasks: list[dict]) -> dict | None:
             updates.append({"task_id": u["task_id"], "status": status, "note": note,
                             "actual_minutes": mins if mins > 0 else None,
                             "time_note": (u.get("time_note") or "").strip() or None})
-    return {"intent": "update", "updates": updates, "reply": data.get("reply", "")}
+    comments = [{"task_id": c["task_id"], "body": c["body"].strip()} for c in data.get("comments") or []
+                if c.get("task_id") in valid and (c.get("body") or "").strip()]
+    return {"intent": "update", "updates": updates, "comments": comments, "reply": data.get("reply", "")}
+
+
+def _with_history(history, current: str) -> list[dict]:
+    """Recent turns (oldest first) so follow-ups like "add it to #141" keep their context."""
+    msgs = []
+    for h in history or []:
+        if h["user_text"]:
+            msgs += [{"role": "user", "content": h["user_text"]}, {"role": "assistant", "content": h["reply"] or "(ok)"}]
+    return msgs + [{"role": "user", "content": current}]
+
+
+# ---------- short conversation memory (per person, last 30 minutes) ----------
+
+def init():
+    from .db import tx
+    with tx() as c:
+        c.execute("""CREATE TABLE IF NOT EXISTS chat_memory(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL,
+                     user_text TEXT, reply TEXT, at TEXT NOT NULL DEFAULT (datetime('now')))""")
+
+
+def remember(user_id: int, user_text: str, reply: str):
+    from .db import tx
+    with tx() as c:
+        c.execute("INSERT INTO chat_memory(user_id, user_text, reply) VALUES(?,?,?)", (user_id, (user_text or "")[:4000], (reply or "")[:4000]))
+        c.execute("DELETE FROM chat_memory WHERE at < datetime('now','-1 day')")
+
+
+def recent(user_id: int, limit: int = 6) -> list[dict]:
+    from .db import rows, tx
+    with tx() as c:
+        return list(reversed(rows(c.execute(
+            "SELECT user_text, reply FROM chat_memory WHERE user_id=? AND at >= datetime('now','-30 minutes') ORDER BY id DESC LIMIT ?",
+            (user_id, limit)))))
