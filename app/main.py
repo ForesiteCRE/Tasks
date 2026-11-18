@@ -120,6 +120,7 @@ class TaskIn(BaseModel):
     due_date: date | None = None
 
 class TaskPatch(BaseModel):
+    tutorial_url: str | None = None        # "" clears
     estimate: str | int | None = None      # "1h30", "90m", 90; "" clears
     actual: str | int | None = None
     time_notes: str | None = None
@@ -288,7 +289,10 @@ def move_template_item(iid: int, direction: int):
 
 @app.patch("/api/template-items/{iid}")
 def patch_template_item(iid: int, body: dict):
-    tpl.update_item(iid, body)
+    try:
+        tpl.update_item(iid, body)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     return {"ok": True}
 
 @app.delete("/api/template-items/{iid}")
@@ -588,11 +592,16 @@ def patch_task(tid: int, p: TaskPatch, request: Request):
     p.user_id = me.get("id")
     if not auth.at_least(me, "manager"):
         _require_task_editor(request, tid)
-        if p.assignee_id is not None or p.due_date is not None or p.title is not None:
-            raise HTTPException(403, "Only managers can rename, reassign or change due dates.")
+        if p.assignee_id is not None or p.due_date is not None or p.title is not None or p.tutorial_url is not None:
+            raise HTTPException(403, "Only managers can rename, reassign, change due dates or tutorial links.")
     with tx() as c:
         if p.title:
             c.execute("UPDATE tasks SET title=? WHERE id=?", (p.title.strip(), tid))
+        if p.tutorial_url is not None:
+            try:
+                c.execute("UPDATE tasks SET tutorial_url=? WHERE id=?", (tpl.clean_url(p.tutorial_url), tid))
+            except ValueError as e:
+                raise HTTPException(400, str(e))
         if p.description is not None:
             c.execute("UPDATE tasks SET description=? WHERE id=?", (p.description, tid))
         if p.assignee_id is not None:  # assigning a person directly detaches the task from its project role

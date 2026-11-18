@@ -31,6 +31,10 @@ def init():
         cols = {r[1] for r in c.execute("PRAGMA table_info(template_items)")}
         if "parent_item_id" not in cols:
             c.execute("ALTER TABLE template_items ADD COLUMN parent_item_id INTEGER")
+        if "tutorial_url" not in cols:   # how-to video/doc link shown on every task made from this item
+            c.execute("ALTER TABLE template_items ADD COLUMN tutorial_url TEXT")
+        if "tutorial_url" not in {r[1] for r in c.execute("PRAGMA table_info(tasks)")}:
+            c.execute("ALTER TABLE tasks ADD COLUMN tutorial_url TEXT")
 
 
 def _ordered(items: list[dict]) -> list[dict]:
@@ -88,11 +92,11 @@ def create_project(template_id: int, name: str, start: date, recurrence_id=None,
             role = it.get("default_role_id")
             who = overrides.get(it["id"]) or (team.get(role) if role else None) or it["default_assignee_id"]
             task_of[it["id"]] = c.execute(
-                """INSERT INTO tasks(project_id, parent_id, title, assignee_id, role_id, due_date, position, estimate_minutes)
-                   VALUES(?,?,?,?,?,?,?,?)""",
+                """INSERT INTO tasks(project_id, parent_id, title, assignee_id, role_id, due_date, position, estimate_minutes,
+                                     tutorial_url) VALUES(?,?,?,?,?,?,?,?,?)""",
                 (pid, task_of.get(it["parent_item_id"]), it["title"], who, role,
                  (start + timedelta(days=it["due_offset_days"] or 0)).isoformat(), it["position"],
-                 it.get("estimate_minutes"))).lastrowid
+                 it.get("estimate_minutes"), it.get("tutorial_url"))).lastrowid
             for n, ck in enumerate(rows(c.execute(
                     "SELECT text FROM template_checklist WHERE template_item_id=? ORDER BY position, id", (it["id"],)))):
                 c.execute("INSERT INTO task_checklist(task_id, text, position) VALUES(?,?,?)",
@@ -120,9 +124,9 @@ def save_from_project(project_id: int, name: str) -> int:
             by_role = t.get("role_id")
             item_of[t["id"]] = c.execute(
                 """INSERT INTO template_items(template_id, parent_item_id, title, default_assignee_id, default_role_id,
-                                              due_offset_days, position, estimate_minutes) VALUES(?,?,?,?,?,?,?,?)""",
+                                              due_offset_days, position, estimate_minutes, tutorial_url) VALUES(?,?,?,?,?,?,?,?,?)""",
                 (tid, item_of.get(t["parent_id"]), t["title"], None if by_role else t["assignee_id"], by_role,
-                 max(offset, 0), i, t.get("estimate_minutes") or t.get("actual_minutes"))).lastrowid
+                 max(offset, 0), i, t.get("estimate_minutes") or t.get("actual_minutes"), t.get("tutorial_url"))).lastrowid
             for n, ck in enumerate(rows(c.execute(
                     "SELECT text FROM task_checklist WHERE task_id=? ORDER BY position, id", (t["id"],)))):
                 c.execute("INSERT INTO template_checklist(template_item_id, text, position) VALUES(?,?,?)",
@@ -148,6 +152,18 @@ def add_item(template_id: int, title: str, parent_item_id=None, default_assignee
                                           due_offset_days, position) VALUES(?,?,?,?,?,?,?)""",
             (template_id, parent_item_id, title.strip(), default_assignee_id, default_role_id,
              due_offset_days or 0, pos)).lastrowid
+
+
+def clean_url(url) -> str | None:
+    """Accept http(s) links only (a bare 'loom.com/…' gets https:// added); blank clears."""
+    url = (url or "").strip()
+    if not url:
+        return None
+    if not url.lower().startswith(("http://", "https://")):
+        url = "https://" + url
+    if " " in url or "." not in url.split("//", 1)[1].split("/", 1)[0]:
+        raise ValueError("That doesn't look like a web link.")
+    return url
 
 
 def update_template(template_id: int, fields: dict):
@@ -181,7 +197,9 @@ def update_item(item_id: int, fields: dict):
     elif fields.get("default_assignee_id"):
         fields["default_role_id"] = None
     allowed = {k: v for k, v in fields.items()
-               if k in ("title", "default_assignee_id", "default_role_id", "due_offset_days", "estimate_minutes")}
+               if k in ("title", "default_assignee_id", "default_role_id", "due_offset_days", "estimate_minutes", "tutorial_url")}
+    if "tutorial_url" in allowed:
+        allowed["tutorial_url"] = clean_url(allowed["tutorial_url"])
     if not allowed:
         return
     with tx() as c:

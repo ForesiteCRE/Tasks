@@ -85,7 +85,8 @@ def fmt_task(t: dict) -> str:
         flag = f" – due {d:%b %d}{flag}"
     blockers = automations.open_blockers(t["id"]) if t.get("status") != "done" else []
     wait = f" 🔒 waiting on {', '.join('#' + str(b['id']) for b in blockers)}" if blockers else ""
-    return f"#{t['id']} {t['title']} [{STATUS_LABEL[t['status']]}] · {t['project_name']}{flag}{wait}"
+    howto = f"\n   🎓 How-to: {t['tutorial_url']}" if t.get("tutorial_url") and t.get("status") != "done" else ""
+    return f"#{t['id']} {t['title']} [{STATUS_LABEL[t['status']]}] · {t['project_name']}{flag}{wait}{howto}"
 
 
 # ---------- Blink messaging ----------
@@ -94,7 +95,7 @@ def notify_new_assignments(project_id: int):
     with tx() as c:
         p = c.execute("SELECT name FROM projects WHERE id=?", (project_id,)).fetchone()
         grouped = rows(c.execute(
-            """SELECT u.blink_user_id, u.name, t.id, t.title, t.due_date, t.status, ? AS project_name
+            """SELECT u.blink_user_id, u.name, t.id, t.title, t.due_date, t.status, t.tutorial_url, ? AS project_name
                FROM tasks t JOIN users u ON u.id=t.assignee_id
                WHERE t.project_id=? AND u.blink_user_id IS NOT NULL ORDER BY u.id, t.position""",
             (p["name"], project_id)))

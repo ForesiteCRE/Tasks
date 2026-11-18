@@ -529,3 +529,27 @@ def test_branded_signin_page_and_assets():
         for f in ("logo.png", "logo-white.png", "favicon.png", "hero.jpg"):
             assert anon.get(f"/brand/{f}").status_code == 200, f
         assert anon.get("/").status_code in (200, 307)
+
+
+def test_tutorial_links(mgr, staff):
+    tid = ids(mgr.post("/api/templates", json={"name": "Tutorial test", "items": []}))["id"]
+    a = ids(mgr.post(f"/api/templates/{tid}/items", json={"title": "Set up GL codes", "default_assignee_id": staff.me["id"]}))["id"]
+    b = ids(mgr.post(f"/api/templates/{tid}/items", json={"title": "Send welcome letter", "default_assignee_id": staff.me["id"]}))["id"]
+    assert mgr.patch(f"/api/template-items/{a}", json={"tutorial_url": "not a link"}).status_code == 400
+    ids(mgr.patch(f"/api/template-items/{a}", json={"tutorial_url": "loom.com/share/abc123"}))     # https:// added
+    ids(mgr.post(f"/api/template-items/{b}/dependencies", json={"depends_on_item_id": a}))
+    ids(mgr.patch(f"/api/template-items/{b}", json={"tutorial_url": "https://youtu.be/dQw4w9WgXcQ"}))
+    SENT.clear()
+    pid = ids(mgr.post("/api/projects", json={"name": "Tutorial project", "template_id": tid}))["id"]
+    tasks = {t["title"]: t for t in [p for p in ids(mgr.get("/api/projects")) if p["id"] == pid][0]["tasks"]}
+    assert tasks["Set up GL codes"]["tutorial_url"] == "https://loom.com/share/abc123"
+    assert any("How-to: https://loom.com/share/abc123" in t for _, t in SENT)          # in the assignment DM
+    SENT.clear()
+    ids(staff.patch(f"/api/tasks/{tasks['Set up GL codes']['id']}", json={"status": "done"}))
+    assert any("Your turn" in t and "youtu.be" in t for _, t in SENT)                  # "your turn" carries the how-to
+    assert staff.patch(f"/api/tasks/{tasks['Send welcome letter']['id']}", json={"tutorial_url": "https://x.com"}).status_code == 403
+    ids(mgr.patch(f"/api/tasks/{tasks['Send welcome letter']['id']}", json={"tutorial_url": ""}))
+    assert ids(mgr.get(f"/api/tasks/{tasks['Send welcome letter']['id']}"))["tutorial_url"] is None
+    t2 = ids(mgr.post(f"/api/projects/{pid}/save-as-template", json={"name": "Tutorial copy"}))["id"]
+    items = {i["title"]: i for i in [t for t in ids(mgr.get("/api/templates")) if t["id"] == t2][0]["items"]}
+    assert items["Set up GL codes"]["tutorial_url"] == "https://loom.com/share/abc123"

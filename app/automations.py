@@ -108,7 +108,8 @@ def _notify_unblocked(done_task_id: int, who: str):
             due = f" – due {date.fromisoformat(t['due_date']):%b %d}" if t["due_date"] else ""
             _send([t["assignee_blink"]],
                   f"▶️ **Your turn:** #{t['id']} {t['title']}{due} · {t['project_name']}\n"
-                  f"(#{done['id']} {done['title']} was just completed by {who})")
+                  f"(#{done['id']} {done['title']} was just completed by {who})"
+                  + (f"\n🎓 How-to: {t['tutorial_url']}" if t.get("tutorial_url") else ""))
 
 
 # ---------- daily check (scheduler) ----------

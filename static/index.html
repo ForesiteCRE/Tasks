@@ -107,6 +107,9 @@ dialog{border:1px solid var(--line);border-radius:12px;padding:18px;max-width:70
 textarea{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius:6px;width:100%;resize:vertical}dialog::backdrop{background:rgba(20,24,33,.35)}
 @media (max-width:700px){.cal .day{min-height:70px}.chip{font-size:11px}main{padding:12px}}
 
+.vid{position:relative;padding-top:56.25%;border-radius:6px;overflow:hidden;background:#000}.vid iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+a.pill.tut{text-decoration:none;background:#eef6e4;color:var(--ok,#5f8f30);cursor:pointer}a.pill.tut:hover{background:#dff0c9}
+.tutsec{background:#f6faf1;border:1px solid #e0eed0;border-radius:6px;padding:10px 12px}
 /* ===== Foresite brand theme (foresitecre.com: Lato · slate #3A4750 · blue #549FC5 · green #A5D172) ===== */
 :root{--bg:#f4f6f7;--card:#fff;--ink:#3a4750;--mute:#7d8a93;--line:#e0e5e9;--acc:#549fc5;--acc-d:#3c84a9;--green:#a5d172;--ok:#5f8f30;--warn:#d98a1f;--bad:#c2410c}
 body{font-family:Lato,"Helvetica Neue",Arial,sans-serif;font-size:14.5px;-webkit-font-smoothing:antialiased}
@@ -305,6 +308,13 @@ const isMgr=()=>ME.role==='manager'||ME.role==='admin', isAdmin=()=>ME.role==='a
 const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const today=()=>iso(new Date());
 const isOver=t=>t.due_date&&t.due_date<today()&&t.status!=='done';
+function embedUrl(u){if(!u)return null;let m;
+  if(m=u.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{6,})/))return `https://www.youtube.com/embed/${m[1]}`;
+  if(m=u.match(/loom\.com\/(?:share|embed)\/([\w-]+)/))return `https://www.loom.com/embed/${m[1]}`;
+  if(m=u.match(/vimeo\.com\/(?:video\/)?(\d+)/))return `https://player.vimeo.com/video/${m[1]}`;
+  if(m=u.match(/drive\.google\.com\/file\/d\/([\w-]+)/))return `https://drive.google.com/file/d/${m[1]}/preview`;
+  return null;}
+const hostOf=u=>{try{return new URL(u).hostname.replace(/^www\./,'')}catch(e){return 'link'}};
 const fmtMin=m=>{if(!m)return'';const h=Math.floor(m/60),r=m%60;return h&&r?`${h}h ${r}m`:h?`${h}h`:`${r}m`};
 const fmtDate=d=>d?new Date(d+'T12:00').toLocaleDateString(undefined,{month:'short',day:'numeric'}):'';
 function show(v){document.querySelectorAll('nav button[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
@@ -354,6 +364,7 @@ function orderTasks(ts){const kids={};ts.filter(t=>t.parent_id).forEach(t=>(kids
 function badges(t){const subs=TASKS.filter(x=>x.parent_id===t.id),b=[];
   if(subs.length)b.push(`<span class="pill">↳ ${subs.filter(x=>x.status==='done').length}/${subs.length}</span>`);
   if(t.check_total)b.push(`<span class="pill">☑ ${t.check_done}/${t.check_total}</span>`);
+  if(t.tutorial_url)b.push(`<a class="pill tut" href="${esc(t.tutorial_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="How-to tutorial">🎓 how-to</a>`);
   if(t.comments)b.push(`<span class="pill">💬 ${t.comments}</span>`);
   if(t.estimate_minutes||t.actual_minutes)b.push(`<span class="pill" title="Actual / estimate">⏱ ${t.actual_minutes?fmtMin(t.actual_minutes)+(t.estimate_minutes?' / '+fmtMin(t.estimate_minutes):''):'est '+fmtMin(t.estimate_minutes)}</span>`);
   if(t.waiting_on&&t.status!=='done')b.push(`<span class="pill lock" title="Waiting on #${String(t.waiting_on).split(',').join(', #')}">🔒 waiting on #${String(t.waiting_on).split(',').join(', #')}</span>`);
@@ -413,7 +424,7 @@ function renderPreview(){const t=TPLS.find(t=>t.id==$('#pTpl').value);if(!t){$('
   $('#pPreview').innerHTML=`<div class="preview"><div class="row" style="justify-content:space-between;margin:0"><b>Preview: ${esc(t.name)}</b><span class="mute">${t.items.length} tasks${t.description?' · '+esc(t.description):''}</span></div>
    ${needs.length?`<p class="over" style="margin:4px 0">Pick someone for ${needs.map(r=>esc(roleName(r))).join(', ')} in 👥 Project team above, or those tasks start unassigned.</p>`:''}
    <table>${t.items.map(i=>`<tr><td style="padding-left:${6+i.depth*22}px">${i.depth?'<span class="mute">↳</span> ':''}${esc(i.title)}
-     ${i.checklist.length?`<span class="pill">☑ ${i.checklist.length}</span>`:''}${i.waiting_on.map(w=>`<span class="pill lock">🔒 after ${esc((byId[w]||{}).title||'')}</span>`).join('')}</td>
+     ${i.checklist.length?`<span class="pill">☑ ${i.checklist.length}</span>`:''}${i.tutorial_url?'<span class="pill tut">🎓</span>':''}${i.waiting_on.map(w=>`<span class="pill lock">🔒 after ${esc((byId[w]||{}).title||'')}</span>`).join('')}</td>
      <td>${tplItemWho(i,team)}</td><td class="mute" style="white-space:nowrap">${due(i.due_offset_days)}</td></tr>`).join('')}</table></div>`;}
 
 /* ---------- project details & team dialog ---------- */
@@ -617,6 +628,12 @@ async function openTask(id){OPEN_ID=id;const [d,h]=await Promise.all([api(`/api/
    <tr><td>Due</td><td>${mg?`<input type="date" value="${d.due_date||''}" onchange="patch(${d.id},{due_date:this.value||null}).then(()=>openTask(${d.id}))">`:`<span class="${isOver(d)?'over':''}">${fmtDate(d.due_date)||'—'}</span>`}</td></tr>
    <tr><td>Status</td><td>${statusSel({...d,assignee_id:ed?ME.id:d.assignee_id}).replace(/onchange="setStatus\((\d+),this.value\)"/,`onchange="setStatus($1,this.value).then(()=>openTask($1))"`)}</td></tr></table>
 
+   ${d.tutorial_url||mg?`<div class="sec tutsec"><h3>🎓 How to do this</h3>
+     ${d.tutorial_url?(embedUrl(d.tutorial_url)?`<div class="vid"><iframe src="${esc(embedUrl(d.tutorial_url))}" allow="fullscreen; picture-in-picture" allowfullscreen loading="lazy"></iframe></div>`:'')
+       +`<a class="b ghost" style="margin-top:8px" href="${esc(d.tutorial_url)}" target="_blank" rel="noopener">Open tutorial on ${esc(hostOf(d.tutorial_url))} ↗</a>`
+       :'<p class="mute" style="margin:0">No tutorial yet. Paste a link to a video or guide so new teammates can see how it\'s done.</p>'}
+     ${mg?`<div class="row" style="margin-top:8px"><input id="tutIn" placeholder="YouTube, Loom, Vimeo, Google Drive or any web link" value="${esc(d.tutorial_url||'')}" style="flex:1"><button class="b ghost" onclick="saveTut(${d.id})">Save</button></div>`:''}</div>`:''}
+
    <div class="sec" id="timeSec"><h3>⏱ Time</h3>
      <div class="team-grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr))">
       <label>Estimate<input ${ed?'':'disabled'} placeholder="e.g. 2h, 45m" value="${fmtMin(d.estimate_minutes)}" onchange="timeSave(${d.id},{estimate:this.value})"></label>
@@ -651,6 +668,7 @@ function turnaround(d){const s=d.created_at&&new Date(d.created_at.replace(' ','
   const days=((e||new Date())-s)/864e5;const txt=days<1?`${Math.max(1,Math.round(days*24))}h`:`${days.toFixed(days<10?1:0)} days`;
   return e?`${txt} (created → done)`:`${txt} open so far`;}
 async function timeSave(id,b){await api('/api/tasks/'+id,{method:'PATCH',body:b});await refresh();openTask(id);}
+async function saveTut(id){await patch(id,{tutorial_url:$('#tutIn').value.trim()});openTask(id);toast('Tutorial saved for this task');}
 async function delTask(id){const n=TASKS.filter(x=>x.parent_id===id).length;if(!confirm(`Delete task #${id}${n?` and its ${n} subtask(s)`:''}? This can't be undone.`))return;await api('/api/tasks/'+id,{method:'DELETE'});taskDlg.close();refresh();}
 async function ckAdd(id){const v=$('#ckNew').value.trim();if(!v)return;await api(`/api/tasks/${id}/checklist`,{method:'POST',body:{text:v}});await refresh();openTask(id).then(()=>$('#ckNew').focus());}
 async function ckPatch(cid,b){await api(`/api/checklist/${cid}`,{method:'PATCH',body:b});await refresh();openTask(OPEN_ID);}
@@ -712,12 +730,13 @@ function renderTemplates(){
     <table><tr><th>Item</th><th style="width:190px">Assign to</th><th style="width:120px">Due (days after start)</th><th style="width:90px">Estimate</th><th style="width:230px"></th></tr>
     ${t.items.map(i=>`<tr><td style="padding-left:${8+i.depth*24}px">${i.depth?'<span class="mute">↳</span> ':''}<input value="${esc(i.title)}" style="width:calc(100% - 24px);border-color:transparent" onchange="tiPatch(${i.id},{title:this.value})">
       <div class="badges" style="margin:2px 0 0 ${i.depth?18:0}px;flex-wrap:wrap">
+       ${i.tutorial_url?`<a class="pill tut" href="${esc(i.tutorial_url)}" target="_blank" rel="noopener">🎓 ${esc(hostOf(i.tutorial_url))}</a><a class="pill" style="cursor:pointer" title="Remove tutorial" onclick="tiPatch(${i.id},{tutorial_url:''}).then(refresh)">✕</a>`:''}
        ${i.checklist.map(k=>`<span class="pill">☑ ${esc(k.text)} <a style="cursor:pointer" onclick="tcDel(${k.id})">✕</a></span>`).join('')}
        ${i.waiting_on.map(w=>`<span class="pill lock">🔒 after “${esc((byId[w]||{}).title||'#'+w)}” <a style="cursor:pointer" onclick="tdDel(${i.id},${w})">✕</a></span>`).join('')}</div></td>
      <td><select onchange="tiPatch(${i.id},whoVal(this.value))">${whoOpts(i)}</select></td>
      <td>+<input type="number" min="0" value="${i.due_offset_days||0}" style="width:64px" onchange="tiPatch(${i.id},{due_offset_days:+this.value||0})"></td>
      <td><input placeholder="2h" value="${fmtMin(i.estimate_minutes)}" style="width:76px" onchange="tiEst(${i.id},this)"></td>
-     <td style="white-space:nowrap"><button class="b ghost" title="Move up" style="padding:4px 7px" onclick="tiMove(${i.id},-1)">↑</button><button class="b ghost" title="Move down" style="padding:4px 7px" onclick="tiMove(${i.id},1)">↓</button> <select title="More" onchange="tiAction(this,${t.id},${i.id})"><option value="">More…</option><option value="check">+ Checklist item</option><option value="sub">+ Subtask</option>
+     <td style="white-space:nowrap"><button class="b ghost" title="Move up" style="padding:4px 7px" onclick="tiMove(${i.id},-1)">↑</button><button class="b ghost" title="Move down" style="padding:4px 7px" onclick="tiMove(${i.id},1)">↓</button> <select title="More" onchange="tiAction(this,${t.id},${i.id})"><option value="">More…</option><option value="tut">🎓 ${i.tutorial_url?'Change':'Add'} tutorial link</option><option value="check">+ Checklist item</option><option value="sub">+ Subtask</option>
        <optgroup label="Can't start until…">${t.items.filter(o=>o.id!==i.id&&!i.waiting_on.includes(o.id)).map(o=>`<option value="dep:${o.id}">🔒 ${esc(o.title)}</option>`).join('')}</optgroup>
        <option value="del">🗑 Delete item</option></select></td></tr>`).join('')||'<tr><td colspan="4" class="mute">No items yet.</td></tr>'}
     </table></div>`}).join('');
@@ -725,6 +744,8 @@ function renderTemplates(){
 }
 async function tiAction(sel,tid,iid){const v=sel.value;sel.value='';if(!v)return;
   if(v==='check'){const x=prompt('Checklist item');if(x)await api(`/api/template-items/${iid}/checklist`,{method:'POST',body:{text:x}});}
+  else if(v==='tut'){const cur=(TPLS.flatMap(t=>t.items).find(i=>i.id===iid)||{}).tutorial_url||'';const x=prompt('Link to a how-to video or guide (YouTube, Loom, Vimeo, Google Drive…). Every task created from this item will show it.',cur);
+    if(x!==null)await api(`/api/template-items/${iid}`,{method:'PATCH',body:{tutorial_url:x}});}
   else if(v==='sub'){await tiAdd(tid,iid);return;}
   else if(v==='del'){if(!confirm('Delete this item (and its subtasks)?'))return;await api(`/api/template-items/${iid}`,{method:'DELETE'});}
   else if(v.startsWith('dep:'))await api(`/api/template-items/${iid}/dependencies`,{method:'POST',body:{depends_on_item_id:+v.slice(4)}});
