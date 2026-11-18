@@ -50,7 +50,12 @@ SIMULATOR = os.getenv("ENABLE_SIMULATOR", "1" if blink.MOCK else "0") == "1"
 
 @app.get("/healthz")
 def healthz():
-    return {"ok": True}
+    """Which settings the running app can see (yes/no only - never values)."""
+    names = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "PUBLIC_URL", "SESSION_SECRET",
+             "BLINK_CLIENT_ID", "BLINK_CLIENT_SECRET", "BLINK_WEBHOOK_SECRET", "DB_PATH", "TZ"]
+    return {"ok": True, "sign_in_enabled": auth.ENABLED, "blink_connected": not blink.MOCK,
+            "settings_present": {n: bool(os.getenv(n, "").strip()) for n in names},
+            "deploy_commit": (os.getenv("RAILWAY_GIT_COMMIT_SHA") or "")[:7]}
 
 
 @app.get("/")
