@@ -159,8 +159,7 @@ input,select,textarea{border-color:#d5dce1;border-radius:3px}input:focus,select:
   <div class="dd" data-g="tasks"><button class="ddb">Tasks <span class="car">▾</span></button><div class="ddm">
     <button data-v="tasks">✓ All tasks<small>with or without a project</small></button>
     <button data-v="projects">📁 Projects<small>start a new project, see progress</small></button>
-    <button data-v="templates" class="mgr">📋 Templates<small>reusable checklists</small></button>
-    <button data-v="recurring" class="mgr">🔁 Recurring<small>everything that repeats</small></button></div></div>
+    <button data-v="templates" class="mgr">📋 Templates<small>reusable checklists</small></button></div></div>
   <button data-v="calendar">Calendar</button>
   <button data-v="team" class="mgr">By person</button>
   <div class="dd adm" data-g="admin"><button class="ddb">Admin <span class="car">▾</span></button><div class="ddm">
@@ -206,6 +205,10 @@ input,select,textarea{border-color:#d5dce1;border-radius:3px}input:focus,select:
     <span id="roleNote" class="mute"></span>
   </div>
   <div id="projects"></div>
+  <details class="card mgr" id="repeatBox"><summary><b>🔁 What repeats</b> <span class="mute" id="repeatCount"></span></summary>
+    <p class="mute">Set <b>Repeats</b> on a project (New project dialog) or on any task (quick add, the task panel, or a template item). Pause or stop it here.</p>
+    <h3>Repeating projects</h3><table id="recurring"></table>
+    <h3>Repeating tasks</h3><table id="recurTasks"></table></details>
 </section>
 
 <section id="v-calendar" class="hidden">
@@ -237,13 +240,6 @@ input,select,textarea{border-color:#d5dce1;border-radius:3px}input:focus,select:
     <div id="tItems"></div>
     <div class="row"><button class="b ghost" onclick="addItemRow()">+ Item</button><button class="b" onclick="saveTemplate()">Save template</button></div></div>
   <div id="templates"></div>
-</section>
-
-<section id="v-recurring" class="hidden">
-  <div class="pagehead"><h2>Recurring</h2></div>
-  <p class="mute" style="margin-top:-6px">To make something repeat, choose <b>Repeats</b> when you create a project (from a template) or a task, or in a task's panel. Template items can repeat too (Templates → More…).</p>
-  <div class="card"><h3>🔁 Repeating projects</h3><table id="recurring"></table></div>
-  <div class="card"><h3>🔁 Repeating tasks</h3><table id="recurTasks"></table></div>
 </section>
 
 <section id="v-people" class="hidden">
@@ -793,14 +789,15 @@ const setStatus=async(id,s)=>{await patch(id,{status:s});const t=TASKS.find(x=>x
 async function addTask(p){const t=$('#nt'+p).value;if(!t)return;await api('/api/tasks',{method:'POST',body:{project_id:p,title:t,assignee_id:+$('#na'+p).value||null,due_date:$('#nd'+p).value||null}});refresh();}
 async function renderRecurring(){const r=await api('/api/recurring');
   $('#recurring').innerHTML=r.projects.length?'<tr><th>Project name</th><th>Template</th><th>How often</th><th>Next copy</th><th></th></tr>'+r.projects.map(x=>`<tr style="${x.active?'':'opacity:.55'}">
-    <td>${esc(x.name_pattern)}${x.property?`<div class="mute" style="font-size:12px">📍 ${esc(x.property)}</div>`:''}</td><td class="mute">${esc(x.template_name)}</td><td>${esc(x.every_label)} · day ${x.day_of_month}</td>
+    <td>${esc(x.name_pattern.replace('{month}','[Month]').replace('{year}','[Year]').replace('{mm}','[MM]'))}${x.property?`<div class="mute" style="font-size:12px">📍 ${esc(x.property)}</div>`:''}</td><td class="mute">${esc(x.template_name)}</td><td>${esc(x.every_label)} · day ${x.day_of_month}</td>
     <td>${x.active?fmtDate(x.next_run):'<span class="mute">paused</span>'}</td>
     <td style="white-space:nowrap"><button class="b ghost" onclick="toggleRec(${x.id},${!x.active})">${x.active?'Pause':'Resume'}</button> <button class="b ghost" style="color:var(--bad)" onclick="delRec(${x.id})">Stop</button></td></tr>`).join('')
     :'<tr><td class="empty">No repeating projects. Choose “Repeats” in + New project (with a template).</td></tr>';
   $('#recurTasks').innerHTML=r.tasks.length?'<tr><th>Task</th><th>Who</th><th>How often</th><th>Next due</th><th></th></tr>'+r.tasks.map(t=>`<tr>
     <td><span class="tlink" onclick="openTask(${t.id})">${esc(t.title)}</span><div class="mute" style="font-size:12px">${t.is_general?'No project':esc(t.project_name)}</div></td><td class="mute">${esc(t.assignee_name)}</td>
     <td>${esc(t.repeat_label)}</td><td>${fmtDate(t.due_date)||'—'}</td><td><button class="b ghost" onclick="patch(${t.id},{repeat:''}).then(renderRecurring)">Stop repeating</button></td></tr>`).join('')
-    :'<tr><td class="empty">No repeating tasks. Choose “Repeats” when adding a task, or in the task panel.</td></tr>';}
+    :'<tr><td class="empty">No repeating tasks. Choose “Repeats” when adding a task, or in the task panel.</td></tr>';
+  $('#repeatCount').textContent=`— ${r.projects.filter(x=>x.active).length} project${r.projects.filter(x=>x.active).length===1?'':'s'}, ${r.tasks.length} task${r.tasks.length===1?'':'s'}`;}
 async function delRec(id){if(!confirm('Stop this project from repeating? Projects already created stay.'))return;await api('/api/recurrences/'+id,{method:'DELETE'});renderRecurring();}
 async function toggleRec(id,a){await api(`/api/recurrences/${id}?active=${a}`,{method:'PATCH'});renderRecurring();}
 async function addUser(){await api('/api/users',{method:'POST',body:{name:$('#uName').value,email:$('#uEmail').value,blink_user_id:$('#uBlink').value||null}});refresh();}
