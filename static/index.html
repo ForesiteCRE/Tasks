@@ -154,6 +154,7 @@ details.danger{margin-top:28px;border:1px solid #f3c4c4;border-radius:8px;paddin
 details.danger summary{cursor:pointer;color:var(--mute)}details.danger[open] summary{color:var(--bad)}
 details.danger p{margin:8px 0}details.danger input{display:block;width:100%;margin-top:4px}
 #delBtn:disabled{opacity:.4;cursor:not-allowed}
+.tprev{width:100%;font-size:13px}.tprev td{padding:5px 6px;border-bottom:1px solid var(--line)}.tprev tr.isdone .tlink{color:var(--mute);text-decoration:line-through}
 </style>
 </head>
 <body>
@@ -375,7 +376,7 @@ function renderProjects(){
   const mine=$('#pFilter').value==='mine', hideDone=$('#pHideDone').checked;
   const ps=PROJECTS.filter(p=>!p.is_general&&!(hideDone&&p.status==='done')).map(p=>({...p,shown:mine?p.tasks.filter(t=>t.assignee_id===ME.id):p.tasks})).filter(p=>!mine||p.shown.length);
   $('#projects').innerHTML=ps.map(p=>{const done=p.tasks.filter(t=>t.status==='done').length,pct=p.tasks.length?Math.round(100*done/p.tasks.length):0;
-  return `<div class="card pc">${projBanner(p,150,{edit:true})}<div class="inner"><div class="row" style="justify-content:space-between"><h3>${esc(p.name)} <span class="pill ${p.status==='done'?'done':''}">${p.status}</span>${p.is_sample?' <span class="pill" style="background:#fff3bf;color:#8a6d00">sample</span>':''}</h3>
+  return `<div class="card pc" id="pc${p.id}">${projBanner(p,150,{edit:true})}<div class="inner"><div class="row" style="justify-content:space-between"><h3>${esc(p.name)} <span class="pill ${p.status==='done'?'done':''}">${p.status}</span>${p.is_sample?' <span class="pill" style="background:#fff3bf;color:#8a6d00">sample</span>':''}</h3>
   <span class="mute">${done}/${p.tasks.length} done${projTime(p)} · started ${fmtDate(p.start_date)} <button class="b ghost" onclick="openProject(${p.id})">${isMgr()?'Details &amp; team':'Details'}</button> ${isMgr()?`<button class="b ghost" onclick="saveAsTpl(${p.id},'${esc(p.name).replace(/'/g,"")}')">Save as template</button>`:''}</span></div>
   ${projSummary(p)}
   <div class="bar"><i style="width:${pct}%"></i></div>
@@ -437,6 +438,7 @@ async function openProject(pid){const p=PROJECTS.find(x=>x.id===pid);if(!p)retur
     <label>Client / owner<input ${dis} value="${esc(p.client||'')}" onchange="projPatch(${p.id},{client:this.value})"></label>
     <label>Start date<input ${dis} type="date" value="${p.start_date}" onchange="projPatch(${p.id},{start_date:this.value})"></label></div>
    <label class="mute" style="font-size:12px">Summary / notes</label><textarea ${dis} rows="3" onchange="projPatch(${p.id},{description:this.value})">${esc(p.description||'')}</textarea>
+   ${projTaskPreview(p)}
    <div class="sec"><h3>👥 Project team</h3><p class="mute" style="margin:0 0 6px;font-size:12px">Tasks assigned by role follow the person in that role — change someone here and their open tasks move over (they get a Blink message).</p>
    <div class="team-grid">${p.team.map(m=>{const n=p.tasks.filter(t=>t.role_id===m.role_id&&t.status!=='done').length;
      return `<label>${esc(m.role)} ${n?`<span class="via">· ${n} open task${n>1?'s':''}</span>`:''}<select ${dis} onchange="teamSet(${p.id},${m.role_id},this.value)">${userOpts(m.user_id,'—')}</select></label>`}).join('')}</div></div>
@@ -445,6 +447,16 @@ async function openProject(pid){const p=PROJECTS.find(x=>x.id===pid);if(!p)retur
      <label>Type the project name <b>${esc(p.name)}</b> to confirm<input id="delConfirm" autocomplete="off" oninput="$('#delBtn').disabled=this.value.trim().toLowerCase()!==${esc(JSON.stringify(p.name.trim().toLowerCase()))}"></label>
      <button class="b" id="delBtn" disabled style="background:var(--bad);border-color:var(--bad);margin-top:8px" onclick="delProject(${p.id})">Permanently delete project</button></details>`:''}`;
   if(!taskDlg.open)taskDlg.showModal();}
+function projTaskPreview(p){const ts=orderTasks(p.tasks),done=p.tasks.filter(t=>t.status==='done').length,pct=p.tasks.length?Math.round(100*done/p.tasks.length):0;
+  const ico={done:'✅',in_progress:'🔵',blocked:'⛔',todo:'⬜'};
+  return `<div class="sec"><div class="row" style="justify-content:space-between;margin:0"><h3 style="margin:0">📋 Tasks <span class="mute" style="font-weight:400;font-size:13px;margin-left:6px">${done}/${p.tasks.length} done</span></h3>
+    <button class="b ghost" onclick="taskDlg.close();show('projects');setTimeout(()=>document.getElementById('pc${p.id}')?.scrollIntoView({behavior:'smooth'}),80)">Open full project →</button></div>
+    <div class="bar" style="margin:6px 0 8px"><i style="width:${pct}%"></i></div>
+    ${ts.length?`<table class="tprev">${ts.map(t=>`<tr class="${t.status==='done'?'isdone':''}"><td style="width:22px">${ico[t.status]||'⬜'}</td>
+      <td>${t.parent_id?'<span class="mute">↳</span> ':''}<span class="tlink" onclick="openTask(${t.id})">${esc(t.title)}</span></td>
+      <td class="mute" style="white-space:nowrap">${esc(t.assignee_name||'Unassigned')}</td>
+      <td style="white-space:nowrap" class="${isOver(t)?'over':'mute'}">${fmtDate(t.due_date)||'—'}</td></tr>`).join('')}</table>`
+      :'<p class="mute" style="margin:0">No tasks yet.</p>'}</div>`;}
 async function delProject(pid){const typed=$('#delConfirm').value;
   await api(`/api/projects/${pid}?confirm=${encodeURIComponent(typed)}`,{method:'DELETE'});taskDlg.close();await refresh();toast('Project deleted');}
 async function removeSamples(){if(!confirm('Remove all sample projects and their tasks? Your real projects are not affected.'))return;
