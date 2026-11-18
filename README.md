@@ -45,3 +45,11 @@ reminder/assignment ─► POST /oidc/token ─► POST /api/platform/chats (1:1
                                            └► POST /chats/{id}/messages  ──► user's Blink chat
 user replies in Blink ─► webhook blink.chat.message-sent ─► GET message ─► update task ─► reply
 ```
+
+## Deploy (Railway – recommended)
+1. Push this repo to GitHub → Railway: **New Project → Deploy from GitHub repo**.
+2. Add a **Volume** mounted at `/data`; set variable `DB_PATH=/data/tasks.db` (keeps the database across deploys).
+3. Add the variables from `.env.example` (Blink client id/secret, webhook secret, optional Anthropic key).
+   Set `TZ` (e.g. `America/Chicago`) so reminders go out at the right local hour.
+4. **Settings → Networking → Generate Domain** → put `https://<domain>/blink/webhook` on the Blink App Identity.
+Keep to **one instance** (the reminder scheduler runs inside the app).
