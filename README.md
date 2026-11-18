@@ -13,7 +13,7 @@ Recurring monthly projects + reusable checklists, with reminders and status upda
 pip install -r requirements.txt
 cp .env.example .env   # leave BLINK_API_TOKEN empty = mock mode
 python seed.py         # optional demo data
-uvicorn app.main:app --port 8000
+uvicorn app.main:app --port 8000 --env-file .env
 ```
 Open http://localhost:8000 and use **Blink chat (simulator)** to test.
 
