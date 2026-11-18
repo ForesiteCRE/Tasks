@@ -61,7 +61,7 @@ def login(client: TestClient, email: str, name: str) -> dict:
             "hd": email.split("@")[1], "name": name}).encode()).decode().rstrip("=")
         return types.SimpleNamespace(status_code=200, json=lambda: {"id_token": f"h.{payload}.s"})
     auth.httpx.post = post
-    q = parse_qs(urlparse(client.get("/login", follow_redirects=False).headers["location"]).query)
+    q = parse_qs(urlparse(client.get("/login?go=1", follow_redirects=False).headers["location"]).query)
     client.get(f"/auth/callback?code=x&state={q['state'][0]}", follow_redirects=False)
     return client.get("/api/me").json()
 

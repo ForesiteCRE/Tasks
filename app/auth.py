@@ -115,14 +115,14 @@ async def require_login(request: Request, call_next):
     # calendar feeds and health checks keep answering on any address so nothing breaks mid-switch).
     host = request.headers.get("host", "").lower()
     if (_PUBLIC_HOST and host and host != _PUBLIC_HOST and request.method == "GET"
-            and not request.url.path.startswith(("/api/", "/blink/", "/calendar/", "/healthz"))):
+            and not request.url.path.startswith(("/api/", "/blink/", "/calendar/", "/healthz", "/brand/"))):
         query = f"?{request.url.query}" if request.url.query else ""
         return RedirectResponse(f"{PUBLIC_URL}{request.url.path}{query}", status_code=301)
     if LOCKED and request.url.path not in ("/healthz", "/blink/webhook"):
         return HTMLResponse("<p style='font:16px system-ui;text-align:center;margin-top:20vh'>"
                             "Sign-in isn't configured yet — set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.</p>",
                             status_code=503)
-    if request.url.path in PUBLIC_PATHS or request.url.path.startswith("/calendar/"):  # calendar feeds use a secret token
+    if request.url.path in PUBLIC_PATHS or request.url.path.startswith(("/calendar/", "/brand/")):  # feeds use a secret token; logo files
         return await call_next(request)
     if ENABLED and (u := request.session.get("user")):
         _ensure_user_row(request, u)
@@ -155,10 +155,43 @@ def _ensure_user_row(request: Request, u: dict):
     link_blink_account(uid, u["email"])
 
 
+def branded_page(title: str, body_html: str, status_code: int = 200) -> HTMLResponse:
+    """Full-screen Foresite page (sign-in, access denied) on the skyline photo."""
+    return HTMLResponse(f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>{title} · Foresite Task Manager</title>
+<link rel="icon" type="image/png" href="/brand/favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,300;0,400;0,700;1,300&display=swap" rel="stylesheet">
+<style>
+*{{box-sizing:border-box}}body{{margin:0;min-height:100vh;font-family:Lato,Helvetica,Arial,sans-serif;color:#fff;display:flex;align-items:center;justify-content:center;
+background:linear-gradient(100deg,rgba(58,71,80,.93),rgba(58,71,80,.78) 50%,rgba(84,159,197,.6)),url(/brand/hero.jpg) center/cover fixed}}
+.box{{width:min(440px,92vw);text-align:center;padding:40px 28px}}.box img{{width:260px;max-width:80%}}
+.app{{margin:18px 0 4px;font-size:13px;letter-spacing:.28em;text-transform:uppercase;color:#cfe7f3;font-weight:700}}
+.tag{{font-style:italic;font-weight:300;font-size:17px;color:#e6eef3;margin:0 0 30px;line-height:1.5}}
+.rule{{height:1px;background:rgba(255,255,255,.45);margin:22px auto;width:70%;position:relative}}
+.rule:after{{content:"";position:absolute;right:-3px;top:-3px;width:7px;height:7px;border-radius:50%;background:#fff}}
+a.g{{display:inline-flex;align-items:center;gap:12px;background:#fff;color:#3a4750;text-decoration:none;font-weight:700;padding:13px 22px;border-radius:3px;
+box-shadow:0 6px 24px rgba(0,0,0,.18);letter-spacing:.02em}}a.g:hover{{background:#eef6fa}}
+.note{{margin-top:18px;font-size:13px;color:#d7e3ea}}.msg{{font-size:16px;margin:0 0 22px;line-height:1.5}}
+.foot{{position:fixed;bottom:14px;left:0;right:0;text-align:center;font-size:12px;color:#c7d5dd;letter-spacing:.04em}}
+</style></head><body><div class="box"><img src="/brand/logo-white.png" alt="Foresite Commercial Real Estate">
+<div class="app">Task Manager</div><div class="rule"></div>{body_html}</div>
+<div class="foot">San Antonio · Austin · Investment Sales. Leasing. Management.</div></body></html>""", status_code=status_code)
+
+
+G_ICON = ('<svg width="20" height="20" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/>'
+          '<path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/>'
+          '<path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/>'
+          '<path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>')
+
+
 @router.get("/login")
-def login(request: Request):
+def login(request: Request, go: int = 0):
     if not ENABLED:
         return RedirectResponse("/")
+    if not go:
+        return branded_page("Sign in", f'<p class="tag">A new approach to commercial real estate management, leasing and investment sales.</p>'
+                                       f'<a class="g" href="/login?go=1">{G_ICON} Sign in with Google</a>'
+                                       f'<div class="note">Use your @{DOMAIN} account</div>')
     state = secrets.token_urlsafe(24)
     request.session["oauth_state"] = state
     params = {
@@ -230,6 +263,4 @@ def me(request: Request):
 
 
 def _denied(msg: str) -> HTMLResponse:
-    return HTMLResponse(
-        f"<div style='font:16px system-ui;max-width:420px;margin:15vh auto;text-align:center'>"
-        f"<p>{msg}</p><p><a href='/login'>Try again</a></p></div>", status_code=403)
+    return branded_page("Access", f'<p class="msg">{msg}</p><a class="g" href="/login?go=1">{G_ICON} Try again</a>', 403)

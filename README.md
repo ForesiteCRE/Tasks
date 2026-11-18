@@ -104,6 +104,6 @@ Keep to **one instance** (the reminder scheduler runs inside the app).
 ```bash
 pip install pytest && cd tests && pytest -q
 ```
-32 end-to-end tests: sign-in & roles (admin/manager/staff permissions), projects/templates/roles, subtasks,
+33 end-to-end tests: sign-in & roles (admin/manager/staff permissions), projects/templates/roles, subtasks,
 checklists, comments, dependencies, automations, time tracking, Blink chat commands & webhook signatures,
 project intake from documents, dashboards, reminders, the 6pm recap and every scheduled job.

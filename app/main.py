@@ -60,6 +60,10 @@ app.include_router(auth.router)
 SIMULATOR = os.getenv("ENABLE_SIMULATOR", "1" if blink.MOCK else "0") == "1"
 
 
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+app.mount("/brand", StaticFiles(directory=os.path.join(STATIC, "brand")), name="brand")
+
+
 @app.get("/healthz")
 def healthz():
     """Which settings the running app can see (yes/no only - never values)."""

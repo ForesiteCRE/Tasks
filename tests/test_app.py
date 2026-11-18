@@ -519,3 +519,13 @@ def test_demo_data_load_and_remove(mgr, staff):
     assert {p["id"] for p in ids(mgr.get("/api/projects"))} == before_projects
     assert {u["id"] for u in ids(mgr.get("/api/users"))} == before_users
     assert not ids(mgr.get("/api/demo"))["loaded"]
+
+
+def test_branded_signin_page_and_assets():
+    with TestClient(app) as anon:
+        r = anon.get("/login")
+        assert r.status_code == 200 and "Sign in with Google" in r.text and "/brand/logo-white.png" in r.text
+        assert anon.get("/login?go=1", follow_redirects=False).headers["location"].startswith("https://accounts.google.com/")
+        for f in ("logo.png", "logo-white.png", "favicon.png", "hero.jpg"):
+            assert anon.get(f"/brand/{f}").status_code == 200, f
+        assert anon.get("/").status_code in (200, 307)
