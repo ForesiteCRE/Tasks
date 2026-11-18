@@ -159,6 +159,7 @@ def delete_user(uid: int, request: Request, merge_into: int | None = None):
     return {"ok": True}
 
 class UserPatch(BaseModel):
+    role: str | None = None
     name: str | None = None
     blink_user_id: str | None = None
     weekly_summary: bool | None = None
@@ -171,6 +172,11 @@ def patch_user(uid: int, p: UserPatch):
         if p.blink_user_id is not None:  # changing the Blink id resets the cached 1:1 chat
             c.execute("UPDATE users SET blink_user_id=?, blink_chat_id=NULL WHERE id=?",
                       (p.blink_user_id.strip() or None, uid))
+        if p.role in ("manager", "staff"):
+            if p.role == "staff" and c.execute(
+                    "SELECT COUNT(*) FROM users WHERE role='manager' AND id!=?", (uid,)).fetchone()[0] == 0:
+                raise HTTPException(400, "There must be at least one manager.")
+            c.execute("UPDATE users SET role=? WHERE id=?", (p.role, uid))
         if p.weekly_summary is not None:
             c.execute("UPDATE users SET weekly_summary=? WHERE id=?", (int(p.weekly_summary), uid))
     return {"ok": True}
@@ -282,7 +288,10 @@ def list_projects():
         ps = rows(c.execute("SELECT * FROM projects ORDER BY status='done', start_date DESC"))
         for p in ps:
             p["tasks"] = rows(c.execute(
-                """SELECT t.*, u.name AS assignee_name FROM tasks t LEFT JOIN users u ON u.id=t.assignee_id
+                """SELECT t.*, u.name AS assignee_name,
+                          (SELECT note FROM task_updates tu WHERE tu.task_id=t.id AND note IS NOT NULL
+                           ORDER BY tu.id DESC LIMIT 1) AS last_note
+                   FROM tasks t LEFT JOIN users u ON u.id=t.assignee_id
                    WHERE project_id=? ORDER BY position,id""", (p["id"],)))
         return ps
 
@@ -321,7 +330,15 @@ def _notify(blink_user_id: str, text: str):
 
 @app.patch("/api/tasks/{tid}")
 def patch_task(tid: int, p: TaskPatch, request: Request):
-    p.user_id = (auth.current_user(request) or {}).get("id")
+    me = auth.current_user(request) or {}
+    p.user_id = me.get("id")
+    if me.get("role") != "manager":
+        with tx() as c:
+            t = c.execute("SELECT assignee_id FROM tasks WHERE id=?", (tid,)).fetchone()
+        if not t or t["assignee_id"] != me.get("id"):
+            raise HTTPException(403, "You can only update tasks assigned to you.")
+        if p.assignee_id is not None or p.due_date is not None:
+            raise HTTPException(403, "Only managers can reassign tasks or change due dates.")
     with tx() as c:
         if p.assignee_id is not None:
             c.execute("UPDATE tasks SET assignee_id=? WHERE id=?", (p.assignee_id, tid))

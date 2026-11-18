@@ -24,6 +24,10 @@ ENABLED = bool(CLIENT_ID and CLIENT_SECRET)
 # On a hosted deploy (Railway sets RAILWAY_ENVIRONMENT) with sign-in not configured, lock everything.
 LOCKED = not ENABLED and bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("REQUIRE_LOGIN"))
 
+# Comma-separated emails that are always managers (optional). If no manager exists at all,
+# the next person to sign in becomes one, so the system can never be locked out.
+MANAGER_EMAILS = {e.strip().lower() for e in os.getenv("MANAGER_EMAILS", "").split(",") if e.strip()}
+
 # Paths reachable without signing in
 PUBLIC_PATHS = {"/login", "/auth/callback", "/logout", "/blink/webhook", "/healthz"}
 
@@ -37,8 +41,35 @@ def _redirect_uri(request: Request) -> str:
 
 def current_user(request: Request) -> dict | None:
     if not ENABLED:
-        return {"id": None, "name": "Local dev (sign-in disabled)", "email": ""}
-    return request.session.get("user")
+        return {"id": None, "name": "Local dev (sign-in disabled)", "email": "", "role": "manager"}
+    u = request.session.get("user")
+    if not u:
+        return None
+    with tx() as c:
+        row = c.execute("SELECT role FROM users WHERE id=?", (u["id"],)).fetchone()
+    return {**u, "role": row["role"] if row else "staff"}
+
+
+def is_manager(request: Request) -> bool:
+    return (current_user(request) or {}).get("role") == "manager"
+
+
+def _apply_role_rules(uid: int, email: str):
+    with tx() as c:
+        if email in MANAGER_EMAILS or not c.execute("SELECT 1 FROM users WHERE role='manager'").fetchone():
+            c.execute("UPDATE users SET role='manager' WHERE id=?", (uid,))
+
+
+# Staff (non-managers) may read everything but only change their own tasks.
+# Everything else that writes, plus these read-only-but-sensitive paths, is manager-only.
+MANAGER_ONLY_GET_PREFIXES = ("/api/backups", "/api/summary", "/api/blink/messages")
+
+
+def _staff_allowed(request: Request) -> bool:
+    path, method = request.url.path, request.method
+    if method == "GET":
+        return not path.startswith(MANAGER_ONLY_GET_PREFIXES)
+    return method == "PATCH" and path.startswith("/api/tasks/")  # ownership checked in the endpoint
 
 
 async def require_login(request: Request, call_next):
@@ -51,7 +82,9 @@ async def require_login(request: Request, call_next):
         return await call_next(request)
     if ENABLED and (u := request.session.get("user")):
         _ensure_user_row(request, u)
-    if current_user(request):
+    if (u := current_user(request)):
+        if u.get("role") != "manager" and request.url.path.startswith("/api/") and not _staff_allowed(request):
+            return JSONResponse({"detail": "Only managers can do that."}, status_code=403)
         return await call_next(request)
     if request.url.path.startswith("/api/"):
         return JSONResponse({"detail": "not signed in"}, status_code=401)
@@ -63,12 +96,15 @@ def _ensure_user_row(request: Request, u: dict):
     including their Blink id, instead of silently not existing."""
     with tx() as c:
         row = c.execute("SELECT id FROM users WHERE id=? AND lower(email)=?", (u["id"], u["email"])).fetchone()
-        if row:
-            return
+    if row:
+        _apply_role_rules(u["id"], u["email"])  # e.g. first request after roles were introduced
+        return
+    with tx() as c:
         row = c.execute("SELECT id FROM users WHERE lower(email)=?", (u["email"],)).fetchone()
         uid = row["id"] if row else c.execute("INSERT INTO users(name, email) VALUES(?,?)",
                                               (u["name"], u["email"])).lastrowid
     request.session["user"] = {**u, "id": uid}
+    _apply_role_rules(uid, u["email"])
     link_blink_account(uid, u["email"])
 
 
@@ -113,6 +149,7 @@ def callback(request: Request, code: str = "", state: str = "", error: str = "")
         uid = row["id"] if row else c.execute(
             "INSERT INTO users(name, email) VALUES(?,?)", (name, email)).lastrowid
     request.session["user"] = {"id": uid, "name": row["name"] if row else name, "email": email}
+    _apply_role_rules(uid, email)
     link_blink_account(uid, email)
     return RedirectResponse("/")
 

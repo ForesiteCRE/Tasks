@@ -116,6 +116,8 @@ def init_db():
         cols = {r[1] for r in c.execute("PRAGMA table_info(users)")}
         if "blink_chat_id" not in cols:  # migrate DBs created before this column existed
             c.execute("ALTER TABLE users ADD COLUMN blink_chat_id TEXT")
+        if "role" not in cols:
+            c.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'staff'")  # manager | staff
         if "weekly_summary" not in cols:
             c.execute("ALTER TABLE users ADD COLUMN weekly_summary INTEGER NOT NULL DEFAULT 0")
 

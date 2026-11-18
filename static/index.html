@@ -9,32 +9,80 @@
 header{display:flex;gap:16px;align-items:center;padding:12px 20px;background:var(--card);border-bottom:1px solid var(--line);flex-wrap:wrap}
 header h1{font-size:17px;margin:0}nav button{background:none;border:0;padding:8px 12px;border-radius:6px;cursor:pointer;font:inherit;color:var(--mute)}
 nav button.on{background:#e7ecff;color:var(--acc);font-weight:600}
-main{max-width:1100px;margin:0 auto;padding:20px 16px}.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+main{max-width:1200px;margin:0 auto;padding:20px 16px}.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
 h2{font-size:15px;margin:0 0 10px}h3{font-size:14px;margin:0}.mute{color:var(--mute)}
 input,select,button.b{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius:6px;background:#fff}
+select:disabled,input:disabled{background:#f6f7f9;color:var(--ink);opacity:1}
 button.b{background:var(--acc);color:#fff;border-color:var(--acc);cursor:pointer}button.b.ghost{background:#fff;color:var(--acc)}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0}
 table{width:100%;border-collapse:collapse}td,th{padding:6px 8px;border-top:1px solid var(--line);text-align:left;vertical-align:middle}th{font-size:12px;color:var(--mute);font-weight:500;border:0}
-.pill{font-size:11px;padding:2px 8px;border-radius:99px;background:#eef0f3}.todo{background:#eef0f3}.in_progress{background:#e7ecff;color:var(--acc)}.blocked{background:#fff0e6;color:var(--warn)}.done{background:#e6f6ea;color:var(--ok)}
+.pill{font-size:11px;padding:2px 8px;border-radius:99px;background:#eef0f3;white-space:nowrap}.todo{background:#eef0f3}.in_progress{background:#e7ecff;color:var(--acc)}.blocked{background:#fff0e6;color:var(--warn)}.done{background:#e6f6ea;color:var(--ok)}
 .bar{height:6px;background:#eef0f3;border-radius:6px;overflow:hidden;margin:6px 0 10px}.bar i{display:block;height:100%;background:var(--ok)}
-.over{color:var(--bad);font-weight:600}
+.over{color:var(--bad);font-weight:600}.note{color:var(--mute);font-style:italic;font-size:12px}
 .chat{display:flex;flex-direction:column;gap:8px;max-height:460px;overflow:auto;padding:10px;background:#f1f3f6;border-radius:8px}
 .msg{max-width:80%;padding:8px 11px;border-radius:10px;white-space:pre-wrap}.msg.out{background:#fff;border:1px solid var(--line)}.msg.in{background:var(--acc);color:#fff;align-self:flex-end}
-.hidden{display:none}
+.hidden{display:none!important}
+/* calendar */
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border-left:1px solid var(--line);border-top:1px solid var(--line)}
+.cal .dow{font-size:12px;color:var(--mute);padding:6px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:#fafbfc}
+.cal .day{min-height:110px;padding:4px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);overflow:hidden}
+.cal .day.out{background:#fafbfc}.cal .day.out .dn{color:#c0c4cc}.cal .day.today{background:#f3f6ff}.cal .day.today .dn{background:var(--acc);color:#fff;border-radius:99px;padding:0 6px}
+.dn{font-size:12px;font-weight:600;display:inline-block;margin-bottom:3px}
+.chip{display:block;font-size:12px;padding:2px 6px;margin:2px 0;border-radius:5px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-left:3px solid transparent}
+.chip.od{border-left-color:var(--bad)}.chip.done{text-decoration:line-through;opacity:.7}
+/* team */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}.tile b{display:block;font-size:24px}.tile.bad b{color:var(--bad)}.tile.warn b{color:var(--warn)}
+.counts{display:flex;gap:6px;flex-wrap:wrap}
+dialog{border:1px solid var(--line);border-radius:12px;padding:18px;max-width:440px;width:92vw}dialog::backdrop{background:rgba(20,24,33,.35)}
+@media (max-width:700px){.cal .day{min-height:70px}.chip{font-size:11px}main{padding:12px}}
 </style>
 </head>
 <body>
 <header><h1>📋 Task Manager <span class="mute" style="font-weight:400">· Blink-connected</span></h1>
-<nav id="nav"><button data-v="projects" class="on">Projects</button><button data-v="templates">Checklist templates</button><button data-v="recurring">Monthly recurring</button><button data-v="people">People</button><button data-v="admin">Reports &amp; backups</button><button data-v="chat" id="chatTab">Blink chat (simulator)</button></nav>
+<nav id="nav">
+  <button data-v="projects" class="on">Projects</button>
+  <button data-v="calendar">Calendar</button>
+  <button data-v="team" class="mgr">Team</button>
+  <button data-v="templates" class="mgr">Checklist templates</button>
+  <button data-v="recurring" class="mgr">Monthly recurring</button>
+  <button data-v="people" class="mgr">People</button>
+  <button data-v="admin" class="mgr">Reports &amp; backups</button>
+  <button data-v="chat" id="chatTab" class="mgr">Blink chat (simulator)</button>
+</nav>
 <span id="me" class="mute" style="margin-left:auto"></span></header>
 <main>
 
 <section id="v-projects">
-  <div class="card"><h2>Start a project</h2>
+  <div class="card mgr"><h2>Start a project</h2>
     <div class="row"><input id="pName" placeholder="Project name (e.g. 123 Main St Listing)" style="flex:1;min-width:220px">
       <select id="pTpl"></select><input id="pStart" type="date"><button class="b" onclick="newProject()">Create</button></div>
     <p class="mute">Pick a checklist template to copy its tasks, assignees and due dates.</p></div>
+  <div class="row" style="margin-bottom:12px">
+    <label>Show <select id="pFilter" onchange="renderProjects()"><option value="all">All tasks</option><option value="mine">My tasks</option></select></label>
+    <label><input type="checkbox" id="pHideDone" onchange="renderProjects()" checked> Hide finished projects</label>
+    <span id="roleNote" class="mute"></span>
+  </div>
   <div id="projects"></div>
+</section>
+
+<section id="v-calendar" class="hidden">
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <div class="row"><button class="b ghost" onclick="calMove(-1)">‹</button><h2 id="calTitle" style="margin:0;min-width:150px;text-align:center"></h2><button class="b ghost" onclick="calMove(1)">›</button><button class="b ghost" onclick="calMove(0)">Today</button></div>
+      <div class="row"><select id="calWho" onchange="renderCalendar()"></select><select id="calProj" onchange="renderCalendar()"></select>
+        <label><input type="checkbox" id="calHideDone" onchange="renderCalendar()"> Hide done</label></div>
+    </div>
+    <div class="row mute" style="font-size:12px"><span class="pill todo">To do</span><span class="pill in_progress">In progress</span><span class="pill blocked">Blocked</span><span class="pill done">Done</span><span>· red edge = overdue · click a task for details</span><span id="calNoDue"></span></div>
+    <div class="cal" id="cal"></div>
+  </div>
+</section>
+
+<section id="v-team" class="hidden">
+  <div class="tiles" id="teamTiles"></div>
+  <div class="row" style="margin-bottom:12px"><label>Sort by <select id="teamSort" onchange="renderTeam()"><option value="overdue">Most overdue</option><option value="open">Most open</option><option value="name">Name</option></select></label>
+    <label><input type="checkbox" id="teamOnlyOverdue" onchange="renderTeam()"> Only overdue &amp; blocked</label></div>
+  <div id="team"></div>
 </section>
 
 <section id="v-templates" class="hidden">
@@ -54,8 +102,9 @@ table{width:100%;border-collapse:collapse}td,th{padding:6px 8px;border-top:1px s
 
 <section id="v-people" class="hidden">
   <div class="card"><h2>Add person</h2><div class="row"><input id="uName" placeholder="Name"><input id="uEmail" placeholder="name@foresitecre.com"><input id="uBlink" placeholder="Blink ID (optional – found by email)"><button class="b" onclick="addUser()">Add</button><button class="b ghost" onclick="matchBlink()">🔗 Find missing Blink IDs</button></div>
-<p class="mute">Add teammates by work email — their Blink account is found automatically, so you can assign them tasks before they ever sign in.</p></div>
-  <div class="card"><table id="people"></table><p class="mute">Everyone in the system. Duplicate entry for the same person? Choose “Merge into …” on the extra row and click Remove — their tasks move over. People who sign in with Google are added automatically — paste their Blink user ID (u-…, from their page in Blink Admin) so they get chat reminders.</p></div>
+  <p class="mute">Add teammates by work email — their Blink account is found automatically, so you can assign them tasks before they ever sign in.</p></div>
+  <div class="card"><table id="people"></table>
+  <p class="mute"><b>Manager</b> = can create projects, assign/reassign tasks, edit templates, manage people. <b>Staff</b> = can see everything but only update their own tasks. Duplicate entry for the same person? Choose “Merge into …” on the extra row and click Remove — their tasks move over.</p></div>
 </section>
 
 <section id="v-admin" class="hidden">
@@ -78,42 +127,121 @@ table{width:100%;border-collapse:collapse}td,th{padding:6px 8px;border-top:1px s
     <div class="row"><input id="cText" placeholder='Try "done 3" or "finished the rent roll, waiting on CAM recon from Joe"' style="flex:1" onkeydown="if(event.key==='Enter')sendChat()"><button class="b" onclick="sendChat()">Send</button></div></div>
 </section>
 </main>
+
+<dialog id="taskDlg"><div id="taskDlgBody"></div><div class="row" style="justify-content:flex-end;margin-top:12px"><button class="b ghost" onclick="taskDlg.close()">Close</button></div></dialog>
+
 <script>
 const $=s=>document.querySelector(s), api=(u,o={})=>fetch(u,{headers:{'Content-Type':'application/json'},...o,body:o.body&&JSON.stringify(o.body)}).then(async r=>{if(r.status===401){location.href='/login';throw 0}
-  if(!r.ok){const t=await r.text();alert(`Something went wrong (${r.status}). ${t.slice(0,200)}`);throw new Error(t)}return r.json()});
+  if(!r.ok){let t=await r.text();try{t=JSON.parse(t).detail||t}catch(e){}alert(`Couldn't do that: ${String(t).slice(0,200)}`);throw new Error(t)}return r.json()});
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-let USERS=[],TPLS=[],ME={};const LBL={todo:'To do',in_progress:'In progress',blocked:'Blocked',done:'Done'};
-$('#nav').onclick=e=>{const v=e.target.dataset.v;if(!v)return;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b===e.target));document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-'+v));if(v==='chat')loadChat();if(v==='admin')loadAdmin();};
-const userOpts=(sel)=>'<option value="">Unassigned</option>'+USERS.map(u=>`<option value="${u.id}" ${u.id==sel?'selected':''}>${esc(u.name)}</option>`).join('');
-const today=()=>new Date().toISOString().slice(0,10);
+let USERS=[],TPLS=[],PROJECTS=[],TASKS=[],ME={};const LBL={todo:'To do',in_progress:'In progress',blocked:'Blocked',done:'Done'};
+const isMgr=()=>ME.role==='manager', canEdit=t=>isMgr()||t.assignee_id===ME.id;
+const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const today=()=>iso(new Date());
+const isOver=t=>t.due_date&&t.due_date<today()&&t.status!=='done';
+const fmtDate=d=>d?new Date(d+'T12:00').toLocaleDateString(undefined,{month:'short',day:'numeric'}):'';
+function show(v){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-'+v));
+  if(v==='chat')loadChat();if(v==='admin')loadAdmin();if(v==='calendar')renderCalendar();if(v==='team')renderTeam();}
+$('#nav').onclick=e=>{const v=e.target.dataset.v;if(v)show(v)};
+const userOpts=(sel,blank='Unassigned')=>`<option value="">${blank}</option>`+USERS.map(u=>`<option value="${u.id}" ${u.id==sel?'selected':''}>${esc(u.name)}</option>`).join('');
+const statusSel=(t)=>`<select class="pill ${t.status}" ${canEdit(t)?'':'disabled'} onchange="setStatus(${t.id},this.value)">${Object.keys(LBL).map(s=>`<option value="${s}" ${s===t.status?'selected':''}>${LBL[s]}</option>`).join('')}</select>`;
 
 async function refresh(){
-  USERS=await api('/api/users');TPLS=await api('/api/templates');
+  [USERS,TPLS,PROJECTS]=await Promise.all([api('/api/users'),api('/api/templates'),api('/api/projects')]);
+  TASKS=PROJECTS.flatMap(p=>p.tasks.map(t=>({...t,project_name:p.name,project_status:p.status})));
+  document.querySelectorAll('.mgr').forEach(el=>el.classList.toggle('hidden',!isMgr()));
+  $('#roleNote').textContent=isMgr()?'':'You can view everything and update tasks assigned to you.';
   const tOpts='<option value="">Blank (no template)</option>'+TPLS.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
   $('#pTpl').innerHTML=tOpts;$('#rTpl').innerHTML=TPLS.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
-  $('#cUser').innerHTML=USERS.filter(u=>u.blink_user_id).map(u=>`<option value="${esc(u.blink_user_id)}">${esc(u.name)}</option>`).join('');
-  $('#people').innerHTML='<tr><th>Name</th><th>Email</th><th>Open tasks</th><th>Weekly summary</th><th>Blink user ID</th><th></th></tr>'+USERS.map(u=>`<tr>
+  const w=$('#calWho').value, pj=$('#calProj').value;
+  $('#calWho').innerHTML=`<option value="">Everyone</option><option value="me">Just me</option><option value="none">Unassigned</option>`+USERS.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('');$('#calWho').value=w;
+  $('#calProj').innerHTML=`<option value="">All projects</option>`+PROJECTS.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');$('#calProj').value=pj;
+  renderProjects();
+  if(isMgr()){renderPeople();renderTemplates();
+    $('#cUser').innerHTML=USERS.filter(u=>u.blink_user_id).map(u=>`<option value="${esc(u.blink_user_id)}">${esc(u.name)}</option>`).join('');
+    const rs=await api('/api/recurrences');
+    $('#recurring').innerHTML='<tr><th>Name pattern</th><th>Template</th><th>Day</th><th>Last created</th><th></th></tr>'+rs.map(r=>`<tr><td>${esc(r.name_pattern)}</td><td>${esc(r.template_name)}</td><td>${r.day_of_month}</td><td>${r.last_period||'—'}</td><td><button class="b ghost" onclick="toggleRec(${r.id},${!r.active})">${r.active?'Pause':'Resume'}</button></td></tr>`).join('');}
+  if(!$('#v-calendar').classList.contains('hidden'))renderCalendar();
+  if(!$('#v-team').classList.contains('hidden'))renderTeam();
+}
+
+/* ---------- projects ---------- */
+function renderProjects(){
+  const mine=$('#pFilter').value==='mine', hideDone=$('#pHideDone').checked;
+  const ps=PROJECTS.filter(p=>!(hideDone&&p.status==='done')).map(p=>({...p,shown:mine?p.tasks.filter(t=>t.assignee_id===ME.id):p.tasks})).filter(p=>!mine||p.shown.length);
+  $('#projects').innerHTML=ps.map(p=>{const done=p.tasks.filter(t=>t.status==='done').length,pct=p.tasks.length?Math.round(100*done/p.tasks.length):0;
+  return `<div class="card"><div class="row" style="justify-content:space-between"><h3>${esc(p.name)} <span class="pill ${p.status==='done'?'done':''}">${p.status}</span></h3>
+  <span class="mute">${done}/${p.tasks.length} done · started ${fmtDate(p.start_date)} ${isMgr()?`<button class="b ghost" onclick="saveAsTpl(${p.id},'${esc(p.name).replace(/'/g,"")}')">Save as template</button>`:''}</span></div>
+  <div class="bar"><i style="width:${pct}%"></i></div>
+  <table><tr><th>#</th><th>Task</th><th>Assignee</th><th>Due</th><th>Status</th></tr>
+  ${p.shown.map(t=>`<tr><td class="mute">${t.id}</td><td><label><input type="checkbox" ${t.status==='done'?'checked':''} ${canEdit(t)?'':'disabled'} onchange="setStatus(${t.id},this.checked?'done':'todo')"> ${esc(t.title)}</label>${t.last_note?`<div class="note">“${esc(t.last_note)}”</div>`:''}</td>
+   <td><select ${isMgr()?'':'disabled'} onchange="patch(${t.id},{assignee_id:+this.value||null})">${userOpts(t.assignee_id)}</select></td>
+   <td>${isMgr()?`<input type="date" value="${t.due_date||''}" class="${isOver(t)?'over':''}" onchange="patch(${t.id},{due_date:this.value||null})">`:`<span class="${isOver(t)?'over':''}">${fmtDate(t.due_date)}</span>`}</td>
+   <td>${statusSel(t)}</td></tr>`).join('')}
+  ${isMgr()?`<tr><td></td><td><input id="nt${p.id}" placeholder="+ Add task" style="width:100%" onkeydown="if(event.key==='Enter')addTask(${p.id})"></td><td><select id="na${p.id}">${userOpts()}</select></td><td><input type="date" id="nd${p.id}"></td><td><button class="b ghost" onclick="addTask(${p.id})">Add</button></td></tr>`:''}</table></div>`}).join('')||`<p class="mute">${mine?'No tasks assigned to you.':'No projects yet.'}</p>`;
+}
+
+/* ---------- calendar ---------- */
+let CAL=(()=>{const d=new Date();return{y:d.getFullYear(),m:d.getMonth()}})();
+function calMove(n){if(n===0){const d=new Date();CAL={y:d.getFullYear(),m:d.getMonth()}}else{const d=new Date(CAL.y,CAL.m+n,1);CAL={y:d.getFullYear(),m:d.getMonth()}}renderCalendar();}
+function calTasks(){const w=$('#calWho').value,pj=$('#calProj').value,hide=$('#calHideDone').checked;
+  return TASKS.filter(t=>(!w||(w==='me'?t.assignee_id===ME.id:w==='none'?!t.assignee_id:t.assignee_id==w))&&(!pj||t.project_id==pj)&&!(hide&&t.status==='done'));}
+function renderCalendar(){
+  const first=new Date(CAL.y,CAL.m,1);$('#calTitle').textContent=first.toLocaleDateString(undefined,{month:'long',year:'numeric'});
+  const ts=calTasks(),byDay={};ts.forEach(t=>{if(t.due_date)(byDay[t.due_date]=byDay[t.due_date]||[]).push(t)});
+  const noDue=ts.filter(t=>!t.due_date&&t.status!=='done').length;$('#calNoDue').textContent=noDue?`· ${noDue} open task(s) have no due date`:'';
+  const start=new Date(first);start.setDate(1-first.getDay());
+  let html=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=>`<div class="dow">${d}</div>`).join('');
+  for(let i=0;i<42;i++){const d=new Date(start);d.setDate(start.getDate()+i);const k=iso(d);
+    if(i>=35&&d.getMonth()!==CAL.m)break;
+    const items=(byDay[k]||[]).sort((a,b)=>(a.status==='done')-(b.status==='done'));
+    html+=`<div class="day ${d.getMonth()!==CAL.m?'out':''} ${k===today()?'today':''}"><span class="dn">${d.getDate()}</span>${items.map(t=>{const who=(USERS.find(u=>u.id===t.assignee_id)||{}).name||'Unassigned';
+      return `<span class="chip ${t.status} ${isOver(t)?'od':''}" title="#${t.id} ${esc(t.title)} · ${esc(who)} · ${esc(t.project_name)}" onclick="openTask(${t.id})">${esc(t.title)} · ${esc(who.split(' ')[0])}</span>`}).join('')}</div>`;}
+  $('#cal').innerHTML=html;
+}
+
+/* ---------- task details dialog ---------- */
+async function openTask(id){const t=TASKS.find(x=>x.id===id);if(!t)return;const who=(USERS.find(u=>u.id===t.assignee_id)||{}).name||'Unassigned';
+  const ups=await api(`/api/tasks/${id}/updates`);
+  $('#taskDlgBody').innerHTML=`<h2>#${t.id} ${esc(t.title)}</h2><p class="mute">${esc(t.project_name)}</p>
+   <table><tr><td>Assignee</td><td>${isMgr()?`<select onchange="patch(${t.id},{assignee_id:+this.value||null}).then(()=>openTask(${t.id}))">${userOpts(t.assignee_id)}</select>`:esc(who)}</td></tr>
+   <tr><td>Due</td><td>${isMgr()?`<input type="date" value="${t.due_date||''}" onchange="patch(${t.id},{due_date:this.value||null}).then(()=>openTask(${t.id}))">`:`<span class="${isOver(t)?'over':''}">${fmtDate(t.due_date)||'—'}</span>`}</td></tr>
+   <tr><td>Status</td><td>${statusSel(t).replace('onchange="setStatus('+t.id+',this.value)"',`onchange="setStatus(${t.id},this.value).then(()=>openTask(${t.id}))"`)}</td></tr></table>
+   ${canEdit(t)?`<div class="row"><input id="dlgNote" placeholder="Add a note…" style="flex:1"><button class="b ghost" onclick="addNote(${t.id})">Add note</button></div>`:''}
+   <h3 style="margin-top:12px">History</h3>${ups.length?`<table>${ups.slice(0,8).map(u=>`<tr><td class="mute" style="white-space:nowrap">${esc(u.created_at.slice(5,16))}</td><td>${esc(u.user_name||'')}${u.status?` → <span class="pill ${u.status}">${LBL[u.status]}</span>`:''} ${u.note?`<span class="note">“${esc(u.note)}”</span>`:''} <span class="mute">(${u.source})</span></td></tr>`).join('')}</table>`:'<p class="mute">No updates yet.</p>'}`;
+  if(!taskDlg.open)taskDlg.showModal();}
+async function addNote(id){const n=$('#dlgNote').value.trim();if(!n)return;await patch(id,{note:n});openTask(id);}
+
+/* ---------- team dashboard ---------- */
+function renderTeam(){
+  const open=TASKS.filter(t=>t.status!=='done'&&t.project_status==='active'),wk=iso(new Date(Date.now()+7*864e5));
+  const od=open.filter(isOver),bl=open.filter(t=>t.status==='blocked'),soon=open.filter(t=>t.due_date&&t.due_date>=today()&&t.due_date<=wk);
+  $('#teamTiles').innerHTML=`<div class="tile"><span class="mute">Open tasks</span><b>${open.length}</b></div><div class="tile bad"><span class="mute">Overdue</span><b>${od.length}</b></div><div class="tile warn"><span class="mute">Blocked</span><b>${bl.length}</b></div><div class="tile"><span class="mute">Due next 7 days</span><b>${soon.length}</b></div>`;
+  const people=[...USERS.map(u=>({id:u.id,name:u.name})),{id:null,name:'Unassigned'}].map(p=>{const ts=open.filter(t=>(t.assignee_id??null)===p.id);
+    return{...p,ts,od:ts.filter(isOver).length,bl:ts.filter(t=>t.status==='blocked').length,soon:ts.filter(t=>t.due_date&&t.due_date>=today()&&t.due_date<=wk).length,
+      doneWk:TASKS.filter(t=>t.assignee_id===p.id&&t.status==='done').length}}).filter(p=>p.ts.length||p.id!==null);
+  const s=$('#teamSort').value;people.sort((a,b)=>s==='name'?a.name.localeCompare(b.name):s==='open'?b.ts.length-a.ts.length:(b.od-a.od)||(b.bl-a.bl)||(b.ts.length-a.ts.length));
+  const only=$('#teamOnlyOverdue').checked;
+  $('#team').innerHTML=people.map(p=>{const list=(only?p.ts.filter(t=>isOver(t)||t.status==='blocked'):p.ts).sort((a,b)=>(a.due_date||'9')<(b.due_date||'9')?-1:1);
+    return `<div class="card"><div class="row" style="justify-content:space-between"><h3>${esc(p.name)}</h3>
+     <div class="counts"><span class="pill">${p.ts.length} open</span>${p.od?`<span class="pill" style="background:#ffe3e3;color:var(--bad)">${p.od} overdue</span>`:''}${p.bl?`<span class="pill blocked">${p.bl} blocked</span>`:''}${p.soon?`<span class="pill in_progress">${p.soon} due this week</span>`:''}
+     ${p.id?`<button class="b ghost" onclick="$('#calWho').value='${p.id}';show('calendar')">📅 Calendar</button>`:''}</div></div>
+     ${list.length?`<table><tr><th>#</th><th>Task</th><th>Project</th><th>Due</th><th>Status</th></tr>${list.map(t=>`<tr style="cursor:pointer" onclick="openTask(${t.id})"><td class="mute">${t.id}</td><td>${esc(t.title)}${t.last_note?`<div class="note">“${esc(t.last_note)}”</div>`:''}</td><td class="mute">${esc(t.project_name)}</td><td class="${isOver(t)?'over':''}">${fmtDate(t.due_date)||'—'}</td><td><span class="pill ${t.status}">${LBL[t.status]}</span></td></tr>`).join('')}</table>`:`<p class="mute">${p.ts.length?'Nothing overdue or blocked.':'Nothing outstanding 🎉'}</p>`}</div>`}).join('');
+}
+
+/* ---------- people (managers) ---------- */
+function renderPeople(){
+  $('#people').innerHTML='<tr><th>Name</th><th>Email</th><th>Role</th><th>Open</th><th>Weekly summary</th><th>Blink user ID</th><th></th></tr>'+USERS.map(u=>`<tr>
     <td><input value="${esc(u.name)}" style="width:100%" onchange="api('/api/users/${u.id}',{method:'PATCH',body:{name:this.value}}).then(refresh)"></td>
-    <td>${esc(u.email)}${u.id===ME.id?' <span class="pill">you</span>':''}</td><td>${u.open_tasks}</td>
+    <td>${esc(u.email)}${u.id===ME.id?' <span class="pill">you</span>':''}</td>
+    <td><select onchange="api('/api/users/${u.id}',{method:'PATCH',body:{role:this.value}}).then(refresh,refresh)"><option value="staff" ${u.role!=='manager'?'selected':''}>Staff</option><option value="manager" ${u.role==='manager'?'selected':''}>Manager</option></select></td>
+    <td>${u.open_tasks}</td>
     <td><input type="checkbox" ${u.weekly_summary?'checked':''} ${u.blink_user_id?'':'disabled title="Needs a Blink ID"'} onchange="api('/api/users/${u.id}',{method:'PATCH',body:{weekly_summary:this.checked}})"></td>
     <td><input value="${esc(u.blink_user_id)}" placeholder="u-…" style="width:100%" onchange="api('/api/users/${u.id}',{method:'PATCH',body:{blink_user_id:this.value}}).then(refresh)"></td>
     <td style="white-space:nowrap">${u.id===ME.id?'':`<select id="mg${u.id}"><option value="">Unassign their tasks</option>${USERS.filter(o=>o.id!==u.id).map(o=>`<option value="${o.id}">Merge into ${esc(o.name)}</option>`).join('')}</select> <button class="b ghost" onclick="removeUser(${u.id})">Remove</button>`}</td></tr>`).join('');
-  renderProjects(await api('/api/projects'));renderTemplates();
-  const rs=await api('/api/recurrences');
-  $('#recurring').innerHTML='<tr><th>Name pattern</th><th>Template</th><th>Day</th><th>Last created</th><th></th></tr>'+rs.map(r=>`<tr><td>${esc(r.name_pattern)}</td><td>${esc(r.template_name)}</td><td>${r.day_of_month}</td><td>${r.last_period||'—'}</td><td><button class="b ghost" onclick="toggleRec(${r.id},${!r.active})">${r.active?'Pause':'Resume'}</button></td></tr>`).join('');
 }
-function renderProjects(ps){
-  $('#projects').innerHTML=ps.map(p=>{const done=p.tasks.filter(t=>t.status==='done').length,pct=p.tasks.length?Math.round(100*done/p.tasks.length):0;
-  return `<div class="card"><div class="row" style="justify-content:space-between"><h3>${esc(p.name)} <span class="pill ${p.status==='done'?'done':''}">${p.status}</span></h3>
-  <span class="mute">${done}/${p.tasks.length} done · started ${p.start_date} <button class="b ghost" onclick="saveAsTpl(${p.id},'${esc(p.name).replace(/'/g,"")}')">Save as template</button></span></div>
-  <div class="bar"><i style="width:${pct}%"></i></div>
-  <table><tr><th>#</th><th>Task</th><th>Assignee</th><th>Due</th><th>Status</th></tr>
-  ${p.tasks.map(t=>`<tr><td class="mute">${t.id}</td><td><label><input type="checkbox" ${t.status==='done'?'checked':''} onchange="setStatus(${t.id},this.checked?'done':'todo')"> ${esc(t.title)}</label></td>
-   <td><select onchange="patch(${t.id},{assignee_id:+this.value||null})">${userOpts(t.assignee_id)}</select></td>
-   <td class="${t.due_date&&t.due_date<today()&&t.status!=='done'?'over':''}">${t.due_date||''}</td>
-   <td><select class="pill ${t.status}" onchange="setStatus(${t.id},this.value)">${Object.keys(LBL).map(s=>`<option value="${s}" ${s===t.status?'selected':''}>${LBL[s]}</option>`).join('')}</select></td></tr>`).join('')}
-  <tr><td></td><td><input id="nt${p.id}" placeholder="+ Add task" style="width:100%"></td><td><select id="na${p.id}">${userOpts()}</select></td><td><input type="date" id="nd${p.id}"></td><td><button class="b ghost" onclick="addTask(${p.id})">Add</button></td></tr></table></div>`}).join('')||'<p class="mute">No projects yet.</p>';
-}
+
+/* ---------- templates (managers) ---------- */
 function renderTemplates(){
   $('#templates').innerHTML=TPLS.map(t=>`<div class="card"><div class="row" style="justify-content:space-between"><h3>${esc(t.name)}</h3><button class="b ghost" onclick="delTpl(${t.id})">Delete</button></div><p class="mute">${esc(t.description)}</p>
   <table><tr><th>Item</th><th>Default assignee</th><th>Due (days after start)</th></tr>${t.items.map(i=>`<tr><td>${esc(i.title)}</td><td>${esc((USERS.find(u=>u.id===i.default_assignee_id)||{}).name||'—')}</td><td>+${i.due_offset_days}</td></tr>`).join('')}</table></div>`).join('');
@@ -125,7 +253,7 @@ async function saveTemplate(){const items=[...document.querySelectorAll('.ti')].
 async function delTpl(id){if(confirm('Delete template?')){await api('/api/templates/'+id,{method:'DELETE'});refresh();}}
 async function newProject(){await api('/api/projects',{method:'POST',body:{name:$('#pName').value||'Untitled',template_id:+$('#pTpl').value||null,start_date:$('#pStart').value||null}});$('#pName').value='';refresh();}
 async function saveAsTpl(id,n){const name=prompt('Template name',n+' checklist');if(name){await api(`/api/projects/${id}/save-as-template`,{method:'POST',body:{name}});refresh();}}
-async function patch(id,b){await api('/api/tasks/'+id,{method:'PATCH',body:b});refresh();}
+async function patch(id,b){try{await api('/api/tasks/'+id,{method:'PATCH',body:b})}finally{await refresh()}}
 const setStatus=(id,s)=>patch(id,{status:s});
 async function addTask(p){const t=$('#nt'+p).value;if(!t)return;await api('/api/tasks',{method:'POST',body:{project_id:p,title:t,assignee_id:+$('#na'+p).value||null,due_date:$('#nd'+p).value||null}});refresh();}
 async function saveRecurrence(){await api('/api/recurrences',{method:'POST',body:{template_id:+$('#rTpl').value,name_pattern:$('#rPattern').value,day_of_month:+$('#rDay').value}});refresh();}
@@ -137,6 +265,8 @@ async function removeUser(id){const u=USERS.find(x=>x.id===id),to=$('#mg'+id).va
 async function matchBlink(){const r=await api('/api/users/match-blink',{method:'POST'});refresh();
   if(!r.checked){alert('Everyone with an email already has a Blink ID (or nobody has an email yet).');return;}
   alert(`Checked ${r.checked}, linked ${r.found}.\n\n`+r.results.map(x=>`${x.email}: ${x.id||('✗ '+(x.status?x.status+' ':'')+x.detail)}`).join('\n'));}
+
+/* ---------- admin (managers) ---------- */
 async function loadAdmin(){const c=await api('/api/config');
   $('#sumInfo').textContent=c.last_summary_week?`Last automatic send: ${c.last_summary_week}`:'';
   $('#bkInfo').textContent=c.last_backup?`Last backup: ${c.last_backup}`:'No backup yet';
@@ -144,13 +274,16 @@ async function loadAdmin(){const c=await api('/api/config');
   const b=await api('/api/backups');$('#backups').innerHTML=b.length?'<tr><th>File</th><th>Size</th><th></th></tr>'+b.map(x=>`<tr><td>${esc(x.name)}</td><td>${x.size_kb} KB</td><td><a href="/api/backups/${encodeURIComponent(x.name)}">Download</a></td></tr>`).join(''):'';}
 async function previewSummary(){const r=await api('/api/summary/preview');$('#sumPreview').textContent=r.text;$('#sumPreview').classList.remove('hidden');}
 async function sendSummary(){const r=await api('/api/summary/send',{method:'POST'});alert(r.sent_to?`Sent to ${r.sent_to} people.`:'Nobody is ticked for the weekly summary yet (People tab).');}
-async function runBackup(){const r=await api('/api/backups/run',{method:'POST'});loadAdmin();}
+async function runBackup(){await api('/api/backups/run',{method:'POST'});loadAdmin();}
 async function loadChat(){const id=$('#cUser').value;if(!id)return;const ms=await api('/api/blink/messages?blink_user_id='+encodeURIComponent(id));
   $('#chat').innerHTML=ms.map(m=>`<div class="msg ${m.direction}">${esc(m.text).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*([^*]+)\*/g,'<b>$1</b>')}</div>`).join('')||'<p class="mute">No messages yet.</p>';$('#chat').scrollTop=1e9;}
 async function sendChat(){const text=$('#cText').value;if(!text)return;$('#cText').value='';await api('/api/blink/simulate',{method:'POST',body:{blink_user_id:$('#cUser').value,text}});loadChat();refresh();}
 async function runReminders(){const r=await api('/api/reminders/run',{method:'POST'});loadChat();alert(`Reminders sent for ${r.sent} task(s)${r.mock?' (mock mode)':''}`);}
-api('/api/me').then(m=>{ME=m;refresh();return m}).then(m=>$('#me').innerHTML=`${esc(m.name)}${m.auth_enabled?' · <a href="/logout">Sign out</a>':''}`);
-api('/api/config').then(c=>{if(!c.simulator)$('#chatTab').remove()});
-refresh();
+
+(async()=>{ME=await api('/api/me');
+  $('#me').innerHTML=`${esc(ME.name)} <span class="pill">${ME.role==='manager'?'Manager':'Staff'}</span>${ME.auth_enabled?' · <a href="/logout">Sign out</a>':''}`;
+  if(!isMgr())$('#pFilter').value='mine';
+  await refresh();
+  const c=await api('/api/config');if(!c.simulator)$('#chatTab').remove();})();
 </script>
 </body></html>
