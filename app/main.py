@@ -266,15 +266,23 @@ def save_as_template(pid: int, body: SaveAsTemplate):
 
 # ---------- tasks ----------
 @app.post("/api/tasks")
-def create_task(t: TaskIn):
+def create_task(t: TaskIn, background: BackgroundTasks):
     with tx() as c:
         tid = c.execute("INSERT INTO tasks(project_id,title,assignee_id,due_date,position) VALUES(?,?,?,?,999)",
                         (t.project_id, t.title, t.assignee_id, t.due_date and t.due_date.isoformat())).lastrowid
         u = c.execute("SELECT blink_user_id FROM users WHERE id=?", (t.assignee_id,)).fetchone() if t.assignee_id else None
     if u and u["blink_user_id"]:
-        blink.send_dm(u["blink_user_id"], f"📌 New task assigned: #{tid} {t.title}"
-                                          + (f" – due {t.due_date:%b %d}" if t.due_date else ""))
+        text = f"📌 New task assigned: #{tid} {t.title}" + (f" – due {t.due_date:%b %d}" if t.due_date else "")
+        background.add_task(_notify, u["blink_user_id"], text)
     return {"id": tid}
+
+
+def _notify(blink_user_id: str, text: str):
+    try:
+        blink.send_dm(blink_user_id, text)
+    except Exception:
+        logging.exception("Blink notification failed for %s", blink_user_id)
+
 
 @app.patch("/api/tasks/{tid}")
 def patch_task(tid: int, p: TaskPatch, request: Request):

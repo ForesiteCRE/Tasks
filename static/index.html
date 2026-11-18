@@ -79,7 +79,8 @@ table{width:100%;border-collapse:collapse}td,th{padding:6px 8px;border-top:1px s
 </section>
 </main>
 <script>
-const $=s=>document.querySelector(s), api=(u,o={})=>fetch(u,{headers:{'Content-Type':'application/json'},...o,body:o.body&&JSON.stringify(o.body)}).then(r=>{if(r.status===401){location.href='/login';throw 0}return r.json()});
+const $=s=>document.querySelector(s), api=(u,o={})=>fetch(u,{headers:{'Content-Type':'application/json'},...o,body:o.body&&JSON.stringify(o.body)}).then(async r=>{if(r.status===401){location.href='/login';throw 0}
+  if(!r.ok){const t=await r.text();alert(`Something went wrong (${r.status}). ${t.slice(0,200)}`);throw new Error(t)}return r.json()});
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let USERS=[],TPLS=[];const LBL={todo:'To do',in_progress:'In progress',blocked:'Blocked',done:'Done'};
 $('#nav').onclick=e=>{const v=e.target.dataset.v;if(!v)return;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b===e.target));document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-'+v));if(v==='chat')loadChat();if(v==='admin')loadAdmin();};
