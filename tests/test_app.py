@@ -254,6 +254,28 @@ def test_blink_follow_up_comment_uses_conversation(mgr):
         assert c.execute("SELECT 1 FROM task_comments WHERE task_id=? AND body LIKE 'This is a test comment%'", (tid,)).fetchone()
 
 
+def test_reply_to_mention_comments_on_someone_elses_task(mgr):
+    """Nicole @mentions Bethany on Nicole's task; Bethany replies "141 I see it" → comment on that task."""
+    with tx() as c:
+        sam = c.execute("SELECT id FROM users WHERE blink_user_id='u-sam'").fetchone()["id"]
+        jo = c.execute("SELECT id FROM users WHERE blink_user_id='u-jo'").fetchone()["id"]
+    tid = ids(mgr.post("/api/tasks", json={"title": "Leasing assumptions", "assignee_id": jo, "due_date": "2027-03-01"}))["id"]
+    from app import collab
+    collab.add_comment(tid, jo, "@sam this is the task that disappeared", source="web")
+    assert any(b == "u-sam" and f"#{tid}" in t for b, t in SENT[-3:])
+    CLAUDE.append({"updates": [], "comments": [{"task_id": tid, "body": "I see it"}], "reply": ""})
+    r = services.handle_inbound("u-sam", f"{tid} I see it")
+    assert "Comment added" in r
+    assert "mentioned you" in CLAUDE_CALLS[-1]["messages"][-1]["content"]       # the notification was in context
+    with tx() as c:
+        assert c.execute("SELECT 1 FROM task_comments WHERE task_id=? AND body='I see it'", (tid,)).fetchone()
+
+
+def test_far_off_tasks_still_on_my_home(mgr):
+    tid = ids(mgr.post("/api/tasks", json={"title": "Far-off budget item", "assignee_id": mgr.me["id"], "due_date": "2027-06-30"}))["id"]
+    assert tid in [a.get("id") for a in ids(mgr.get("/api/dashboard"))["agenda"] if a["kind"] == "task"]
+
+
 def ids_task(tid):
     with tx() as c:
         return dict(c.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone())

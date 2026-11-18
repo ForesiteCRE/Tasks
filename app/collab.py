@@ -113,18 +113,21 @@ def add_comment(task_id: int, user_id, body: str, source: str = "web") -> dict:
     mentioned = [u for u in find_mentions(body) if u["id"] != user_id]
     snippet = body if len(body) <= 300 else body[:297] + "…"
     notified = []
+    from . import chat
     for u in mentioned:
         if u["blink_user_id"]:
-            automations._send([u["blink_user_id"]],
-                              f"💬 **{author} mentioned you** on #{t['id']} {t['title']} · {t['project_name']}\n"
-                              f"“{snippet}”\n\nReply here with `comment {t['id']} your reply` to answer.")
+            msg = (f"💬 **{author} mentioned you** on #{t['id']} {t['title']} · {t['project_name']}\n"
+                   f"“{snippet}”\n\nJust reply here to answer on the task.")
+            automations._send([u["blink_user_id"]], msg)
+            chat.remember(u["id"], "", msg)      # so a plain reply ("I see it") is understood
             notified.append(u["id"])
     # Tell the assignee about comments from others, unless they were already @mentioned
     if (automations._on("comment_assignee") and t["assignee_blink"] and t["assignee_id"] != user_id
             and t["assignee_id"] not in notified):
-        automations._send([t["assignee_blink"]],
-                          f"💬 **{author} commented** on your task #{t['id']} {t['title']}\n“{snippet}”\n\n"
-                          f"Reply with `comment {t['id']} your reply`.")
+        msg = (f"💬 **{author} commented** on your task #{t['id']} {t['title']}\n“{snippet}”\n\n"
+               "Just reply here to answer on the task.")
+        automations._send([t["assignee_blink"]], msg)
+        chat.remember(t["assignee_id"], "", msg)
     return {"id": cid, "mentioned": [u["name"] for u in mentioned]}
 
 

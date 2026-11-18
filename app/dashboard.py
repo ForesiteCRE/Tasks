@@ -69,8 +69,9 @@ def my_dashboard(uid: int) -> dict:
 
     reminders = _q("SELECT * FROM reminders WHERE user_id=? AND done=0 ORDER BY remind_at", (uid,))
 
-    # Agenda: overdue + next 3 weeks of my tasks, reminders, and project start dates
-    agenda = [{"kind": "task", "date": t["due_date"], **t} for t in open_mine if t["due_date"] and t["due_date"] <= horizon]
+    # Agenda: every open task of mine with a due date (far-off ones land in "Later"), plus the next 3 weeks of
+    # reminders and project start dates
+    agenda = [{"kind": "task", "date": t["due_date"], **t} for t in open_mine if t["due_date"]]
     agenda += [{"kind": "reminder", "date": r["remind_at"][:10], "time": r["remind_at"][11:16], "id": r["id"],
                 "title": r["text"], "task_id": r["task_id"]} for r in reminders if r["remind_at"][:10] <= horizon]
     my_projects = _q(
@@ -129,7 +130,7 @@ def my_dashboard(uid: int) -> dict:
             "open": len(open_mine), "blocked": len(blocked), "waiting_on_me": len(waiting_on_me),
             "done_week": len(done_week), "time_week": sum(t["actual_minutes"] or 0 for t in done_week),
         },
-        "agenda": agenda[:60], "no_date": [t for t in open_mine if not t["due_date"]][:10],
+        "agenda": agenda[:150], "no_date": [t for t in open_mine if not t["due_date"]][:10],
         "blocked": blocked, "waiting_on_me": waiting_on_me, "projects": projects,
         "reminders": reminders, "activity": activity, "done_week": done_week[:8],
     }

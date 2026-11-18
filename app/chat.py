@@ -113,14 +113,18 @@ Rules:
 - If they say how long something took ("took about 2 hours", "spent 45 min"), put it in actual_minutes and any reason in time_note; otherwise 0 and "".
 - One message can update several tasks. Match on meaning, not exact wording ("rent roll" matches "Reconcile rent roll").
 - comments: when they ask to comment / leave a message / "add this to #12" / tell or ask a teammate something on a task, put the exact text in comments (keep any @names). Don't also copy it into note. A comment alone is a complete action — no status change needed.
+- A reply to a bot notification (e.g. "@X mentioned you on #141 …" then "I see it" / "on it" / "thanks") is a comment back on that task: put their reply text in comments for that task.
+- "Other tasks from this conversation" can only get comments, never status changes or notes.
 - Use the earlier conversation to resolve follow-ups. If you just asked which task or what to add, their next message is the answer: act on it (e.g. you asked "what should I add to #141?" and they send text → that text is a comment on #141). Never treat such an answer as a test or small talk.
 - If it's unclear which task they mean, or the message isn't a task update (a question, small talk), return no updates and use reply to answer briefly or ask one short clarifying question that names the candidate task numbers.
 - Otherwise reply is one short, friendly confirmation line. No emoji spam."""
 
 
-def parse_with_claude(text: str, open_tasks: list[dict], history: list[dict] | None = None) -> dict | None:
+def parse_with_claude(text: str, open_tasks: list[dict], history: list[dict] | None = None,
+                      other_tasks: list[dict] | None = None) -> dict | None:
     """Map free text onto the user's open tasks. Returns {"intent","updates","reply"} or None."""
-    if not ai_enabled() or not open_tasks:
+    other_tasks = [t for t in other_tasks or [] if t["id"] not in {o["id"] for o in open_tasks}]
+    if not ai_enabled() or not (open_tasks or other_tasks):
         return None
     import anthropic
 
@@ -136,7 +140,10 @@ def parse_with_claude(text: str, open_tasks: list[dict], history: list[dict] | N
             fallbacks="default",
             output_config={"effort": "low", "format": {"type": "json_schema", "schema": UPDATE_SCHEMA}},
             system=SYSTEM,
-            messages=_with_history(history, f"My open tasks:\n{task_list}\n\nMy message:\n{text}"),
+            messages=_with_history(history, f"My open tasks:\n{task_list or '(none)'}\n\n" + (
+                "Other tasks from this conversation (not assigned to me — I can only comment on these):\n" + "\n".join(
+                    f"#{t['id']} [{t['status']}] {t['title']} (project: {t['project_name']}, assigned to {t.get('assignee_name') or 'nobody'})"
+                    for t in other_tasks) + "\n\n" if other_tasks else "") + f"My message:\n{text}"),
         )
     except anthropic.APIError as e:
         log.warning("Claude parse failed: %s", e)
@@ -161,18 +168,27 @@ def parse_with_claude(text: str, open_tasks: list[dict], history: list[dict] | N
             updates.append({"task_id": u["task_id"], "status": status, "note": note,
                             "actual_minutes": mins if mins > 0 else None,
                             "time_note": (u.get("time_note") or "").strip() or None})
+    commentable = valid | {t["id"] for t in other_tasks}
     comments = [{"task_id": c["task_id"], "body": c["body"].strip()} for c in data.get("comments") or []
-                if c.get("task_id") in valid and (c.get("body") or "").strip()]
+                if c.get("task_id") in commentable and (c.get("body") or "").strip()]
     return {"intent": "update", "updates": updates, "comments": comments, "reply": data.get("reply", "")}
 
 
 def _with_history(history, current: str) -> list[dict]:
     """Recent turns (oldest first) so follow-ups like "add it to #141" keep their context."""
-    msgs = []
+    msgs, pending = [], []   # pending: bot messages sent on their own (e.g. "@mentioned you"), not replies
     for h in history or []:
         if h["user_text"]:
-            msgs += [{"role": "user", "content": h["user_text"]}, {"role": "assistant", "content": h["reply"] or "(ok)"}]
-    return msgs + [{"role": "user", "content": current}]
+            msgs += [{"role": "user", "content": _prefix(pending) + h["user_text"]},
+                     {"role": "assistant", "content": h["reply"] or "(ok)"}]
+            pending = []
+        elif h["reply"]:
+            pending.append(h["reply"])
+    return msgs + [{"role": "user", "content": _prefix(pending) + current}]
+
+
+def _prefix(bot_msgs: list[str]) -> str:
+    return "".join(f"[The bot sent me this message: {m}]\n\n" for m in bot_msgs)
 
 
 # ---------- short conversation memory (per person, last 30 minutes) ----------

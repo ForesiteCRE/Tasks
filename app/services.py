@@ -177,7 +177,8 @@ def handle_inbound(blink_user_id: str, text: str, files: list[dict] | None = Non
         return reply
 
     mine = open_tasks_for(u["id"])
-    parsed = rule or chat.parse_with_claude(text, mine, chat.recent(u["id"]))
+    history = chat.recent(u["id"])
+    parsed = rule or chat.parse_with_claude(text, mine, history, _referenced_tasks(text, history))
 
     if parsed is None:
         reply = "Sorry, I couldn't match that to a task.\n" + chat.help_text()
@@ -209,6 +210,7 @@ def handle_inbound(blink_user_id: str, text: str, files: list[dict] | None = Non
         reply = ("Your open tasks:\n" + "\n".join(map(fmt_task, mine))) if mine else "🎉 You have no open tasks."
     else:
         allowed = {t["id"] for t in mine} | _recently_done_ids(u["id"])
+        commentable = allowed | {t["id"] for t in _referenced_tasks(text, history)}
         done_lines, skipped = [], []
         for up in parsed["updates"]:
             if up["task_id"] not in allowed:
@@ -227,7 +229,7 @@ def handle_inbound(blink_user_id: str, text: str, files: list[dict] | None = Non
             if nxt:
                 done_lines.append(f"🔁 Next one scheduled: #{nxt['id']} due {date.fromisoformat(nxt['due_date']):%a %b %d}")
         for cm in parsed.get("comments") or []:
-            if cm["task_id"] not in allowed:
+            if cm["task_id"] not in commentable:
                 skipped.append(cm["task_id"])
                 continue
             r = collab.add_comment(cm["task_id"], u["id"], cm["body"], source="blink")
@@ -250,6 +252,19 @@ def handle_inbound(blink_user_id: str, text: str, files: list[dict] | None = Non
     chat.remember(u["id"], text, reply)
     blink.send_dm(blink_user_id, reply)
     return reply
+
+
+def _referenced_tasks(text: str, history: list[dict]) -> list[dict]:
+    """Tasks named by #number in this message or the last few chat messages (any assignee) — they can be commented on."""
+    blob = " ".join([text or ""] + [(h.get("user_text") or "") + " " + (h.get("reply") or "") for h in history[-4:]])
+    ids = {int(x) for x in re.findall(r"#(\d+)", blob)} | {int(x) for x in re.findall(r"^\s*(\d+)\b", text or "")}
+    if not ids:
+        return []
+    with tx() as c:
+        q = ",".join("?" * len(ids))
+        return rows(c.execute(f"""SELECT t.id, t.title, t.status, p.name AS project_name, u.name AS assignee_name
+                                  FROM tasks t JOIN projects p ON p.id=t.project_id LEFT JOIN users u ON u.id=t.assignee_id
+                                  WHERE t.id IN ({q})""", list(ids)))
 
 
 def _recently_done_ids(user_id: int) -> set[int]:

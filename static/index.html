@@ -523,7 +523,7 @@ async function renderHome(){const tok=++HTOK;
      ${kpi('red','Overdue',c.overdue,'',"taskList('me','open','Overdue')")}${kpi('blue','Due today',c.due_today,'',"taskList('me','open','Today')")}${kpi('violet','Next 7 days',c.due_week,'',"taskList('me','open','Next 7 days')")}
      ${kpi('amber','Blocked for me',c.blocked,'',"jumpTo('pn-blocked-for-me')")}${kpi('amber','Waiting on me',c.waiting_on_me,c.waiting_on_me?'teammates need these':'',"jumpTo('pn-waiting-on-me')")}${kpi('green','Done this week',c.done_week,c.time_week?fmtMin(c.time_week)+' logged':'',"jumpTo('pn-done-this-week')")}</div>
    <div class="hgrid"><div>
-     ${panel('Agenda',null,agenda||'<div class="empty">Nothing scheduled in the next 3 weeks.</div>',`${d.agenda.length} items · tasks, reminders &amp; project starts`)}
+     ${panel('Agenda',null,agenda||'<div class="empty">Nothing on your plate with a due date. 🎉</div>',`${d.agenda.length} items · tasks, reminders &amp; project starts`)}
      ${d.no_date.length?panel('Open tasks without a due date',d.no_date.length,d.no_date.map(t=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><span class="pill ${t.status}">${LBL[t.status]}</span><div class="grow">${esc(t.title)}<div class="sub">${esc(t.project_name)}</div></div></div>`).join('')):''}
      <div class="grp" style="margin:6px 0 10px">My projects <span class="mute" style="font-weight:500">· ${d.projects.length}</span></div>
      <div class="pgrid">${d.projects.map(p=>{const pct=p.total?Math.round(100*p.done/p.total):0;const full=PROJECTS.find(x=>x.id===p.id)||p;return `<div class="pcard" style="padding:0;overflow:hidden" onclick="openProject(${p.id})">${projBanner(full,90,{map:false})}<div style="padding:12px 14px">
