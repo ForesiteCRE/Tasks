@@ -159,6 +159,12 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 .kpi.clk .l::after{content:" ›";opacity:.5}
 @keyframes flash{0%{box-shadow:0 0 0 3px var(--acc)}100%{box-shadow:0 0 0 3px transparent}}.flash{animation:flash 1.6s ease-out;scroll-margin-top:80px}
 .xclose{display:none}
+.cal .dots{display:none}#calDay{display:none}
+.cal .day{cursor:pointer}.cal .day.sel{box-shadow:inset 0 0 0 2px var(--acc)}
+.crow{display:flex;gap:10px;align-items:flex-start;padding:10px 4px;border-bottom:1px solid var(--line);cursor:pointer}.crow .pill{flex:none;margin-top:2px}
+.crow .tt{font-size:14.5px}.crow.od .tt{color:var(--bad)}.crow.isdone .tt{text-decoration:line-through;color:var(--mute)}
+#calList .grp{margin:16px 0 4px;font-weight:700;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink)}#calList .grp.red{color:var(--bad)}#calList .grp.tday{color:var(--acc)}
+#calMode{margin-left:8px}
 /* ---------- phones ---------- */
 @media (max-width:640px){
   html,body{overflow-x:hidden}
@@ -184,6 +190,12 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
   .pc .inner>table td:has(input[placeholder="+ Add task"]){flex:1 1 100%}
   #tTable td:first-child:not(:has(input)),#team table td:first-child,.pc .inner>table td:first-child{font-size:12px;color:var(--mute);min-width:24px}
   .xclose{display:block;position:sticky;top:0;margin:-6px -6px 0 auto;z-index:5;width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:#fff;font-size:16px;box-shadow:0 2px 6px rgba(0,0,0,.12)}
+  .cal .day{min-height:52px!important;padding:3px 2px}.cal .day .chip{display:none}.cal .dow{padding:4px 2px;text-align:center;font-size:11px}
+  .cal .dn{display:block;text-align:center;font-size:13px}.cal .day.today .dn{width:24px;margin:0 auto}
+  .cal .dots{display:flex;flex-wrap:wrap;justify-content:center;gap:3px;margin-top:4px}.cal .dots i{width:7px;height:7px;border-radius:50%;background:#9fcce3}
+  .cal .dots i.in_progress{background:var(--acc)}.cal .dots i.blocked{background:#f59f00}.cal .dots i.done{background:#c3dca0}.cal .dots i.od{background:var(--bad)}.cal .dots b{font-size:9px;color:var(--mute);line-height:7px}
+  #calDay{display:block;margin-top:14px}#calDay h3{margin:0 0 4px;font-size:16px}
+  #v-calendar .card>.row.mute{display:none}
   dialog{width:100vw!important;max-width:100vw!important;margin:0;max-height:100dvh;border-radius:0}
 }
 </style>
@@ -250,12 +262,15 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 <section id="v-calendar" class="hidden">
   <div class="card">
     <div class="row" style="justify-content:space-between">
-      <div class="row"><button class="b ghost" onclick="calMove(-1)">‹</button><h2 id="calTitle" style="margin:0;min-width:150px;text-align:center"></h2><button class="b ghost" onclick="calMove(1)">›</button><button class="b ghost" onclick="calMove(0)">Today</button></div>
+      <div class="row"><button class="b ghost" onclick="calMove(-1)">‹</button><h2 id="calTitle" style="margin:0;min-width:150px;text-align:center"></h2><button class="b ghost" onclick="calMove(1)">›</button><button class="b ghost" onclick="calMove(0)">Today</button>
+        <div class="seg" id="calMode"><button data-m="month" onclick="calSetMode('month')">Month</button><button data-m="list" onclick="calSetMode('list')">List</button></div></div>
       <div class="row"><select id="calWho" onchange="renderCalendar()"></select><select id="calProj" onchange="renderCalendar()"></select>
         <label><input type="checkbox" id="calHideDone" onchange="renderCalendar()"> Hide done</label></div>
     </div>
     <div class="row mute" style="font-size:12px"><span class="pill todo">To do</span><span class="pill in_progress">In progress</span><span class="pill blocked">Blocked</span><span class="pill done">Done</span><span>· red edge = overdue · click a task for details</span><span id="calNoDue"></span></div>
     <div class="cal" id="cal"></div>
+    <div id="calDay"></div>
+    <div id="calList" class="hidden"></div>
   </div>
 </section>
 
@@ -644,8 +659,15 @@ async function quickAdd(){const title=$('#qTitle').value.trim();if(!title){$('#q
 async function moveTask(id,pid){await api(`/api/tasks/${id}/project`,{method:'PUT',body:{project_id:+pid||null}});await refresh();openTask(id);toast('Moved');}
 
 /* ---------- calendar ---------- */
-let CAL=(()=>{const d=new Date();return{y:d.getFullYear(),m:d.getMonth()}})();
-function calMove(n){if(n===0){const d=new Date();CAL={y:d.getFullYear(),m:d.getMonth()}}else{const d=new Date(CAL.y,CAL.m+n,1);CAL={y:d.getFullYear(),m:d.getMonth()}}renderCalendar();}
+let CAL=(()=>{const d=new Date();return{y:d.getFullYear(),m:d.getMonth(),sel:iso(d)}})();
+let CALMODE=(()=>{try{return localStorage.getItem('calMode')||'month'}catch(e){return'month'}})();
+function calMove(n){CAL.showPast=false;if(n===0){const d=new Date();CAL={y:d.getFullYear(),m:d.getMonth(),sel:iso(d)}}else{const d=new Date(CAL.y,CAL.m+n,1);CAL={y:d.getFullYear(),m:d.getMonth(),sel:iso(d)}}renderCalendar();}
+function calSetMode(m){CALMODE=m;try{localStorage.setItem('calMode',m)}catch(e){}renderCalendar();}
+function calPick(k){CAL.sel=k;renderCalendar();if(matchMedia('(max-width:640px)').matches)$('#calDay').scrollIntoView({behavior:'smooth',block:'nearest'});}
+function calRow(t){const who=(USERS.find(u=>u.id===t.assignee_id)||{}).name||'Unassigned';
+  return `<div class="crow ${isOver(t)?'od':''} ${t.status==='done'?'isdone':''}" onclick="openTask(${t.id})"><span class="pill ${t.status}">${LBL[t.status]}</span>
+    <div class="grow"><div class="tt">${esc(t.title)}</div><div class="sub">${esc(who)} · ${esc(t.project_name)}</div></div></div>`;}
+function calDayLabel(k){const d=new Date(k+'T12:00');return k===today()?'Today':k===isoAdd(today(),1)?'Tomorrow':d.toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'});}
 function calTasks(){const w=$('#calWho').value,pj=$('#calProj').value,hide=$('#calHideDone').checked;
   return TASKS.filter(t=>(!w||(w==='me'?t.assignee_id===ME.id:w==='none'?!t.assignee_id:t.assignee_id==w))&&(!pj||t.project_id==pj)&&!(hide&&t.status==='done'));}
 function renderCalendar(){
@@ -657,9 +679,21 @@ function renderCalendar(){
   for(let i=0;i<42;i++){const d=new Date(start);d.setDate(start.getDate()+i);const k=iso(d);
     if(i>=35&&d.getMonth()!==CAL.m)break;
     const items=(byDay[k]||[]).sort((a,b)=>(a.status==='done')-(b.status==='done'));
-    html+=`<div class="day ${d.getMonth()!==CAL.m?'out':''} ${k===today()?'today':''}"><span class="dn">${d.getDate()}</span>${items.map(t=>{const who=(USERS.find(u=>u.id===t.assignee_id)||{}).name||'Unassigned';
+    html+=`<div class="day ${d.getMonth()!==CAL.m?'out':''} ${k===today()?'today':''} ${k===CAL.sel?'sel':''}" onclick="if(event.target.closest('.chip'))return;calPick('${k}')"><span class="dn">${d.getDate()}</span><span class="dots">${items.slice(0,4).map(t=>`<i class="${t.status} ${isOver(t)?'od':''}"></i>`).join('')}${items.length>4?`<b>+${items.length-4}</b>`:''}</span>${items.map(t=>{const who=(USERS.find(u=>u.id===t.assignee_id)||{}).name||'Unassigned';
       return `<span class="chip ${t.status} ${isOver(t)?'od':''}" title="#${t.id} ${esc(t.title)} · ${esc(who)} · ${esc(t.project_name)}" onclick="openTask(${t.id})">${esc(t.title)} · ${esc(who.split(' ')[0])}</span>`}).join('')}</div>`;}
   $('#cal').innerHTML=html;
+  // selected day (phones: the grid shows dots, the tasks are listed here)
+  if(!CAL.sel||!CAL.sel.startsWith(`${CAL.y}-${String(CAL.m+1).padStart(2,'0')}`))CAL.sel=iso(first);
+  const sel=(byDay[CAL.sel]||[]).sort((a,b)=>(a.status==='done')-(b.status==='done'));
+  $('#calDay').innerHTML=`<h3>${calDayLabel(CAL.sel)} <span class="mute">· ${sel.length} task${sel.length===1?'':'s'}</span></h3>${sel.map(calRow).join('')||'<div class="empty">Nothing due this day.</div>'}`;
+  // list mode: every day of the month that has something, overdue first
+  const mk=`${CAL.y}-${String(CAL.m+1).padStart(2,'0')}`,allDays=Object.keys(byDay).filter(k=>k.startsWith(mk)).sort();
+  const past=CAL.showPast?[]:allDays.filter(k=>k<today()),days=allDays.filter(k=>!past.includes(k));
+  const over=CAL.y===new Date().getFullYear()&&CAL.m===new Date().getMonth()?ts.filter(t=>isOver(t)&&!t.due_date.startsWith(mk)):[];
+  $('#calList').innerHTML=(past.length?`<button class="b ghost" style="width:100%;margin-top:8px" onclick="CAL.showPast=true;renderCalendar()">Show ${past.length} earlier day${past.length>1?'s':''} this month</button>`:'')+(over.length?`<div class="grp red">Overdue from earlier · ${over.length}</div>${over.map(calRow).join('')}`:'')+
+    (days.map(k=>`<div class="grp ${k===today()?'tday':''}" ${k===today()?'id="calToday"':''}>${calDayLabel(k)} <span class="mute" style="font-weight:500">· ${byDay[k].length}</span></div>${byDay[k].sort((a,b)=>(a.status==='done')-(b.status==='done')).map(calRow).join('')}`).join('')||'<div class="empty">Nothing due this month.</div>');
+  document.querySelectorAll('#calMode button').forEach(b=>b.classList.toggle('on',b.dataset.m===CALMODE));
+  $('#cal').classList.toggle('hidden',CALMODE==='list');$('#calDay').classList.toggle('hidden',CALMODE==='list');$('#calList').classList.toggle('hidden',CALMODE!=='list');
 }
 
 /* ---------- task details dialog ---------- */
