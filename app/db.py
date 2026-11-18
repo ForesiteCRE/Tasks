@@ -4,6 +4,11 @@ import sqlite3
 from contextlib import contextmanager
 
 DB_PATH = os.getenv("DB_PATH", "tasks.db")
+# On Railway, always keep the database on the attached volume (Railway sets RAILWAY_VOLUME_MOUNT_PATH);
+# otherwise it lives inside the container and is wiped on every deploy.
+_VOLUME = os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "")
+if _VOLUME and not os.path.abspath(DB_PATH).startswith(os.path.abspath(_VOLUME) + os.sep):
+    DB_PATH = os.path.join(_VOLUME, os.path.basename(DB_PATH) or "tasks.db")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (

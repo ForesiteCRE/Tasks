@@ -11,7 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import auth, blink, chat, maintenance, services
-from .db import get_setting, init_db, rows, tx
+from .db import DB_PATH, get_setting, init_db, rows, tx
 
 logging.basicConfig(level=logging.INFO)
 REMINDER_HOUR = int(os.getenv("REMINDER_HOUR", "9"))
@@ -61,6 +61,7 @@ def healthz():
              "BLINK_CLIENT_ID", "BLINK_CLIENT_SECRET", "BLINK_WEBHOOK_SECRET", "BLINK_LEGACY_TOKEN", "DB_PATH", "TZ"]
     return {"ok": True, "sign_in_enabled": auth.ENABLED, "blink_connected": not blink.MOCK,
             "settings_present": {n: bool(os.getenv(n, "").strip()) for n in names},
+            "database_file": DB_PATH, "volume_mount": os.getenv("RAILWAY_VOLUME_MOUNT_PATH", ""),
             "deploy_commit": (os.getenv("RAILWAY_GIT_COMMIT_SHA") or "")[:7]}
 
 
@@ -302,10 +303,33 @@ async def blink_webhook(request: Request, background: BackgroundTasks):
     if not blink.verify_webhook(raw, request.headers):
         raise HTTPException(401, "invalid signature")
     event = await request.json()
-    if event.get("@type") == "blink.chat.message-sent":
-        mid = event.get("detail", {}).get("message_id", {})
-        background.add_task(_process_chat_message, mid.get("chat_id"), mid.get("local_message_id"))
+    event_type = (_find(event, ("@type", "type", "event_type")) or request.headers.get("x-event-type", ""))
+    chat_id = _find(event, ("chat_id",))
+    message_id = _find(event, ("local_message_id", "message_id"))
+    logging.info("Blink webhook: type=%s chat=%s message=%s top-level keys=%s",
+                 event_type, chat_id, message_id, list(event)[:10] if isinstance(event, dict) else type(event))
+    if "message-sent" in str(event_type) and chat_id and message_id:
+        background.add_task(_process_chat_message, chat_id, message_id)
     return {"ok": True}  # ack fast; Blink retries slow/failed deliveries
+
+
+def _find(obj, keys):
+    """First string value under any of `keys`, searching nested dicts/lists (Blink may wrap the event)."""
+    if isinstance(obj, dict):
+        for k in keys:
+            v = obj.get(k)
+            if isinstance(v, str) and v:
+                return v
+        children = obj.values()
+    elif isinstance(obj, list):
+        children = obj
+    else:
+        return None
+    for v in children:
+        found = _find(v, keys)
+        if found:
+            return found
+    return None
 
 
 def _process_chat_message(chat_id: str, message_id: str):
@@ -316,12 +340,15 @@ def _process_chat_message(chat_id: str, message_id: str):
         return
     sender = msg.get("sender", {})
     if sender.get("@type") != "user":  # ignore our own (and other apps') messages
+        logging.info("Blink message %s from %s - ignored", message_id, sender.get("@type"))
         return
     user_id = sender.get("user_id")
+    logging.info("Blink message from %s in %s", user_id, chat_id)
     with tx() as c:
         u = c.execute("SELECT blink_chat_id FROM users WHERE blink_user_id=?", (user_id,)).fetchone()
     # Only act on the person's 1:1 chat with the bot, not group chats the app was /addapp'ed to
     if u and u["blink_chat_id"] and u["blink_chat_id"] != chat_id:
+        logging.info("message in %s is not %s's 1:1 bot chat - ignored", chat_id, user_id)
         return
     if u and not u["blink_chat_id"]:
         with tx() as c:

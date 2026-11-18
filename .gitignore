@@ -2,3 +2,4 @@ tasks.db
 .env
 __pycache__/
 test.db
+backups/
