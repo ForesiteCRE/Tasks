@@ -189,7 +189,20 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
   #tTable td select,#team table td select,.pc .inner>table td select,.pc .inner>table td input[type=date]{width:auto;max-width:100%;padding:4px 6px;font-size:13px}
   .pc .inner>table td:has(input[placeholder="+ Add task"]){flex:1 1 100%}
   #tTable td:first-child:not(:has(input)),#team table td:first-child,.pc .inner>table td:first-child{font-size:12px;color:var(--mute);min-width:24px}
-  .xclose{display:block;position:sticky;top:0;margin:-6px -6px 0 auto;z-index:5;width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:#fff;font-size:16px;box-shadow:0 2px 6px rgba(0,0,0,.12)}
+  /* pinned close button: always top-right of the screen while a panel is open */
+  .xclose{display:flex;align-items:center;justify-content:center;position:fixed;top:calc(10px + env(safe-area-inset-top));right:12px;z-index:50;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:#fff;color:var(--ink);font-size:18px;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+  /* stop iPhone zooming in on text boxes (it zooms when text is under 16px) */
+  input,select,textarea{font-size:16px!important}
+  /* panels never scroll sideways: everything inside fits the screen width */
+  dialog[open]{overflow-x:hidden;overscroll-behavior:contain;padding:56px 14px 20px!important}
+  dialog *{max-width:100%;box-sizing:border-box}
+  dialog h2 input{width:100%!important;max-width:100%!important}
+  dialog table{display:table;width:100%}
+  dialog table:not(.tprev) td:first-child{width:96px}
+  .tprev,.tprev tbody{display:block}.tprev tr{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;padding:8px 0;border-bottom:1px solid var(--line)}
+  .tprev td{display:block;border:0!important;padding:0!important}.tprev td:nth-child(2){flex:1 1 calc(100% - 34px);font-size:14.5px}
+  .tprev td:nth-child(3){margin-left:30px}
+  dialog .row{flex-wrap:wrap}
   .cal .day{min-height:52px!important;padding:3px 2px}.cal .day .chip{display:none}.cal .dow{padding:4px 2px;text-align:center;font-size:11px}
   .cal .dn{display:block;text-align:center;font-size:13px}.cal .day.today .dn{width:24px;margin:0 auto}
   .cal .dots{display:flex;flex-wrap:wrap;justify-content:center;gap:3px;margin-top:4px}.cal .dots i{width:7px;height:7px;border-radius:50%;background:#9fcce3}
