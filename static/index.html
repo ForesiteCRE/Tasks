@@ -8,6 +8,10 @@
 *{box-sizing:border-box}body{margin:0;font:14px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--ink)}
 header{display:flex;gap:18px;align-items:center;padding:10px 20px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
 header h1{white-space:nowrap}#nav{display:flex;gap:2px;flex:1;min-width:0;flex-wrap:wrap;align-items:center}nav button{white-space:nowrap}
+.nbadge{display:inline-block;min-width:18px;height:18px;line-height:18px;padding:0 5px;margin-left:6px;border-radius:99px;background:var(--bad);color:#fff;font-size:11px;font-weight:700;text-align:center;vertical-align:1px}
+.newtag{font-size:10px;font-weight:700;color:#fff;background:var(--bad);border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:1px}
+.setrow{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-top:1px solid var(--line)}.setrow:first-of-type{border-top:0}.setrow .grow{flex:1}.setrow h4{margin:0 0 2px;font-size:14px}
+.copybox{display:flex;gap:6px;margin-top:6px}.copybox input{flex:1;font-size:12px;color:var(--mute)}
 .dd{position:relative}.ddb.on{background:#e7ecff;color:var(--acc);font-weight:600}.car{font-size:10px;opacity:.7}
 .ddm{display:none;position:absolute;top:calc(100% + 6px);left:0;min-width:250px;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(20,30,60,.12);padding:6px;z-index:20}
 .dd.open .ddm{display:block}.ddm button{display:block;width:100%;text-align:left;padding:8px 10px;border-radius:7px;color:var(--ink)}.ddm button:hover{background:#f3f5fa}.ddm button.on{background:#e7ecff;color:var(--acc)}
@@ -25,7 +29,7 @@ main{max-width:1200px;margin:0 auto;padding:20px 16px}.card{background:var(--car
 h2{font-size:15px;margin:0 0 10px}h3{font-size:14px;margin:0}.mute{color:var(--mute)}
 input,select,button.b{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius:6px;background:#fff}
 select:disabled,input:disabled{background:#f6f7f9;color:var(--ink);opacity:1}
-button.b{background:var(--acc);color:#fff;border-color:var(--acc);cursor:pointer}button.b.ghost{background:#fff;color:var(--acc)}
+button.b,a.b{background:var(--acc);color:#fff;border:1px solid var(--acc);border-radius:6px;cursor:pointer;font:inherit;padding:6px 10px;display:inline-block;text-decoration:none}button.b.ghost,a.b.ghost{background:#fff;color:var(--acc)}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0}
 table{width:100%;border-collapse:collapse}td,th{padding:6px 8px;border-top:1px solid var(--line);text-align:left;vertical-align:middle}th{font-size:12px;color:var(--mute);font-weight:500;border:0}
 .pill{font-size:11px;padding:2px 8px;border-radius:99px;background:#eef0f3;white-space:nowrap}.todo{background:#eef0f3}.in_progress{background:#e7ecff;color:var(--acc)}.blocked{background:#fff0e6;color:var(--warn)}.done{background:#e6f6ea;color:var(--ok)}
@@ -95,7 +99,7 @@ textarea{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius
 <body>
 <header><h1>📋 Task Manager <span class="mute" style="font-weight:400">· Blink-connected</span></h1>
 <nav id="nav">
-  <button data-v="home" class="on">🏠 Home</button>
+  <button data-v="home" class="on">🏠 Home<span id="mBadge" class="nbadge hidden" title="Unread @mentions"></span></button>
   <div class="dd" data-g="tasks"><button class="ddb">Tasks <span class="car">▾</span></button><div class="ddm">
     <button data-v="tasks">✓ All tasks<small>with or without a project</small></button>
     <button data-v="projects">📁 Projects<small>start a new project, see progress</small></button>
@@ -117,7 +121,7 @@ textarea{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius
     <div class="hero-actions">
       <div class="seg mgr" id="hSeg"><button class="on" data-s="me" onclick="homeScope('me')">My day</button><button data-s="team" onclick="homeScope('team')">Team</button></div>
       <button class="b ghost" onclick="openReminder()">⏰ Reminder</button>
-      <button class="b ghost" onclick="previewDigest()" title="Send me today's 6pm recap now">🌆 6pm recap</button>
+      <button class="b ghost" onclick="openSettings()">⚙︎ My settings</button>
     </div>
   </div>
   <div id="home"></div>
@@ -369,7 +373,7 @@ async function renderHome(){
   $('#hDate').textContent=new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
   $('#hHello').textContent=`${hello()}, ${(ME.name||'').split(' ')[0]||'there'}`;
   if(HSCOPE==='team'&&isMgr())return renderTeamHome(await api('/api/dashboard?scope=team'));
-  const d=await api('/api/dashboard'),c=d.counts;
+  const [d,unread]=await Promise.all([api('/api/dashboard'),api('/api/me/unread')]),c=d.counts,newIds=new Set(unread.comment_ids);
   $('#hSub').innerHTML=c.overdue?`You have <b style="color:var(--bad)">${c.overdue} overdue</b> and ${c.due_today} due today.`:c.due_today?`${c.due_today} task${c.due_today>1?'s':''} due today — you're on track.`:c.open?`Nothing overdue — ${c.open} open task${c.open>1?'s':''}.`:'All clear 🎉';
   const groups=[['Overdue',a=>a.kind==='task'&&a.overdue,'red'],['Today',a=>a.date===d.today&&!a.overdue],['Tomorrow',a=>dayLabel(a.date)==='Tomorrow'],
     ['This week',a=>a.date>d.today&&dayLabel(a.date)!=='Tomorrow'&&a.date<=isoAdd(d.today,7)],['Later',a=>a.date>isoAdd(d.today,7)]];
@@ -394,11 +398,26 @@ async function renderHome(){
      ${panel('⛔ Blocked for me',d.blocked.length,d.blocked.map(b=>`<div class="row2" style="cursor:pointer" onclick="openTask(${b.id})"><span class="ico">🔒</span><div class="grow">${esc(b.title)}<div class="sub">${b.blockers.length?'Waiting on '+b.blockers.map(x=>`#${x.id} ${esc(x.title)} (${esc(x.assignee_name)})`).join(', '):''}${b.last_note?` “${esc(b.last_note)}”`:''}</div></div></div>`).join('')||'<div class="empty">Nothing blocked. 👍</div>')}
      ${panel('⏰ Reminders',reminders.length,(reminders.map(r=>`<div class="row2"><input type="checkbox" title="Done" onchange="remDone(${r.id})"><div class="grow">${esc(r.text)}<div class="sub">${new Date(r.remind_at).toLocaleString(undefined,{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}${r.sent?' · sent':''}</div></div><button class="x" style="border:0;background:none;color:var(--mute);cursor:pointer" onclick="remDel(${r.id})">✕</button></div>`).join('')||'<div class="empty">No reminders. Add one here or tell the bot in Blink: “remind me Friday 9am to call the owner”.</div>')
         +`<div class="row" style="margin-top:8px"><input id="remText" placeholder="Remind me to…" style="flex:1;min-width:140px"><input id="remAt" type="datetime-local" style="width:190px"><button class="b ghost" onclick="remAdd()">Add</button></div>`)}
-     ${panel('💬 Comments &amp; mentions',d.activity.length,d.activity.map(a=>`<div class="row2" style="cursor:pointer" onclick="openTask(${a.task_id})"><span class="ico">${a.mentioned?'＠':'💬'}</span><div class="grow"><b>${esc(a.who)}</b> <span class="sub">on ${esc(a.task_title)}</span><div class="sub" style="white-space:normal">${esc(a.body.length>140?a.body.slice(0,140)+'…':a.body)}</div></div></div>`).join('')||'<div class="empty">No new comments.</div>')}
+     ${panel('💬 Comments &amp; mentions',d.activity.length,d.activity.map(a=>`<div class="row2" style="cursor:pointer" onclick="openTask(${a.task_id})"><span class="ico">${a.mentioned?'＠':'💬'}</span><div class="grow"><b>${esc(a.who)}</b>${newIds.has(a.id)?'<span class="newtag">NEW</span>':''} <span class="sub">on ${esc(a.task_title)}</span><div class="sub" style="white-space:normal">${esc(a.body.length>140?a.body.slice(0,140)+'…':a.body)}</div></div></div>`).join('')||'<div class="empty">No new comments.</div>')}
      ${panel('✅ Done this week',d.done_week.length,d.done_week.map(t=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><span class="ico">✓</span><div class="grow">${esc(t.title)}<div class="sub">${esc(t.project_name)}${t.actual_minutes?' · '+fmtMin(t.actual_minutes):' · <span class="over">log time</span>'}</div></div></div>`).join('')||'<div class="empty">Nothing yet this week.</div>')}
-     <div class="row mute" style="font-size:12.5px;margin:4px 2px"><label><input type="checkbox" ${d.user.daily_digest?'checked':''} onchange="api('/api/me/prefs',{method:'PATCH',body:{daily_digest:this.checked}}).then(()=>toast(this.checked?'6pm recap on':'6pm recap off'))"> Send me a 6pm recap in Blink every day</label></div>
    </div></div>`;
+  if(unread.mentions)api('/api/me/mentions-seen',{method:'POST'}).then(()=>setBadge(0));
 }
+function setBadge(n){const b=$('#mBadge');b.textContent=n>9?'9+':n;b.classList.toggle('hidden',!n);}
+async function pollUnread(){try{const r=await api('/api/me/unread');setBadge(r.mentions);}catch(e){}}
+async function openSettings(){const [d,cal]=await Promise.all([api('/api/dashboard'),api('/api/me/calendar')]),u=d.user;
+  $('#taskDlgBody').innerHTML=`<h2>⚙︎ My settings</h2>
+   <div class="setrow"><input type="checkbox" ${u.daily_digest?'checked':''} onchange="savePref({daily_digest:this.checked})"><div class="grow"><h4>🌆 6pm daily recap in Blink</h4><div class="mute">What you finished today, what's overdue or still due, and what's coming up.</div></div><button class="b ghost" onclick="previewDigest()">Send me one now</button></div>
+   <div class="setrow"><input type="checkbox" ${u.week_ahead?'checked':''} onchange="savePref({week_ahead:this.checked})"><div class="grow"><h4>📅 Monday “week ahead” in Blink</h4><div class="mute">Every Monday at 8am: this week's tasks day by day, overdue carry-over, project starts and reminders.</div></div><button class="b ghost" onclick="previewWeek()">Send me one now</button></div>
+   <div class="setrow"><span style="font-size:20px">🗓</span><div class="grow"><h4>Sync to Google Calendar</h4><div class="mute">Your tasks with due dates, reminders and project starts appear in your calendar and stay up to date (Google refreshes every few hours).</div>
+     <div class="row" style="margin-top:8px"><a class="b" style="text-decoration:none" href="${cal.google}" target="_blank" rel="noopener">Add to Google Calendar</a><a class="b ghost" style="text-decoration:none" href="${cal.webcal}">Apple / Outlook</a></div>
+     <div class="copybox"><input readonly value="${esc(cal.url)}" onclick="this.select()"><button class="b ghost" onclick="navigator.clipboard.writeText('${esc(cal.url)}').then(()=>toast('Link copied'))">Copy</button></div>
+     <div class="mute" style="font-size:12px;margin-top:6px">This link is private to you — anyone with it can see your task titles. <a href="#" onclick="regenCal();return false">Make a new link</a> (the old one stops working).</div></div></div>`;
+  if(!taskDlg.open)taskDlg.showModal();}
+async function savePref(b){await api('/api/me/prefs',{method:'PATCH',body:b});toast('Saved');}
+async function regenCal(){if(!confirm('Make a new calendar link? Calendars using the old link will stop updating.'))return;await api('/api/me/calendar?regenerate=true');openSettings();toast('New link created — add it to your calendar again');}
+async function previewWeek(){const r=await api('/api/me/week-ahead-preview',{method:'POST'});
+  $('#taskDlgBody').innerHTML=`<h2>📅 Your week ahead</h2><p class="mute">${r.sent?'Sent to you in Blink just now. ':''}Everyone gets this Monday at 8am (they can turn it off in My settings).</p><div class="cm" style="white-space:pre-wrap">${r.text?esc(r.text).replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>'):'Nothing scheduled for you this week.'}</div><div class="row" style="justify-content:flex-end"><button class="b ghost" onclick="openSettings()">← Back to settings</button></div>`;}
 const isoAdd=(d,n)=>{const x=new Date(d+'T12:00');x.setDate(x.getDate()+n);return iso(x)};
 function agendaRow(a){
   if(a.kind==='reminder')return `<div class="it"><div class="d">${a.time||''}<b>⏰</b></div><div class="t"><div>${esc(a.title)}</div><div class="sub">Reminder · ${dayLabel(a.date)}</div></div><span class="pill">reminder</span></div>`;
@@ -429,7 +448,7 @@ async function remAdd(){const t=$('#remText').value.trim(),at=$('#remAt').value;
 async function remDone(id){await api(`/api/reminders/${id}`,{method:'PATCH'});renderHome();}
 async function remDel(id){await api(`/api/reminders/${id}`,{method:'DELETE'});renderHome();}
 async function previewDigest(){const r=await api('/api/me/digest-preview',{method:'POST'});
-  $('#taskDlgBody').innerHTML=`<h2>🌆 Your 6pm recap</h2><p class="mute">${r.sent?'Sent to you in Blink just now. ':''}Everyone with a Blink ID gets this at 6pm each day (they can turn it off on their Home page).</p><div class="cm" style="white-space:pre-wrap">${r.text?esc(r.text).replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>'):'Nothing to report for you today.'}</div>`;taskDlg.showModal();}
+  $('#taskDlgBody').innerHTML=`<h2>🌆 Your 6pm recap</h2><p class="mute">${r.sent?'Sent to you in Blink just now. ':''}Everyone with a Blink ID gets this at 6pm each day (they can turn it off in My settings).</p><div class="cm" style="white-space:pre-wrap">${r.text?esc(r.text).replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>'):'Nothing to report for you today.'}</div>`;taskDlg.showModal();}
 
 /* ---------- all tasks ---------- */
 function renderTasks(){const q=$('#tSearch').value.trim().toLowerCase(),w=$('#tWho').value,pj=$('#tProj').value,st=$('#tStatus').value,t0=today(),wk=isoAdd(t0,7);
@@ -682,7 +701,7 @@ async function runReminders(){const r=await api('/api/reminders/run',{method:'PO
 (async()=>{ME=await api('/api/me');
   $('#me').innerHTML=`${esc(ME.name)} <span class="pill">${{admin:'Admin',manager:'Manager'}[ME.role]||'Staff'}</span>${ME.auth_enabled?' · <a href="/logout">Sign out</a>':''}`;
   if(!isMgr())$('#pFilter').value='mine';
-  await refresh();renderHome();
+  await refresh();renderHome();pollUnread();setInterval(pollUnread,60000);
   const c=await api('/api/config');if(!c.simulator)$('#chatTab').remove();})();
 </script>
 </body></html>

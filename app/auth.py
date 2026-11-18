@@ -112,7 +112,7 @@ async def require_login(request: Request, call_next):
         return HTMLResponse("<p style='font:16px system-ui;text-align:center;margin-top:20vh'>"
                             "Sign-in isn't configured yet — set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.</p>",
                             status_code=503)
-    if request.url.path in PUBLIC_PATHS:
+    if request.url.path in PUBLIC_PATHS or request.url.path.startswith("/calendar/"):  # calendar feeds use a secret token
         return await call_next(request)
     if ENABLED and (u := request.session.get("user")):
         _ensure_user_row(request, u)

@@ -59,8 +59,8 @@ def my_dashboard(uid: int) -> dict:
     today = date.today()
     t_iso, wk, horizon = today.isoformat(), (today + timedelta(days=7)).isoformat(), (today + timedelta(days=21)).isoformat()
     week_start = (today - timedelta(days=today.weekday())).isoformat()
-    user = _q("SELECT id, name, email, role, daily_digest FROM users WHERE id=?", (uid,))
-    user = user[0] if user else {"id": uid, "name": "", "role": "staff", "daily_digest": 1}
+    user = _q("SELECT id, name, email, role, daily_digest, week_ahead FROM users WHERE id=?", (uid,))
+    user = user[0] if user else {"id": uid, "name": "", "role": "staff", "daily_digest": 1, "week_ahead": 1}
 
     open_mine = _q(f"SELECT {TASK_COLS} {FROM} WHERE t.assignee_id=? AND t.status!='done' AND p.status='active' "
                    "ORDER BY t.due_date IS NULL, t.due_date, t.id", (uid,))

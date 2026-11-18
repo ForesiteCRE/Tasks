@@ -387,3 +387,44 @@ def test_tasks_without_project(mgr, staff):
     ids(staff.patch(f"/api/tasks/{mine}", json={"status": "done"}))
     assert not any("Project complete" in t for _, t in SENT)          # the hidden bucket never "completes"
     assert all(p["name"] != "No project" for p in ids(mgr.get("/api/dashboard?scope=team"))["projects"])
+
+
+def test_week_ahead_message(mgr, staff):
+    from app import extras
+    ids(mgr.post("/api/tasks", json={"title": "Due this week", "assignee_id": staff.me["id"],
+                                    "due_date": (T + timedelta(days=2)).isoformat(), "estimate": "2h"}))
+    text = extras.build_week_ahead(staff.me["id"])
+    assert "week ahead" in text and "Due this week" in text
+    r = ids(staff.post("/api/me/week-ahead-preview"))
+    assert r["sent"] == 1 and r["text"]
+    ids(staff.patch("/api/me/prefs", json={"week_ahead": False}))
+    assert extras.send_week_ahead(force=True, only_user=staff.me["id"]) == 0
+    ids(staff.patch("/api/me/prefs", json={"week_ahead": True}))
+    assert extras.send_week_ahead() in (0, 1, 2, 3, 4)            # runs cleanly whatever the weekday
+
+
+def test_unread_mentions(mgr, staff):
+    ids(staff.post("/api/me/mentions-seen"))
+    assert ids(staff.get("/api/me/unread"))["mentions"] == 0
+    time.sleep(1.1)  # comments are timestamped to the second
+    ids(mgr.post(f"/api/tasks/{S['walk']}/comments", json={"body": "@sam can you check the roof?"}))
+    ids(mgr.post(f"/api/tasks/{S['walk']}/comments", json={"body": "no mention here"}))
+    assert ids(staff.get("/api/me/unread"))["mentions"] == 1
+    ids(staff.post("/api/me/mentions-seen"))
+    assert ids(staff.get("/api/me/unread"))["mentions"] == 0
+
+
+def test_calendar_feed(mgr, staff):
+    link = ids(staff.get("/api/me/calendar"))
+    assert link["webcal"].startswith("webcal://") and "calendar.google.com" in link["google"]
+    path = link["url"].split("testserver")[-1]
+    with TestClient(app) as anon:                                  # Google fetches it without signing in
+        r = anon.get(path)
+        assert r.status_code == 200 and r.headers["content-type"].startswith("text/calendar")
+        body = r.text
+        assert body.startswith("BEGIN:VCALENDAR") and body.rstrip().endswith("END:VCALENDAR")
+        assert "SUMMARY:#" in body and "DTSTART;VALUE=DATE:" in body and "renew insurance" in body.lower()
+        assert all(len(line.encode()) <= 75 for line in body.split("\r\n"))   # RFC 5545 line folding
+        assert anon.get("/calendar/not-a-real-token.ics").status_code == 404
+        new = ids(staff.get("/api/me/calendar?regenerate=true"))["url"].split("testserver")[-1]
+        assert anon.get(path).status_code == 404 and anon.get(new).status_code == 200   # old link revoked

@@ -47,6 +47,11 @@ Open http://localhost:8000 and use **Blink chat (simulator)** to test.
   (`DIGEST_HOUR`, opt-out on Home).
 - **Menu** – Home · Tasks ▾ (All tasks, Projects, Templates, Monthly recurring) · Calendar · By person · Admin ▾
   (People, Reports & backups, Blink simulator — admin only). Tasks can exist without a project.
+- **Monday “week ahead”** – 8am Monday Blink message per person: tasks day by day, overdue carry-over, project
+  starts, reminders (`WEEK_AHEAD_HOUR`, opt-out in ⚙︎ My settings).
+- **Unread @mentions** – red count on Home; NEW tags on comments; clears when you open Home.
+- **Calendar sync** – ⚙︎ My settings → Add to Google Calendar (private iCal feed per person at
+  `/calendar/<secret>.ics`; tasks with due dates, reminders, project starts; link can be regenerated).
 - **Weekly summary** – Monday-morning Blink message (overdue / blocked / due this week) to anyone ticked
   "Weekly summary" on People. Preview or send now from **Reports & backups**.
 - **Daily backups** – a copy of the database every day in `/data/backups` (kept 14 days), downloadable from
@@ -92,6 +97,6 @@ Keep to **one instance** (the reminder scheduler runs inside the app).
 ```bash
 pip install pytest && cd tests && pytest -q
 ```
-26 end-to-end tests: sign-in & roles (admin/manager/staff permissions), projects/templates/roles, subtasks,
+29 end-to-end tests: sign-in & roles (admin/manager/staff permissions), projects/templates/roles, subtasks,
 checklists, comments, dependencies, automations, time tracking, Blink chat commands & webhook signatures,
 project intake from documents, dashboards, reminders, the 6pm recap and every scheduled job.

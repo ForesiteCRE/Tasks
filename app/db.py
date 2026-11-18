@@ -163,11 +163,12 @@ def init_db():
 
 
 def _init_extras():
-    from . import dashboard, intake, timing, tpl  # tables kept next to their features
+    from . import dashboard, extras, intake, timing, tpl  # tables kept next to their features
     tpl.init()
     intake.init()
     timing.init()
     dashboard.init()
+    extras.init()
 
 
 def get_setting(key: str) -> str | None:

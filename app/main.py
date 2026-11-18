@@ -1,16 +1,18 @@
 import asyncio
 import logging
 import os
+import re
+import urllib.parse
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, automations, blink, chat, collab, dashboard, intake, maintenance, services, team, timing, tpl
+from . import auth, automations, blink, chat, collab, dashboard, extras, intake, maintenance, services, team, timing, tpl
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
 logging.basicConfig(level=logging.INFO)
@@ -29,7 +31,8 @@ async def scheduler_loop():
             except Exception:
                 logging.exception("scheduler job %s failed", job.__name__)
         if datetime.now().hour >= REMINDER_HOUR:
-            for job in (services.send_reminders, maintenance.send_weekly_summary, automations.overdue_escalation):
+            for job in (services.send_reminders, maintenance.send_weekly_summary, automations.overdue_escalation,
+                        extras.send_week_ahead):
                 try:
                     job()
                 except Exception:
@@ -710,13 +713,51 @@ def delete_reminder(rid: int, request: Request):
 
 class PrefsIn(BaseModel):
     daily_digest: bool | None = None
+    week_ahead: bool | None = None
 
 @app.patch("/api/me/prefs")
 def my_prefs(body: PrefsIn, request: Request):
     if body.daily_digest is not None:
         with tx() as c:
             c.execute("UPDATE users SET daily_digest=? WHERE id=?", (int(body.daily_digest), _me_id(request)))
+    if body.week_ahead is not None:
+        with tx() as c:
+            c.execute("UPDATE users SET week_ahead=? WHERE id=?", (int(body.week_ahead), _me_id(request)))
     return {"ok": True}
+
+@app.post("/api/me/week-ahead-preview")
+def week_ahead_preview(request: Request):
+    uid = _me_id(request)
+    return {"sent": extras.send_week_ahead(force=True, only_user=uid), "text": extras.build_week_ahead(uid)}
+
+@app.get("/api/me/unread")
+def my_unread(request: Request):
+    m = extras.unread_mentions(_me_id(request))
+    return {"mentions": len(m), "comment_ids": [x["id"] for x in m]}
+
+@app.post("/api/me/mentions-seen")
+def mentions_seen(request: Request):
+    extras.mark_mentions_seen(_me_id(request))
+    return {"ok": True}
+
+def _base_url(request: Request) -> str:
+    return (os.getenv("PUBLIC_URL") or str(request.base_url)).rstrip("/")
+
+@app.get("/api/me/calendar")
+def my_calendar_link(request: Request, regenerate: bool = False):
+    tok = extras.calendar_token(_me_id(request), regenerate)
+    url = f"{_base_url(request)}/calendar/{tok}.ics"
+    webcal = re.sub(r"^https?://", "webcal://", url)
+    return {"url": url, "webcal": webcal,
+            "google": "https://calendar.google.com/calendar/r?cid=" + urllib.parse.quote(webcal, safe="")}
+
+@app.get("/calendar/{token}.ics")
+def calendar_feed(token: str, request: Request):
+    u = extras.user_for_token(token)
+    if not u:
+        raise HTTPException(404, "Unknown calendar link")
+    return Response(extras.build_ics(u["id"], _base_url(request)), media_type="text/calendar; charset=utf-8",
+                    headers={"Cache-Control": "no-cache"})
 
 @app.post("/api/me/digest-preview")
 def digest_preview(request: Request):
