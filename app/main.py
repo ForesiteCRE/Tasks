@@ -895,8 +895,16 @@ class DatePatch(BaseModel):
 
 
 @app.get("/api/properties")
-def list_properties():
-    return properties.list_all()
+def list_properties(request: Request):
+    return [_hide_bank(p, request) for p in properties.list_all()]
+
+
+def _hide_bank(p: dict, request: Request) -> dict:
+    """Bank account numbers (even masked) are for managers and admins only."""
+    if not auth.is_manager(request):
+        p["bank_accounts"] = None
+        p["bank_hidden"] = True
+    return p
 
 
 @app.post("/api/properties")
@@ -935,11 +943,11 @@ def set_property_member(pid: int, role_id: int, body: PropTeamIn, request: Reque
 
 
 @app.get("/api/properties/{pid}")
-def get_property(pid: int):
+def get_property(pid: int, request: Request):
     p = properties.get(pid)
     if not p:
         raise HTTPException(404, "Property not found")
-    return p
+    return _hide_bank(p, request)
 
 
 @app.patch("/api/properties/{pid}")

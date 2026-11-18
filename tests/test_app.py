@@ -766,6 +766,9 @@ def test_read_property_document_and_insurance_check(mgr, staff):
     ids(mgr.patch(f"/api/properties/{pid}", json={"bank_name": "Broadway Bank", "bank_accounts": "Operating 1234567890"}))
     page = ids(mgr.get(f"/api/properties/{pid}"))
     assert page["bank_name"] == "Broadway Bank" and page["bank_accounts"] == "Operating ••7890"   # full number never kept
+    sp = ids(staff.get(f"/api/properties/{pid}"))
+    assert sp["bank_name"] == "Broadway Bank" and sp["bank_accounts"] is None and sp["bank_hidden"]   # staff: no accounts
+    assert all(x["bank_accounts"] is None for x in ids(staff.get("/api/properties")))
     ids(mgr.post(f"/api/properties/{pid}/contacts", json={"role": "Bank", "name": "Sam Ortiz", "company": "Broadway Bank"}))
 
 
