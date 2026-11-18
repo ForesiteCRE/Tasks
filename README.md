@@ -33,6 +33,12 @@ Open http://localhost:8000 and use **Blink chat (simulator)** to test.
   “▶️ your turn” Blink message when the last blocker is done.
 - **Automations** (Reports & backups → Automations): Blink alerts to managers when a task is Blocked, N days
   overdue, or a project completes; assignee alerts for “your turn” and new comments.
+- **Start a project from a document** – managers send the bot a management/listing agreement (or paste terms,
+  or say "new project for …"); Claude reads it, asks what's missing ("Who will be the Property Manager?") and
+  creates it on "yes". Web: Projects → 📄 From document pre-fills the form.
+- **Time tracking** – estimate per task (and per template item), actual time + notes when done (web prompt or
+  Blink `time 12 1h30 note` / plain English), turnaround; **Reports → ⏱ Time insights** shows estimate vs actual
+  by task and person.
 - **Weekly summary** – Monday-morning Blink message (overdue / blocked / due this week) to anyone ticked
   "Weekly summary" on People. Preview or send now from **Reports & backups**.
 - **Daily backups** – a copy of the database every day in `/data/backups` (kept 14 days), downloadable from

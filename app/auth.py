@@ -62,7 +62,7 @@ def _apply_role_rules(uid: int, email: str):
 
 # Staff (non-managers) may read everything but only change their own tasks.
 # Everything else that writes, plus these read-only-but-sensitive paths, is manager-only.
-MANAGER_ONLY_GET_PREFIXES = ("/api/backups", "/api/summary", "/api/blink/messages", "/api/automations")
+MANAGER_ONLY_GET_PREFIXES = ("/api/backups", "/api/summary", "/api/blink/messages", "/api/automations", "/api/insights")
 
 
 def _staff_allowed(request: Request) -> bool:

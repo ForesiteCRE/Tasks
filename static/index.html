@@ -137,6 +137,10 @@ textarea{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius
     <p class="mute">A copy of the whole task database is saved automatically every day and kept for 14 days. Download one now and then to keep an off-site copy.</p>
     <div class="row"><button class="b" onclick="runBackup()">Back up now</button><span id="bkInfo" class="mute"></span></div>
     <table id="backups"></table></div>
+  <div class="card"><div class="row" style="justify-content:space-between;margin:0"><h2 style="margin:0">⏱ Time insights</h2>
+    <select id="tiDays" onchange="loadInsights()"><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="180" selected>Last 6 months</option><option value="365">Last year</option></select></div>
+    <p class="mute">From completed tasks: how long each kind of task really takes vs. the estimate, and how long it takes from creation to done. Use it to set better estimates in your templates.</p>
+    <div id="insights"></div></div>
   <div class="card"><h2>⚡ Automations</h2>
     <p class="mute">Blink messages sent automatically. “Managers” = everyone with the Manager role who has a Blink ID (the person who triggered it isn't messaged).</p>
     <table id="autoTbl"></table></div>
@@ -163,6 +167,7 @@ const isMgr=()=>ME.role==='manager', canEdit=t=>isMgr()||t.assignee_id===ME.id;
 const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const today=()=>iso(new Date());
 const isOver=t=>t.due_date&&t.due_date<today()&&t.status!=='done';
+const fmtMin=m=>{if(!m)return'';const h=Math.floor(m/60),r=m%60;return h&&r?`${h}h ${r}m`:h?`${h}h`:`${r}m`};
 const fmtDate=d=>d?new Date(d+'T12:00').toLocaleDateString(undefined,{month:'short',day:'numeric'}):'';
 function show(v){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-'+v));
   if(v==='chat')loadChat();if(v==='admin')loadAdmin();if(v==='calendar')renderCalendar();if(v==='team')renderTeam();}
@@ -197,6 +202,7 @@ function badges(t){const subs=TASKS.filter(x=>x.parent_id===t.id),b=[];
   if(subs.length)b.push(`<span class="pill">↳ ${subs.filter(x=>x.status==='done').length}/${subs.length}</span>`);
   if(t.check_total)b.push(`<span class="pill">☑ ${t.check_done}/${t.check_total}</span>`);
   if(t.comments)b.push(`<span class="pill">💬 ${t.comments}</span>`);
+  if(t.estimate_minutes||t.actual_minutes)b.push(`<span class="pill" title="Actual / estimate">⏱ ${t.actual_minutes?fmtMin(t.actual_minutes)+(t.estimate_minutes?' / '+fmtMin(t.estimate_minutes):''):'est '+fmtMin(t.estimate_minutes)}</span>`);
   if(t.waiting_on&&t.status!=='done')b.push(`<span class="pill lock" title="Waiting on #${String(t.waiting_on).split(',').join(', #')}">🔒 waiting on #${String(t.waiting_on).split(',').join(', #')}</span>`);
   return b.length?`<span class="badges">${b.join('')}</span>`:'';}
 function renderProjects(){
@@ -204,7 +210,7 @@ function renderProjects(){
   const ps=PROJECTS.filter(p=>!(hideDone&&p.status==='done')).map(p=>({...p,shown:mine?p.tasks.filter(t=>t.assignee_id===ME.id):p.tasks})).filter(p=>!mine||p.shown.length);
   $('#projects').innerHTML=ps.map(p=>{const done=p.tasks.filter(t=>t.status==='done').length,pct=p.tasks.length?Math.round(100*done/p.tasks.length):0;
   return `<div class="card"><div class="row" style="justify-content:space-between"><h3>${esc(p.name)} <span class="pill ${p.status==='done'?'done':''}">${p.status}</span></h3>
-  <span class="mute">${done}/${p.tasks.length} done · started ${fmtDate(p.start_date)} <button class="b ghost" onclick="openProject(${p.id})">${isMgr()?'Details &amp; team':'Details'}</button> ${isMgr()?`<button class="b ghost" onclick="saveAsTpl(${p.id},'${esc(p.name).replace(/'/g,"")}')">Save as template</button>`:''}</span></div>
+  <span class="mute">${done}/${p.tasks.length} done${projTime(p)} · started ${fmtDate(p.start_date)} <button class="b ghost" onclick="openProject(${p.id})">${isMgr()?'Details &amp; team':'Details'}</button> ${isMgr()?`<button class="b ghost" onclick="saveAsTpl(${p.id},'${esc(p.name).replace(/'/g,"")}')">Save as template</button>`:''}</span></div>
   ${projSummary(p)}
   <div class="bar"><i style="width:${pct}%"></i></div>
   <table><tr><th>#</th><th>Task</th><th>Assignee</th><th>Due</th><th>Status</th></tr>
@@ -215,6 +221,8 @@ function renderProjects(){
   ${isMgr()?`<tr><td></td><td><input id="nt${p.id}" placeholder="+ Add task" style="width:100%" onkeydown="if(event.key==='Enter')addTask(${p.id})"></td><td><select id="na${p.id}">${userOpts()}</select></td><td><input type="date" id="nd${p.id}"></td><td><button class="b ghost" onclick="addTask(${p.id})">Add</button></td></tr>`:''}</table></div>`}).join('')||`<p class="mute">${mine?'No tasks assigned to you.':'No projects yet.'}</p>`;
 }
 
+function projTime(p){const est=p.tasks.reduce((a,t)=>a+(t.estimate_minutes||0),0),act=p.tasks.reduce((a,t)=>a+(t.actual_minutes||0),0);
+  return est||act?` · ⏱ ${act?fmtMin(act)+' spent':''}${act&&est?' of ':''}${est?fmtMin(est)+' est.':''}`:'';}
 function projSummary(p){const team=(p.team||[]).filter(m=>m.user_name);const bits=[];
   if(p.property)bits.push(`<span>📍 ${esc(p.property)}</span>`);if(p.client)bits.push(`<span><span class="k">Client</span> ${esc(p.client)}</span>`);
   team.forEach(m=>bits.push(`<span><span class="k">${esc(m.role)}</span> ${esc(m.user_name)}</span>`));
@@ -300,6 +308,13 @@ async function openTask(id){OPEN_ID=id;const [d,h]=await Promise.all([api(`/api/
    <tr><td>Due</td><td>${mg?`<input type="date" value="${d.due_date||''}" onchange="patch(${d.id},{due_date:this.value||null}).then(()=>openTask(${d.id}))">`:`<span class="${isOver(d)?'over':''}">${fmtDate(d.due_date)||'—'}</span>`}</td></tr>
    <tr><td>Status</td><td>${statusSel({...d,assignee_id:ed?ME.id:d.assignee_id}).replace(/onchange="setStatus\((\d+),this.value\)"/,`onchange="setStatus($1,this.value).then(()=>openTask($1))"`)}</td></tr></table>
 
+   <div class="sec" id="timeSec"><h3>⏱ Time</h3>
+     <div class="team-grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr))">
+      <label>Estimate<input ${ed?'':'disabled'} placeholder="e.g. 2h, 45m" value="${fmtMin(d.estimate_minutes)}" onchange="timeSave(${d.id},{estimate:this.value})"></label>
+      <label>Actual time${d.status==='done'&&!d.actual_minutes?' <span class="over">← how long did it take?</span>':''}<input id="actIn" ${ed?'':'disabled'} placeholder="e.g. 1h30" value="${fmtMin(d.actual_minutes)}" onchange="timeSave(${d.id},{actual:this.value})"></label>
+      <label>Turnaround<span style="color:var(--ink);font-size:14px;padding:6px 0">${turnaround(d)}</span></label></div>
+     <textarea ${ed?'':'disabled'} rows="2" placeholder="Time notes — what made it faster/slower? (waiting on owner, first time, missing info…)" onchange="timeSave(${d.id},{time_notes:this.value})">${esc(d.time_notes||'')}</textarea></div>
+
    <div class="sec"><h3>Description</h3>${ed?`<textarea rows="2" placeholder="Details, links to Drive files…" onchange="patch(${d.id},{description:this.value})">${esc(d.description||'')}</textarea>`:`<div>${esc(d.description||'—')}</div>`}</div>
 
    <div class="sec"><h3>☑ Checklist <span class="mute" style="font-weight:400">${d.checklist.filter(c=>c.done).length}/${d.checklist.length}</span></h3>
@@ -323,6 +338,10 @@ async function openTask(id){OPEN_ID=id;const [d,h]=await Promise.all([api(`/api/
    <details class="sec"><summary class="mute">History</summary>${d.updates.length?`<table>${d.updates.map(u=>`<tr><td class="mute" style="white-space:nowrap">${esc(u.created_at.slice(5,16))}</td><td>${esc(u.user_name||'')}${u.status?` → <span class="pill ${u.status}">${LBL[u.status]}</span>`:''} ${u.note?`<span class="note">“${esc(u.note)}”</span>`:''} <span class="mute">(${u.source})</span></td></tr>`).join('')}</table>`:'<p class="mute">No updates yet.</p>'}</details>`;
   wireMentions($('#cmNew'));
   if(!taskDlg.open)taskDlg.showModal();}
+function turnaround(d){const s=d.created_at&&new Date(d.created_at.replace(' ','T')),e=d.completed_at?new Date(d.completed_at):null;if(!s)return'—';
+  const days=((e||new Date())-s)/864e5;const txt=days<1?`${Math.max(1,Math.round(days*24))}h`:`${days.toFixed(days<10?1:0)} days`;
+  return e?`${txt} (created → done)`:`${txt} open so far`;}
+async function timeSave(id,b){await api('/api/tasks/'+id,{method:'PATCH',body:b});await refresh();openTask(id);}
 async function delTask(id){const n=TASKS.filter(x=>x.parent_id===id).length;if(!confirm(`Delete task #${id}${n?` and its ${n} subtask(s)`:''}? This can't be undone.`))return;await api('/api/tasks/'+id,{method:'DELETE'});taskDlg.close();refresh();}
 async function ckAdd(id){const v=$('#ckNew').value.trim();if(!v)return;await api(`/api/tasks/${id}/checklist`,{method:'POST',body:{text:v}});await refresh();openTask(id).then(()=>$('#ckNew').focus());}
 async function ckPatch(cid,b){await api(`/api/checklist/${cid}`,{method:'PATCH',body:b});await refresh();openTask(OPEN_ID);}
@@ -332,7 +351,9 @@ async function depAdd(id){const v=+$('#depNew').value;if(!v)return;await api(`/a
 async function depDel(id,dep){await api(`/api/tasks/${id}/dependencies/${dep}`,{method:'DELETE'});await refresh();openTask(id);}
 async function cmAdd(id){const v=$('#cmNew').value.trim();if(!v)return;const r=await api(`/api/tasks/${id}/comments`,{method:'POST',body:{body:v}});await refresh();await openTask(id);
   if(r.mentioned&&r.mentioned.length)toast(`Notified ${r.mentioned.join(', ')} in Blink`);}
-function toast(m){const t=document.createElement('div');t.textContent=m;t.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1d2330;color:#fff;padding:8px 14px;border-radius:8px;z-index:99';document.body.append(t);setTimeout(()=>t.remove(),2500);}
+function toast(m,action,label){const t=document.createElement('div');t.textContent=m;t.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1d2330;color:#fff;padding:8px 14px;border-radius:8px;z-index:99;display:flex;gap:12px;align-items:center';
+  if(action){const b=document.createElement('button');b.textContent=label||'Open';b.className='b';b.style.padding='4px 10px';b.onclick=()=>{t.remove();action()};t.append(b);}
+  document.body.append(t);setTimeout(()=>t.remove(),action?7000:2500);}
 function wireMentions(ta){const ac=$('#ac');let sel=0,list=[];
   const close=()=>{ac.classList.add('hidden');list=[]};
   const pick=u=>{const pos=ta.selectionStart,before=ta.value.slice(0,pos).replace(/@([\w.\-]*)$/,'@'+u.handle+' ');ta.value=before+ta.value.slice(pos);ta.focus();ta.selectionStart=ta.selectionEnd=before.length;close();};
@@ -379,13 +400,14 @@ function renderTemplates(){
    return `<div class="card"><div class="row" style="justify-content:space-between"><input value="${esc(t.name)}" style="font:inherit;font-weight:600;font-size:15px;flex:1;border-color:transparent" onchange="api('/api/templates/${t.id}',{method:'PATCH',body:{name:this.value}}).then(refresh)">
     <span class="mute">${t.items.length} items</span><button class="b ghost" onclick="tiAdd(${t.id},null)">+ Item</button><button class="b ghost" style="color:var(--bad)" onclick="delTpl(${t.id})">Delete template</button></div>
     <input value="${esc(t.description||'')}" placeholder="Description (when to use this template)" style="width:100%;border-color:transparent;color:var(--mute)" onchange="api('/api/templates/${t.id}',{method:'PATCH',body:{description:this.value}})">
-    <table><tr><th>Item</th><th style="width:190px">Assign to</th><th style="width:120px">Due (days after start)</th><th style="width:230px"></th></tr>
+    <table><tr><th>Item</th><th style="width:190px">Assign to</th><th style="width:120px">Due (days after start)</th><th style="width:90px">Estimate</th><th style="width:230px"></th></tr>
     ${t.items.map(i=>`<tr><td style="padding-left:${8+i.depth*24}px">${i.depth?'<span class="mute">↳</span> ':''}<input value="${esc(i.title)}" style="width:calc(100% - 24px);border-color:transparent" onchange="tiPatch(${i.id},{title:this.value})">
       <div class="badges" style="margin:2px 0 0 ${i.depth?18:0}px;flex-wrap:wrap">
        ${i.checklist.map(k=>`<span class="pill">☑ ${esc(k.text)} <a style="cursor:pointer" onclick="tcDel(${k.id})">✕</a></span>`).join('')}
        ${i.waiting_on.map(w=>`<span class="pill lock">🔒 after “${esc((byId[w]||{}).title||'#'+w)}” <a style="cursor:pointer" onclick="tdDel(${i.id},${w})">✕</a></span>`).join('')}</div></td>
      <td><select onchange="tiPatch(${i.id},whoVal(this.value))">${whoOpts(i)}</select></td>
      <td>+<input type="number" min="0" value="${i.due_offset_days||0}" style="width:64px" onchange="tiPatch(${i.id},{due_offset_days:+this.value||0})"></td>
+     <td><input placeholder="2h" value="${fmtMin(i.estimate_minutes)}" style="width:76px" onchange="tiEst(${i.id},this)"></td>
      <td style="white-space:nowrap"><button class="b ghost" title="Move up" style="padding:4px 7px" onclick="tiMove(${i.id},-1)">↑</button><button class="b ghost" title="Move down" style="padding:4px 7px" onclick="tiMove(${i.id},1)">↓</button> <select title="More" onchange="tiAction(this,${t.id},${i.id})"><option value="">More…</option><option value="check">+ Checklist item</option><option value="sub">+ Subtask</option>
        <optgroup label="Can't start until…">${t.items.filter(o=>o.id!==i.id&&!i.waiting_on.includes(o.id)).map(o=>`<option value="dep:${o.id}">🔒 ${esc(o.title)}</option>`).join('')}</optgroup>
        <option value="del">🗑 Delete item</option></select></td></tr>`).join('')||'<tr><td colspan="4" class="mute">No items yet.</td></tr>'}
@@ -400,6 +422,9 @@ async function tiAction(sel,tid,iid){const v=sel.value;sel.value='';if(!v)return
   refresh();}
 async function tiAdd(tid,parent){const x=prompt(parent?'Subtask title':'Item title');if(!x)return;await api(`/api/templates/${tid}/items`,{method:'POST',body:{title:x,parent_item_id:parent}});refresh();}
 async function tiPatch(iid,b){await api(`/api/template-items/${iid}`,{method:'PATCH',body:b});const t=TPLS.flatMap(t=>t.items).find(i=>i.id===iid);if(t)Object.assign(t,b);}
+function parseDur(v){v=(v||'').trim().toLowerCase();if(!v)return 0;let m=v.match(/^(\d+(?:\.\d+)?)\s*h(?:rs?|ours?)?\.?\s*(?:(\d+)\s*m?(?:in(?:ute)?s?)?)?$/);if(m)return Math.round(+m[1]*60)+(+m[2]||0);
+  m=v.match(/^(\d+)\s*m(?:in(?:ute)?s?)?$/);if(m)return +m[1];m=v.match(/^(\d+):(\d\d)$/);if(m)return m[1]*60+ +m[2];if(/^\d+$/.test(v))return +v;return null;}
+async function tiEst(iid,el){const m=parseDur(el.value);if(m===null){alert('Use a duration like 2h, 45m or 1h30');return;}await tiPatch(iid,{estimate_minutes:m||null});el.value=fmtMin(m);}
 async function tiMove(iid,d){await api(`/api/template-items/${iid}/move?direction=${d}`,{method:'POST'});refresh();}
 async function tcDel(cid){await api(`/api/template-checklist/${cid}`,{method:'DELETE'});refresh();}
 async function tdDel(iid,dep){await api(`/api/template-items/${iid}/dependencies/${dep}`,{method:'DELETE'});refresh();}
@@ -423,7 +448,8 @@ async function fromDoc(inp){const f=inp.files[0];inp.value='';if(!f)return;
   $('#pDocInfo').innerHTML=`📄 <b>${esc(f.name)}</b> — ${esc(r.summary).replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>')}<br><span class="mute">Check the fields, team and preview below, then Create project.</span>`;}
 async function saveAsTpl(id,n){const name=prompt('Template name',n+' checklist');if(name){await api(`/api/projects/${id}/save-as-template`,{method:'POST',body:{name}});refresh();}}
 async function patch(id,b){try{await api('/api/tasks/'+id,{method:'PATCH',body:b})}finally{await refresh()}}
-const setStatus=(id,s)=>patch(id,{status:s});
+const setStatus=async(id,s)=>{await patch(id,{status:s});const t=TASKS.find(x=>x.id===id);
+  if(s==='done'&&t&&!t.actual_minutes&&canEdit(t)&&!taskDlg.open)toast('⏱ Done! How long did it take?',()=>openTask(id).then(()=>{$('#timeSec').scrollIntoView({block:'center'});$('#actIn').focus()}),'Log time');};
 async function addTask(p){const t=$('#nt'+p).value;if(!t)return;await api('/api/tasks',{method:'POST',body:{project_id:p,title:t,assignee_id:+$('#na'+p).value||null,due_date:$('#nd'+p).value||null}});refresh();}
 async function saveRecurrence(){await api('/api/recurrences',{method:'POST',body:{template_id:+$('#rTpl').value,name_pattern:$('#rPattern').value,day_of_month:+$('#rDay').value}});refresh();}
 async function toggleRec(id,a){await api(`/api/recurrences/${id}?active=${a}`,{method:'PATCH'});refresh();}
@@ -436,7 +462,20 @@ async function matchBlink(){const r=await api('/api/users/match-blink',{method:'
   alert(`Checked ${r.checked}, linked ${r.found}.\n\n`+r.results.map(x=>`${x.email}: ${x.id||('✗ '+(x.status?x.status+' ':'')+x.detail)}`).join('\n'));}
 
 /* ---------- admin (managers) ---------- */
-async function loadAdmin(){loadAutomations();const c=await api('/api/config');
+async function loadInsights(){const r=await api('/api/insights/time?days='+$('#tiDays').value),o=r.overall;
+  const v=x=>x==null?'—':`<span style="color:${x>15?'var(--bad)':x<-15?'var(--ok)':'inherit'}">${x>0?'+':''}${x}%</span>`;
+  if(!o.count){$('#insights').innerHTML='<p class="mute">No completed tasks in this period yet.</p>';return;}
+  $('#insights').innerHTML=`<div class="tiles"><div class="tile"><span class="mute">Tasks completed</span><b>${o.count}</b></div>
+    <div class="tile"><span class="mute">Avg actual time</span><b>${fmtMin(o.avg_actual)||'—'}</b></div>
+    <div class="tile ${o.variance_pct>15?'bad':''}"><span class="mute">vs. estimates</span><b>${v(o.variance_pct)}</b></div>
+    <div class="tile"><span class="mute">Avg turnaround</span><b>${o.avg_turnaround_days??'—'}${o.avg_turnaround_days!=null?' d':''}</b></div></div>
+   ${r.missing_actual?`<p class="mute">${r.missing_actual} completed task(s) have no actual time logged — people are prompted in Blink and on the web when they finish.</p>`:''}
+   <h3>By task</h3><table><tr><th>Task</th><th>Done</th><th>Avg estimate</th><th>Avg actual</th><th>Range</th><th>vs. est.</th><th>Turnaround</th></tr>
+   ${r.tasks.slice(0,40).map(t=>`<tr><td>${esc(t.title)}${t.notes.length?`<details><summary class="mute" style="font-size:12px">${t.notes.length} note${t.notes.length>1?'s':''}</summary>${t.notes.map(n=>`<div class="note">“${esc(n.note)}” — ${esc(n.who)}, ${esc(n.project)}${n.actual?' ('+fmtMin(n.actual)+')':''}</div>`).join('')}</details>`:''}</td>
+     <td>${t.count}</td><td>${fmtMin(t.avg_estimate)||'—'}</td><td><b>${fmtMin(t.avg_actual)||'—'}</b></td><td class="mute">${t.min_actual?fmtMin(t.min_actual)+' – '+fmtMin(t.max_actual):'—'}</td><td>${v(t.variance_pct)}</td><td>${t.avg_turnaround_days!=null?t.avg_turnaround_days+' d':'—'}</td></tr>`).join('')}</table>
+   <h3 style="margin-top:14px">By person</h3><table><tr><th>Person</th><th>Done</th><th>With time logged</th><th>Avg actual</th><th>vs. est.</th><th>Turnaround</th></tr>
+   ${r.people.map(p=>`<tr><td>${esc(p.name)}</td><td>${p.count}</td><td>${p.with_actual}</td><td>${fmtMin(p.avg_actual)||'—'}</td><td>${v(p.variance_pct)}</td><td>${p.avg_turnaround_days!=null?p.avg_turnaround_days+' d':'—'}</td></tr>`).join('')}</table>`;}
+async function loadAdmin(){loadAutomations();loadInsights();const c=await api('/api/config');
   $('#sumInfo').textContent=c.last_summary_week?`Last automatic send: ${c.last_summary_week}`:'';
   $('#bkInfo').textContent=c.last_backup?`Last backup: ${c.last_backup}`:'No backup yet';
   $('#aiInfo').innerHTML=c.plain_english?'✅ On — people can reply like “finished the rent roll, still waiting on Joe for CAM” and Claude updates the right tasks.':'Off — add an <code>ANTHROPIC_API_KEY</code> variable in Railway to let people reply in plain English. Commands like <code>done 12</code> work either way.';

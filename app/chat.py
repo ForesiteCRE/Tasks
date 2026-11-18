@@ -35,6 +35,7 @@ _STATUS_RE = "|".join(sorted(map(re.escape, STATUS_WORDS), key=len, reverse=True
 CMD_A = re.compile(rf"^\s*({_STATUS_RE})\s*#?(\d+)\s*[:\-]?\s*(.*)$", re.I)  # done 12 note
 CMD_B = re.compile(rf"^\s*#?(\d+)\s*[:\-]?\s*({_STATUS_RE})\b\s*[:\-]?\s*(.*)$", re.I)  # 12 done note
 CMD_NOTE = re.compile(r"^\s*note\s*#?(\d+)\s*[:\-]?\s*(.+)$", re.I)
+CMD_TIME = re.compile(r"^\s*(?:time|took|spent)\s*#?(\d+)\s*[:\-]?\s*(.+)$", re.I | re.S)
 CMD_COMMENT = re.compile(r"^\s*comment\s*#?(\d+)\s*[:\-]?\s*(.+)$", re.I | re.S)
 
 
@@ -46,6 +47,10 @@ def parse_rules(text: str) -> dict | None:
         return {"intent": "help", "updates": []}
     if low in {"list", "tasks", "my tasks", "status"}:
         return {"intent": "list", "updates": []}
+    if m := CMD_TIME.match(t):
+        from .timing import split_duration_and_note
+        mins, note = split_duration_and_note(m[2])
+        return {"intent": "time", "task_id": int(m[1]), "minutes": mins, "note": note, "updates": []}
     if m := CMD_COMMENT.match(t):
         return {"intent": "comment", "task_id": int(m[1]), "body": m[2].strip(), "updates": []}
     updates = []
@@ -79,9 +84,11 @@ UPDATE_SCHEMA = {
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["task_id", "status", "note"],
+                "required": ["task_id", "status", "note", "actual_minutes", "time_note"],
                 "properties": {
                     "task_id": {"type": "integer"},
+                    "actual_minutes": {"type": "integer", "description": "time they say it took, in minutes; 0 if not mentioned"},
+                    "time_note": {"type": "string", "description": "why it took that long, if they said; else empty"},
                     "status": {"type": "string", "enum": ["unchanged", "todo", "in_progress", "blocked", "done"]},
                     "note": {"type": "string"},
                 },
@@ -97,6 +104,7 @@ Rules:
 - Only use task_ids from the employee's task list. Never invent one.
 - status: "done" when they say it's finished/sent/submitted/wrapped up; "in_progress" when started or working on it; "blocked" when waiting on someone or something; "todo" only if they say it needs to be redone or reopened; otherwise "unchanged".
 - note: a short factual note worth keeping (who/what they're waiting on, dates, amounts). Empty string if nothing to add.
+- If they say how long something took ("took about 2 hours", "spent 45 min"), put it in actual_minutes and any reason in time_note; otherwise 0 and "".
 - One message can update several tasks. Match on meaning, not exact wording ("rent roll" matches "Reconcile rent roll").
 - If it's unclear which task they mean, or the message isn't a task update (a question, small talk), return no updates and use reply to answer briefly or ask one short clarifying question that names the candidate task numbers.
 - Otherwise reply is one short, friendly confirmation line. No emoji spam."""
@@ -140,6 +148,9 @@ def parse_with_claude(text: str, open_tasks: list[dict]) -> dict | None:
             continue
         status = None if u.get("status") in (None, "", "unchanged") else u["status"]
         note = (u.get("note") or "").strip() or None
-        if status or note:
-            updates.append({"task_id": u["task_id"], "status": status, "note": note})
+        mins = u.get("actual_minutes") or 0
+        if status or note or mins:
+            updates.append({"task_id": u["task_id"], "status": status, "note": note,
+                            "actual_minutes": mins if mins > 0 else None,
+                            "time_note": (u.get("time_note") or "").strip() or None})
     return {"intent": "update", "updates": updates, "reply": data.get("reply", "")}

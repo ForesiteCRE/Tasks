@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, automations, blink, chat, collab, intake, maintenance, services, team, tpl
+from . import auth, automations, blink, chat, collab, intake, maintenance, services, team, timing, tpl
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
 logging.basicConfig(level=logging.INFO)
@@ -110,6 +110,9 @@ class TaskIn(BaseModel):
     due_date: date | None = None
 
 class TaskPatch(BaseModel):
+    estimate: str | int | None = None      # "1h30", "90m", 90; "" clears
+    actual: str | int | None = None
+    time_notes: str | None = None
     title: str | None = None
     description: str | None = None
     status: str | None = None
@@ -489,6 +492,15 @@ def patch_task(tid: int, p: TaskPatch, request: Request):
             c.execute("UPDATE tasks SET due_date=? WHERE id=?", (p.due_date.isoformat(), tid))
     if p.due_date is not None:
         automations.reset_overdue_flag(tid)
+    if p.estimate is not None or p.actual is not None or p.time_notes is not None:
+        def mins(v):
+            if v is None:
+                return None
+            m = timing.parse_duration(v)
+            if m is None and str(v).strip():
+                raise HTTPException(400, f"Couldn't read “{v}” as a duration — try 1h30, 45m or 2h.")
+            return m or 0
+        timing.set_times(tid, estimate=mins(p.estimate), actual=mins(p.actual), notes=p.time_notes)
     if p.status or p.note:
         services.apply_update(tid, p.user_id, "web", p.status, p.note)
     return {"ok": True}
@@ -610,6 +622,11 @@ def intake_extract(body: DocIn):
         return intake.extract_for_web(data, body.content_type, body.filename)
     except RuntimeError as e:
         raise HTTPException(400, str(e))
+
+
+@app.get("/api/insights/time")
+def time_insights(days: int = 180):
+    return timing.insights(days)
 
 
 @app.get("/api/automations")

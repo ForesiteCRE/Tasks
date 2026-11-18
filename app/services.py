@@ -3,7 +3,7 @@ import calendar
 import os
 from datetime import date, timedelta
 
-from . import automations, blink, chat, collab, intake, tpl
+from . import automations, blink, chat, collab, intake, timing, tpl
 from .db import rows, tx
 
 LOOKAHEAD = int(os.getenv("REMINDER_LOOKAHEAD_DAYS", "2"))
@@ -55,6 +55,7 @@ def apply_update(task_id: int, user_id: int | None, source: str, status: str | N
             c.execute("UPDATE tasks SET status=? WHERE id=?", (status, task_id))
         c.execute("INSERT INTO task_updates(task_id, user_id, source, status, note) VALUES(?,?,?,?,?)",
                   (task_id, user_id, source, status, note))
+        timing.on_status(c, task_id, old, status)
         t = dict(c.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone())
         # Auto-complete project when every task is done
         open_left = c.execute("SELECT COUNT(*) FROM tasks WHERE project_id=? AND status!='done'",
@@ -168,6 +169,18 @@ def handle_inbound(blink_user_id: str, text: str, files: list[dict] | None = Non
             r = collab.add_comment(tid, u["id"], body, source="blink")
             reply = f"💬 Comment added to #{tid} {exists['title']}" + (
                 f" (notified {', '.join(r['mentioned'])})" if r["mentioned"] else "")
+    elif parsed["intent"] == "time":
+        tid = parsed["task_id"]
+        with tx() as c:
+            t = c.execute("SELECT title, assignee_id, estimate_minutes FROM tasks WHERE id=?", (tid,)).fetchone()
+        if not t or t["assignee_id"] != u["id"]:
+            reply = f"Task #{tid} isn't assigned to you."
+        elif not parsed["minutes"]:
+            reply = "I couldn't read the time — try `time 12 1h30 waited on owner` or `time 12 45m`."
+        else:
+            timing.set_times(tid, actual=parsed["minutes"], notes=parsed["note"] if parsed["note"] else None)
+            est = f" (estimate {timing.fmt(t['estimate_minutes'])})" if t["estimate_minutes"] else ""
+            reply = f"⏱ Logged {timing.fmt(parsed['minutes'])} on #{tid} {t['title']}{est}" + (" with your note." if parsed["note"] else ".")
     elif parsed["intent"] == "list":
         reply = ("Your open tasks:\n" + "\n".join(map(fmt_task, mine))) if mine else "🎉 You have no open tasks."
     else:
@@ -178,9 +191,22 @@ def handle_inbound(blink_user_id: str, text: str, files: list[dict] | None = Non
                 skipped.append(up["task_id"])
                 continue
             t = apply_update(up["task_id"], u["id"], "blink", up.get("status"), up.get("note"))
+            if up.get("actual_minutes"):
+                timing.set_times(t["id"], actual=up["actual_minutes"], notes=up.get("time_note"))
+                t = {**t, "actual_minutes": up["actual_minutes"]}
+            elif t["status"] == "done":
+                with tx() as c:
+                    t = dict(c.execute("SELECT * FROM tasks WHERE id=?", (t["id"],)).fetchone())
             done_lines.append(f"✅ #{t['id']} {t['title']} → {STATUS_LABEL[t['status']]}"
                               + (f" (note: {up['note']})" if up.get("note") else ""))
         reply = "\n".join(done_lines) or parsed.get("reply") or "No changes made."
+        need_time = [up["task_id"] for up in parsed["updates"] if up.get("status") == "done" and not up.get("actual_minutes")
+                     and up["task_id"] in allowed]
+        with tx() as c:
+            need_time = [i for i in need_time if not c.execute(
+                "SELECT actual_minutes FROM tasks WHERE id=?", (i,)).fetchone()["actual_minutes"]]
+        if need_time:
+            reply += (f"\n⏱ How long did it take? Reply `time {need_time[0]} 1h30` (add a note after it if useful).")
         if skipped:
             reply += f"\n(Skipped #{', #'.join(map(str, skipped))} — not assigned to you.)"
         if parsed.get("reply") and done_lines:
