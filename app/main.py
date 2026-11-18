@@ -707,6 +707,9 @@ def get_task(tid: int):
 @app.delete("/api/tasks/{tid}")
 def delete_task(tid: int, request: Request):
     _require_manager(request)
+    with tx() as c:
+        t = c.execute("SELECT title FROM tasks WHERE id=?", (tid,)).fetchone()
+    logging.warning("Task %s “%s” deleted by %s", tid, t["title"] if t else "?", (auth.current_user(request) or {}).get("email"))
     collab.delete_task(tid)
     return {"ok": True}
 

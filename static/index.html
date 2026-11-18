@@ -153,7 +153,7 @@ input,select,textarea{border-color:#d5dce1;border-radius:3px}input:focus,select:
 details.danger{margin-top:28px;border:1px solid #f3c4c4;border-radius:8px;padding:8px 12px;font-size:13px}
 details.danger summary{cursor:pointer;color:var(--mute)}details.danger[open] summary{color:var(--bad)}
 details.danger p{margin:8px 0}details.danger input{display:block;width:100%;margin-top:4px}
-#delBtn:disabled{opacity:.4;cursor:not-allowed}
+#delBtn:disabled,#delTaskBtn:disabled{opacity:.4;cursor:not-allowed}
 .tprev{width:100%;font-size:13px}.tprev td{padding:5px 6px;border-bottom:1px solid var(--line)}.tprev tr.isdone .tlink{color:var(--mute);text-decoration:line-through}
 .kpi.clk{cursor:pointer;transition:transform .12s,box-shadow .12s}.kpi.clk:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(58,71,80,.12)}
 .kpi.clk .l::after{content:" ›";opacity:.5}
@@ -647,7 +647,7 @@ async function openTask(id){OPEN_ID=id;const [d,h]=await Promise.all([api(`/api/
      ${d.parent?`<div class="mute" style="font-size:12px">↳ subtask of <span class="tlink" onclick="openTask(${d.parent.id})">#${d.parent.id} ${esc(d.parent.title)}</span></div>`:''}
      <h2 style="margin:0">#${d.id} ${mg?`<input value="${esc(d.title)}" style="font:inherit;font-weight:600;width:420px;max-width:70vw" onchange="patch(${d.id},{title:this.value}).then(()=>openTask(${d.id}))">`:esc(d.title)}</h2>
      <div class="mute">${mg&&!d.parent_id?`<select style="font-size:12.5px;padding:3px 6px" onchange="moveTask(${d.id},this.value)"><option value="">No project</option>${PROJECTS.filter(p=>!p.is_general&&(p.status!=='done'||p.id===d.project_id)).map(p=>`<option value="${p.id}" ${p.id===d.project_id?'selected':''}>${esc(p.name)}</option>`).join('')}</select>`:esc(d.project_name)}</div></div>
-     ${mg?`<button class="b ghost" style="color:var(--bad);border-color:#f3c4c4" onclick="delTask(${d.id})">Delete</button>`:''}</div>
+</div>
    <table style="margin-top:8px"><tr><td style="width:110px">Assignee</td><td>${mg?`<select onchange="patch(${d.id},{assignee_id:+this.value||0}).then(()=>openTask(${d.id}))">${userOpts(d.assignee_id)}</select>`:esc(who)}</td></tr>
    <tr><td>Due</td><td>${mg?`<input type="date" value="${d.due_date||''}" onchange="patch(${d.id},{due_date:this.value||null}).then(()=>openTask(${d.id}))">`:`<span class="${isOver(d)?'over':''}">${fmtDate(d.due_date)||'—'}</span>`}</td></tr>
    <tr><td>Repeats</td><td>${ed?`<select onchange="patch(${d.id},{repeat:this.value}).then(()=>openTask(${d.id}))">${`<option value="">Doesn't repeat</option><option value="weekly">🔁 Every week</option><option value="biweekly">🔁 Every 2 weeks</option><option value="monthly">🔁 Every month</option><option value="quarterly">🔁 Every quarter</option><option value="yearly">🔁 Every year</option>`.replace(`value="${d.repeat||''}"`,`value="${d.repeat||''}" selected`)}</select>`:(d.repeat?'🔁 '+d.repeat:'—')}<span class="mute" style="font-size:12px;margin-left:8px">${d.repeat?'Next one is created when this is marked done':''}</span></td></tr>
@@ -686,7 +686,11 @@ async function openTask(id){OPEN_ID=id;const [d,h]=await Promise.all([api(`/api/
      <div style="position:relative"><textarea id="cmNew" rows="2" placeholder="Write a comment… type @ to mention someone (they get a Blink message)"></textarea><div id="ac" class="ac hidden"></div></div>
      <div class="row" style="justify-content:flex-end"><button class="b" onclick="cmAdd(${d.id})">Comment</button></div></div>
 
-   <details class="sec"><summary class="mute">History</summary>${d.updates.length?`<table>${d.updates.map(u=>`<tr><td class="mute" style="white-space:nowrap">${esc(u.created_at.slice(5,16))}</td><td>${esc(u.user_name||'')}${u.status?` → <span class="pill ${u.status}">${LBL[u.status]}</span>`:''} ${u.note?`<span class="note">“${esc(u.note)}”</span>`:''} <span class="mute">(${u.source})</span></td></tr>`).join('')}</table>`:'<p class="mute">No updates yet.</p>'}</details>`;
+   <details class="sec"><summary class="mute">History</summary>${d.updates.length?`<table>${d.updates.map(u=>`<tr><td class="mute" style="white-space:nowrap">${esc(u.created_at.slice(5,16))}</td><td>${esc(u.user_name||'')}${u.status?` → <span class="pill ${u.status}">${LBL[u.status]}</span>`:''} ${u.note?`<span class="note">“${esc(u.note)}”</span>`:''} <span class="mute">(${u.source})</span></td></tr>`).join('')}</table>`:'<p class="mute">No updates yet.</p>'}</details>
+   ${mg?`<details class="danger"><summary>Danger zone</summary>
+     <p>Deleting removes #${d.id}${TASKS.filter(x=>x.parent_id===d.id).length?` and its ${TASKS.filter(x=>x.parent_id===d.id).length} subtask(s)`:''}, with its checklist, comments and history, for everyone. It can't be undone. To keep it but get it out of the way, mark it <b>Done</b> instead.</p>
+     <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" style="width:auto" onchange="$('#delTaskBtn').disabled=!this.checked"> Yes, I want to permanently delete this task</label>
+     <button class="b" id="delTaskBtn" disabled style="background:var(--bad);border-color:var(--bad);margin-top:8px" onclick="delTask(${d.id})">Permanently delete task</button></details>`:''}`;
   wireMentions($('#cmNew'));
   if(!taskDlg.open)taskDlg.showModal();}
 function turnaround(d){const s=d.created_at&&new Date(d.created_at.replace(' ','T')),e=d.completed_at?new Date(d.completed_at):null;if(!s)return'—';
@@ -694,7 +698,7 @@ function turnaround(d){const s=d.created_at&&new Date(d.created_at.replace(' ','
   return e?`${txt} (created → done)`:`${txt} open so far`;}
 async function timeSave(id,b){await api('/api/tasks/'+id,{method:'PATCH',body:b});await refresh();openTask(id);}
 async function saveTut(id){await patch(id,{tutorial_url:$('#tutIn').value.trim()});openTask(id);toast('Tutorial saved for this task');}
-async function delTask(id){const n=TASKS.filter(x=>x.parent_id===id).length;if(!confirm(`Delete task #${id}${n?` and its ${n} subtask(s)`:''}? This can't be undone.`))return;await api('/api/tasks/'+id,{method:'DELETE'});taskDlg.close();refresh();}
+async function delTask(id){await api('/api/tasks/'+id,{method:'DELETE'});taskDlg.close();refresh();}
 async function ckAdd(id){const v=$('#ckNew').value.trim();if(!v)return;await api(`/api/tasks/${id}/checklist`,{method:'POST',body:{text:v}});await refresh();openTask(id).then(()=>$('#ckNew').focus());}
 async function ckPatch(cid,b){await api(`/api/checklist/${cid}`,{method:'PATCH',body:b});await refresh();openTask(OPEN_ID);}
 async function ckDel(cid){await api(`/api/checklist/${cid}`,{method:'DELETE'});await refresh();openTask(OPEN_ID);}
