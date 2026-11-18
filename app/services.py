@@ -150,7 +150,9 @@ def handle_inbound(blink_user_id: str, text: str) -> str:
     with tx() as c:
         u = c.execute("SELECT * FROM users WHERE blink_user_id=?", (blink_user_id,)).fetchone()
     if not u:
-        reply = "I don't recognize your Blink account yet — ask an admin to link you in the task system."
+        url = os.getenv("PUBLIC_URL", "").rstrip("/")
+        reply = ("I don't recognize your Blink account yet. Sign in to the task app once"
+                 + (f" at {url}" if url else "") + " with your work Google account and I'll link you automatically.")
         blink.send_dm(blink_user_id, reply)
         return reply
 

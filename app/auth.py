@@ -47,11 +47,29 @@ async def require_login(request: Request, call_next):
         return HTMLResponse("<p style='font:16px system-ui;text-align:center;margin-top:20vh'>"
                             "Sign-in isn't configured yet — set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.</p>",
                             status_code=503)
-    if request.url.path in PUBLIC_PATHS or current_user(request):
+    if request.url.path in PUBLIC_PATHS:
+        return await call_next(request)
+    if ENABLED and (u := request.session.get("user")):
+        _ensure_user_row(request, u)
+    if current_user(request):
         return await call_next(request)
     if request.url.path.startswith("/api/"):
         return JSONResponse({"detail": "not signed in"}, status_code=401)
     return RedirectResponse("/login")
+
+
+def _ensure_user_row(request: Request, u: dict):
+    """A signed-in person whose People row is missing (e.g. database restored/reset) gets it back,
+    including their Blink id, instead of silently not existing."""
+    with tx() as c:
+        row = c.execute("SELECT id FROM users WHERE id=? AND lower(email)=?", (u["id"], u["email"])).fetchone()
+        if row:
+            return
+        row = c.execute("SELECT id FROM users WHERE lower(email)=?", (u["email"],)).fetchone()
+        uid = row["id"] if row else c.execute("INSERT INTO users(name, email) VALUES(?,?)",
+                                              (u["name"], u["email"])).lastrowid
+    request.session["user"] = {**u, "id": uid}
+    link_blink_account(uid, u["email"])
 
 
 @router.get("/login")
