@@ -185,10 +185,10 @@ def patch_user(uid: int, p: UserPatch):
         if p.blink_user_id is not None:  # changing the Blink id resets the cached 1:1 chat
             c.execute("UPDATE users SET blink_user_id=?, blink_chat_id=NULL WHERE id=?",
                       (p.blink_user_id.strip() or None, uid))
-        if p.role in ("manager", "staff"):
-            if p.role == "staff" and c.execute(
-                    "SELECT COUNT(*) FROM users WHERE role='manager' AND id!=?", (uid,)).fetchone()[0] == 0:
-                raise HTTPException(400, "There must be at least one manager.")
+        if p.role in ("admin", "manager", "staff"):
+            if p.role != "admin" and c.execute(
+                    "SELECT COUNT(*) FROM users WHERE role='admin' AND id!=?", (uid,)).fetchone()[0] == 0:
+                raise HTTPException(400, "There must be at least one admin.")
             c.execute("UPDATE users SET role=? WHERE id=?", (p.role, uid))
         if p.weekly_summary is not None:
             c.execute("UPDATE users SET weekly_summary=? WHERE id=?", (int(p.weekly_summary), uid))
@@ -447,9 +447,9 @@ def create_task(t: TaskIn, background: BackgroundTasks, request: Request):
             if not parent:
                 raise HTTPException(404, "Parent task not found")
             t.project_id = parent["project_id"]
-            allowed = me.get("role") == "manager" or parent["assignee_id"] == me.get("id")
+            allowed = auth.at_least(me, "manager") or parent["assignee_id"] == me.get("id")
         else:
-            allowed = me.get("role") == "manager"
+            allowed = auth.at_least(me, "manager")
         if not allowed:
             raise HTTPException(403, "Only managers (or the parent task's assignee, for subtasks) can add tasks.")
         if not t.project_id:
@@ -478,7 +478,7 @@ def _notify(blink_user_id: str, text: str):
 def patch_task(tid: int, p: TaskPatch, request: Request):
     me = auth.current_user(request) or {}
     p.user_id = me.get("id")
-    if me.get("role") != "manager":
+    if not auth.at_least(me, "manager"):
         _require_task_editor(request, tid)
         if p.assignee_id is not None or p.due_date is not None or p.title is not None:
             raise HTTPException(403, "Only managers can rename, reassign or change due dates.")
@@ -509,7 +509,7 @@ def patch_task(tid: int, p: TaskPatch, request: Request):
 def _require_task_editor(request: Request, tid: int):
     """Managers, the task's assignee, or the assignee of its parent task."""
     me = auth.current_user(request) or {}
-    if me.get("role") == "manager":
+    if auth.at_least(me, "manager"):
         return me
     with tx() as c:
         t = c.execute("""SELECT t.assignee_id, p.assignee_id AS parent_assignee FROM tasks t
@@ -635,7 +635,7 @@ def time_insights(days: int = 180):
 def get_dashboard(request: Request, scope: str = "me"):
     me = auth.current_user(request) or {}
     if scope == "team":
-        if me.get("role") != "manager":
+        if not auth.at_least(me, "manager"):
             raise HTTPException(403, "Only managers can see the team view.")
         return dashboard.team_dashboard()
     uid = me.get("id")

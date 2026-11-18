@@ -35,7 +35,7 @@ def _on(rule: str) -> bool:
 def _managers(exclude_user_id=None) -> list[str]:
     with tx() as c:
         return [r["blink_user_id"] for r in c.execute(
-            "SELECT blink_user_id FROM users WHERE role='manager' AND blink_user_id IS NOT NULL AND id IS NOT ?",
+            "SELECT blink_user_id FROM users WHERE role IN ('manager','admin') AND blink_user_id IS NOT NULL AND id IS NOT ?",
             (exclude_user_id,))]
 
 

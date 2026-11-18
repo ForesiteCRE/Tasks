@@ -92,9 +92,9 @@ textarea{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius
   <button data-v="team" class="mgr">By person</button>
   <button data-v="templates" class="mgr">Checklist templates</button>
   <button data-v="recurring" class="mgr">Monthly recurring</button>
-  <button data-v="people" class="mgr">People</button>
-  <button data-v="admin" class="mgr">Reports &amp; backups</button>
-  <button data-v="chat" id="chatTab" class="mgr">Blink chat (simulator)</button>
+  <button data-v="people" class="adm">People</button>
+  <button data-v="admin" class="adm">Reports &amp; backups</button>
+  <button data-v="chat" id="chatTab" class="adm">Blink chat (simulator)</button>
 </nav>
 <span id="me" class="mute"></span></header>
 <main>
@@ -169,7 +169,7 @@ textarea{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius
   <div class="card"><h2>Add person</h2><div class="row"><input id="uName" placeholder="Name"><input id="uEmail" placeholder="name@foresitecre.com"><input id="uBlink" placeholder="Blink ID (optional – found by email)"><button class="b" onclick="addUser()">Add</button><button class="b ghost" onclick="matchBlink()">🔗 Find missing Blink IDs</button></div>
   <p class="mute">Add teammates by work email — their Blink account is found automatically, so you can assign them tasks before they ever sign in.</p></div>
   <div class="card"><table id="people"></table>
-  <p class="mute"><b>Manager</b> = can create projects, assign/reassign tasks, edit templates, manage people. <b>Staff</b> = can see everything but only update their own tasks. Duplicate entry for the same person? Choose “Merge into …” on the extra row and click Remove — their tasks move over.</p></div>
+  <p class="mute"><b>Admin</b> = everything, plus this People page and Reports &amp; backups. <b>Manager</b> = can create projects, assign/reassign tasks, edit templates, manage people. <b>Staff</b> = can see everything but only update their own tasks. Duplicate entry for the same person? Choose “Merge into …” on the extra row and click Remove — their tasks move over.</p></div>
   <div class="card"><h2>👥 Project roles</h2><p class="mute" style="margin-top:0">Roles each project can have. Template items can be assigned to a role instead of a person — when a project starts, those tasks go to whoever holds that role on that project. The default person is pre-filled on new projects.</p>
   <table id="roles"></table></div>
 </section>
@@ -209,7 +209,7 @@ const $=s=>document.querySelector(s), api=(u,o={})=>fetch(u,{headers:{'Content-T
   if(!r.ok){let t=await r.text();try{t=JSON.parse(t).detail||t}catch(e){}alert(`Couldn't do that: ${String(t).slice(0,200)}`);throw new Error(t)}return r.json()});
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let USERS=[],TPLS=[],PROJECTS=[],TASKS=[],ROLES=[],ME={};const LBL={todo:'To do',in_progress:'In progress',blocked:'Blocked',done:'Done'};
-const isMgr=()=>ME.role==='manager', canEdit=t=>isMgr()||t.assignee_id===ME.id;
+const isMgr=()=>ME.role==='manager'||ME.role==='admin', isAdmin=()=>ME.role==='admin', canEdit=t=>isMgr()||t.assignee_id===ME.id;
 const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const today=()=>iso(new Date());
 const isOver=t=>t.due_date&&t.due_date<today()&&t.status!=='done';
@@ -225,6 +225,7 @@ async function refresh(){
   [USERS,TPLS,PROJECTS,ROLES]=await Promise.all([api('/api/users'),api('/api/templates'),api('/api/projects'),api('/api/roles')]);
   TASKS=PROJECTS.flatMap(p=>p.tasks.map(t=>({...t,project_name:p.name,project_status:p.status})));HANDLES=[];
   document.querySelectorAll('.mgr').forEach(el=>el.classList.toggle('hidden',!isMgr()));
+  document.querySelectorAll('.adm').forEach(el=>el.classList.toggle('hidden',!isAdmin()));
   $('#roleNote').textContent=isMgr()?'':'You can view everything and update tasks assigned to you.';
   const tOpts='<option value="">Blank (no template)</option>'+TPLS.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
   const keepTpl=$('#pTpl').value;$('#pTpl').innerHTML=tOpts;$('#pTpl').value=keepTpl;$('#rTpl').innerHTML=TPLS.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
@@ -232,7 +233,8 @@ async function refresh(){
   $('#calWho').innerHTML=`<option value="">Everyone</option><option value="me">Just me</option><option value="none">Unassigned</option>`+USERS.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('');$('#calWho').value=w;
   $('#calProj').innerHTML=`<option value="">All projects</option>`+PROJECTS.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');$('#calProj').value=pj;
   renderProjects();
-  if(isMgr()){renderPeople();renderTemplates();renderRoles();renderNewTeam();renderPreview();
+  if(isAdmin()){renderPeople();renderRoles();}
+  if(isMgr()){renderTemplates();renderNewTeam();renderPreview();
     $('#cUser').innerHTML=USERS.filter(u=>u.blink_user_id).map(u=>`<option value="${esc(u.blink_user_id)}">${esc(u.name)}</option>`).join('');
     const rs=await api('/api/recurrences');
     $('#recurring').innerHTML='<tr><th>Name pattern</th><th>Template</th><th>Day</th><th>Last created</th><th></th></tr>'+rs.map(r=>`<tr><td>${esc(r.name_pattern)}</td><td>${esc(r.template_name)}</td><td>${r.day_of_month}</td><td>${r.last_period||'—'}</td><td><button class="b ghost" onclick="toggleRec(${r.id},${!r.active})">${r.active?'Pause':'Resume'}</button></td></tr>`).join('');}
@@ -507,7 +509,7 @@ function renderPeople(){
   $('#people').innerHTML='<tr><th>Name</th><th>Email</th><th>Role</th><th>Open</th><th>Weekly summary</th><th>Blink user ID</th><th></th></tr>'+USERS.map(u=>`<tr>
     <td><input value="${esc(u.name)}" style="width:100%" onchange="api('/api/users/${u.id}',{method:'PATCH',body:{name:this.value}}).then(refresh)"></td>
     <td>${esc(u.email)}${u.id===ME.id?' <span class="pill">you</span>':''}</td>
-    <td><select onchange="api('/api/users/${u.id}',{method:'PATCH',body:{role:this.value}}).then(refresh,refresh)"><option value="staff" ${u.role!=='manager'?'selected':''}>Staff</option><option value="manager" ${u.role==='manager'?'selected':''}>Manager</option></select></td>
+    <td><select onchange="api('/api/users/${u.id}',{method:'PATCH',body:{role:this.value}}).then(refresh,refresh)"><option value="staff" ${u.role==='staff'?'selected':''}>Staff</option><option value="manager" ${u.role==='manager'?'selected':''}>Manager</option><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option></select></td>
     <td>${u.open_tasks}</td>
     <td><input type="checkbox" ${u.weekly_summary?'checked':''} ${u.blink_user_id?'':'disabled title="Needs a Blink ID"'} onchange="api('/api/users/${u.id}',{method:'PATCH',body:{weekly_summary:this.checked}})"></td>
     <td><input value="${esc(u.blink_user_id)}" placeholder="u-…" style="width:100%" onchange="api('/api/users/${u.id}',{method:'PATCH',body:{blink_user_id:this.value}}).then(refresh)"></td>
@@ -613,7 +615,7 @@ async function sendChat(){const text=$('#cText').value;if(!text)return;$('#cText
 async function runReminders(){const r=await api('/api/reminders/run',{method:'POST'});loadChat();alert(`Reminders sent for ${r.sent} task(s)${r.mock?' (mock mode)':''}`);}
 
 (async()=>{ME=await api('/api/me');
-  $('#me').innerHTML=`${esc(ME.name)} <span class="pill">${ME.role==='manager'?'Manager':'Staff'}</span>${ME.auth_enabled?' · <a href="/logout">Sign out</a>':''}`;
+  $('#me').innerHTML=`${esc(ME.name)} <span class="pill">${{admin:'Admin',manager:'Manager'}[ME.role]||'Staff'}</span>${ME.auth_enabled?' · <a href="/logout">Sign out</a>':''}`;
   if(!isMgr())$('#pFilter').value='mine';
   await refresh();renderHome();
   const c=await api('/api/config');if(!c.simulator)$('#chatTab').remove();})();

@@ -156,7 +156,7 @@ def init_db():
         if "description" not in tcols:
             c.execute("ALTER TABLE tasks ADD COLUMN description TEXT")
         if "role" not in cols:
-            c.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'staff'")  # manager | staff
+            c.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'staff'")  # admin | manager | staff
         if "weekly_summary" not in cols:
             c.execute("ALTER TABLE users ADD COLUMN weekly_summary INTEGER NOT NULL DEFAULT 0")
     _init_extras()

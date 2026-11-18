@@ -1,7 +1,7 @@
 """Subtasks, checklists, comments with @mentions, and dependencies."""
 import re
 
-from . import automations, blink
+from . import automations
 from .db import rows, tx
 
 MENTION_RE = re.compile(r"@([A-Za-z][\w.\-]*)")

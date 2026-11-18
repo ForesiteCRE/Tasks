@@ -16,7 +16,7 @@ from datetime import date, datetime, timedelta
 
 import httpx
 
-from . import blink, team, tpl
+from . import blink, team
 from .chat import MODEL, ai_enabled
 from .db import rows, tx
 

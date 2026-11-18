@@ -3,3 +3,5 @@ tasks.db
 __pycache__/
 test.db
 backups/
+tests/__pycache__/
+.pytest_cache/

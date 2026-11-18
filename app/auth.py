@@ -24,9 +24,19 @@ ENABLED = bool(CLIENT_ID and CLIENT_SECRET)
 # On a hosted deploy (Railway sets RAILWAY_ENVIRONMENT) with sign-in not configured, lock everything.
 LOCKED = not ENABLED and bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("REQUIRE_LOGIN"))
 
-# Comma-separated emails that are always managers (optional). If no manager exists at all,
-# the next person to sign in becomes one, so the system can never be locked out.
-MANAGER_EMAILS = {e.strip().lower() for e in os.getenv("MANAGER_EMAILS", "").split(",") if e.strip()}
+# Roles: staff < manager < admin.
+#   ADMIN_EMAILS   – always admins (People, Reports & backups). Optional.
+#   MANAGER_EMAILS – always at least managers; if there's no admin yet, the first of them to sign in
+#                    becomes the admin. If nobody is an admin, the next person to sign in becomes one,
+#                    so the system can never be locked out.
+_emails = lambda var: {e.strip().lower() for e in os.getenv(var, "").split(",") if e.strip()}
+ADMIN_EMAILS = _emails("ADMIN_EMAILS")
+MANAGER_EMAILS = _emails("MANAGER_EMAILS")
+RANK = {"staff": 0, "manager": 1, "admin": 2}
+
+
+def at_least(user: dict | None, role: str) -> bool:
+    return RANK.get((user or {}).get("role", "staff"), 0) >= RANK[role]
 
 # Paths reachable without signing in
 PUBLIC_PATHS = {"/login", "/auth/callback", "/logout", "/blink/webhook", "/healthz"}
@@ -41,7 +51,7 @@ def _redirect_uri(request: Request) -> str:
 
 def current_user(request: Request) -> dict | None:
     if not ENABLED:
-        return {"id": None, "name": "Local dev (sign-in disabled)", "email": "", "role": "manager"}
+        return {"id": None, "name": "Local dev (sign-in disabled)", "email": "", "role": "admin"}
     u = request.session.get("user")
     if not u:
         return None
@@ -51,24 +61,47 @@ def current_user(request: Request) -> dict | None:
 
 
 def is_manager(request: Request) -> bool:
-    return (current_user(request) or {}).get("role") == "manager"
+    return at_least(current_user(request), "manager")
+
+
+def is_admin(request: Request) -> bool:
+    return at_least(current_user(request), "admin")
 
 
 def _apply_role_rules(uid: int, email: str):
+    email = (email or "").lower()
     with tx() as c:
-        if email in MANAGER_EMAILS or not c.execute("SELECT 1 FROM users WHERE role='manager'").fetchone():
-            c.execute("UPDATE users SET role='manager' WHERE id=?", (uid,))
+        role = (c.execute("SELECT role FROM users WHERE id=?", (uid,)).fetchone() or {"role": "staff"})["role"]
+        has_admin = c.execute("SELECT 1 FROM users WHERE role='admin'").fetchone()
+        if email in ADMIN_EMAILS:
+            new = "admin"
+        elif not has_admin and (email in MANAGER_EMAILS or (not ADMIN_EMAILS and not MANAGER_EMAILS and role == "manager")
+                                or not c.execute("SELECT 1 FROM users WHERE role IN ('manager','admin')").fetchone()):
+            new = "admin"
+        elif email in MANAGER_EMAILS and role == "staff":
+            new = "manager"
+        else:
+            return
+        if new != role:
+            c.execute("UPDATE users SET role=? WHERE id=?", (new, uid))
 
 
-# Staff (non-managers) may read everything but only change their own tasks.
-# Everything else that writes, plus these read-only-but-sensitive paths, is manager-only.
-MANAGER_ONLY_GET_PREFIXES = ("/api/backups", "/api/summary", "/api/blink/messages", "/api/automations", "/api/insights")
+# Admin-only areas: People (managing users & project roles) and Reports & backups.
+ADMIN_ONLY_PREFIXES = ("/api/backups", "/api/summary", "/api/automations", "/api/insights", "/api/blink/messages",
+                       "/api/blink/simulate", "/api/reminders/run", "/api/users/match-blink")
+ADMIN_ONLY_WRITE_PREFIXES = ("/api/users", "/api/roles")   # reading the people/role lists is fine for everyone
 
 
+def _admin_only(request: Request) -> bool:
+    path = request.url.path
+    return path.startswith(ADMIN_ONLY_PREFIXES) or (request.method != "GET" and path.startswith(ADMIN_ONLY_WRITE_PREFIXES))
+
+
+# Staff may read everything (except admin areas) but only change their own tasks.
 def _staff_allowed(request: Request) -> bool:
     path, method = request.url.path, request.method
     if method == "GET":
-        return not path.startswith(MANAGER_ONLY_GET_PREFIXES)
+        return True
     # Task-level writes: each endpoint checks ownership / manager itself.
     return path.startswith(("/api/tasks", "/api/checklist/", "/api/reminders", "/api/me/"))
 
@@ -84,8 +117,11 @@ async def require_login(request: Request, call_next):
     if ENABLED and (u := request.session.get("user")):
         _ensure_user_row(request, u)
     if (u := current_user(request)):
-        if u.get("role") != "manager" and request.url.path.startswith("/api/") and not _staff_allowed(request):
-            return JSONResponse({"detail": "Only managers can do that."}, status_code=403)
+        if request.url.path.startswith("/api/"):
+            if _admin_only(request) and not at_least(u, "admin"):
+                return JSONResponse({"detail": "Only the admin can do that."}, status_code=403)
+            if not at_least(u, "manager") and not _staff_allowed(request):
+                return JSONResponse({"detail": "Only managers can do that."}, status_code=403)
         return await call_next(request)
     if request.url.path.startswith("/api/"):
         return JSONResponse({"detail": "not signed in"}, status_code=401)

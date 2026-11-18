@@ -161,7 +161,7 @@ def handle_inbound(blink_user_id: str, text: str, files: list[dict] | None = Non
     # Managers can start a project by chatting (document, pasted terms, or "new project for ...").
     # Task commands like "done 12" still work in the middle of that conversation.
     rule = chat.parse_rules(text or "")
-    if u["role"] == "manager" and rule is None and (
+    if u["role"] in ("manager", "admin") and rule is None and (
             intake.get_session(u["id"]) or intake.wants_to_start(text or "", bool(files))):
         reply = intake.handle(dict(u), text or "", files)
         blink.send_dm(blink_user_id, reply)
