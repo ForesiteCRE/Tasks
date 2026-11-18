@@ -45,6 +45,8 @@ Open http://localhost:8000 and use **Blink chat (simulator)** to test.
 - **Reminders** – on Home or in Blink (“remind me Friday 9am to call the owner”); delivered in Blink.
 - **6pm daily recap** – each person gets done today / overdue / due today / next 7 days / waiting on them
   (`DIGEST_HOUR`, opt-out on Home).
+- **Menu** – Home · Tasks ▾ (All tasks, Projects, Templates, Monthly recurring) · Calendar · By person · Admin ▾
+  (People, Reports & backups, Blink simulator — admin only). Tasks can exist without a project.
 - **Weekly summary** – Monday-morning Blink message (overdue / blocked / due this week) to anyone ticked
   "Weekly summary" on People. Preview or send now from **Reports & backups**.
 - **Daily backups** – a copy of the database every day in `/data/backups` (kept 14 days), downloadable from
@@ -85,3 +87,11 @@ If `GOOGLE_CLIENT_ID` is blank, sign-in is disabled (local testing only — neve
    Set `TZ` (e.g. `America/Chicago`) so reminders go out at the right local hour.
 4. **Settings → Networking → Generate Domain** → put `https://<domain>/blink/webhook` on the Blink App Identity.
 Keep to **one instance** (the reminder scheduler runs inside the app).
+
+## Tests
+```bash
+pip install pytest && cd tests && pytest -q
+```
+26 end-to-end tests: sign-in & roles (admin/manager/staff permissions), projects/templates/roles, subtasks,
+checklists, comments, dependencies, automations, time tracking, Blink chat commands & webhook signatures,
+project intake from documents, dashboards, reminders, the 6pm recap and every scheduled job.

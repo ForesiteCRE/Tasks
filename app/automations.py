@@ -42,7 +42,7 @@ def _managers(exclude_user_id=None) -> list[str]:
 def _task(task_id: int) -> dict:
     with tx() as c:
         return dict(c.execute(
-            """SELECT t.*, p.name AS project_name, p.status AS project_status, u.name AS assignee_name,
+            """SELECT t.*, p.name AS project_name, p.status AS project_status, p.is_general, u.name AS assignee_name,
                       u.blink_user_id AS assignee_blink
                FROM tasks t JOIN projects p ON p.id=t.project_id LEFT JOIN users u ON u.id=t.assignee_id
                WHERE t.id=?""", (task_id,)).fetchone())
@@ -89,7 +89,7 @@ def on_status_change(task_id: int, old: str | None, new: str | None, actor_id, n
     if new == "done":
         if _on("your_turn"):
             _notify_unblocked(task_id, who)
-        if t["project_status"] == "done" and _on("project_done"):
+        if t["project_status"] == "done" and not t["is_general"] and _on("project_done"):
             _send(_managers(exclude_user_id=actor_id), f"🎉 **Project complete:** {t['project_name']} — all tasks done.")
 
 

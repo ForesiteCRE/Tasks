@@ -367,3 +367,23 @@ def test_every_page_and_static(mgr):
                 f"/api/tasks/{S['walk']}", f"/api/tasks/{S['walk']}/updates", "/api/dashboard",
                 "/api/dashboard?scope=team", "/api/blink/messages?blink_user_id=u-sam"]:
         assert mgr.get(url).status_code == 200, url
+
+
+def test_tasks_without_project(mgr, staff):
+    assert staff.post("/api/tasks", json={"title": "x", "assignee_id": S["jo"]}).status_code == 403   # not for others
+    mine = ids(staff.post("/api/tasks", json={"title": "Renew notary", "estimate": "30m"}))["id"]
+    t = ids(mgr.get(f"/api/tasks/{mine}"))
+    assert t["assignee_id"] == staff.me["id"] and t["project_name"] == "No project" and t["estimate_minutes"] == 30
+    assert staff.post("/api/tasks", json={"title": "x", "project_id": S["p1"]}).status_code == 403
+    gen = [p for p in ids(mgr.get("/api/projects")) if p["is_general"]]
+    assert len(gen) == 1
+    other = ids(mgr.post("/api/tasks", json={"title": "Order toner", "assignee_id": S["jo"]}))["id"]
+    ids(mgr.put(f"/api/tasks/{other}/project", json={"project_id": S["p1"]}))
+    assert ids(mgr.get(f"/api/tasks/{other}"))["project_id"] == S["p1"]
+    ids(mgr.put(f"/api/tasks/{other}/project", json={"project_id": None}))
+    assert ids(mgr.get(f"/api/tasks/{other}"))["project_id"] == gen[0]["id"]
+    assert staff.put(f"/api/tasks/{mine}/project", json={"project_id": S["p1"]}).status_code == 403
+    SENT.clear()
+    ids(staff.patch(f"/api/tasks/{mine}", json={"status": "done"}))
+    assert not any("Project complete" in t for _, t in SENT)          # the hidden bucket never "completes"
+    assert all(p["name"] != "No project" for p in ids(mgr.get("/api/dashboard?scope=team"))["projects"])

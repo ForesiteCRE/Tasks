@@ -7,9 +7,18 @@
 :root{--bg:#f6f7f9;--card:#fff;--ink:#1d2330;--mute:#6b7280;--line:#e3e6eb;--acc:#3b5bdb;--ok:#2f9e44;--warn:#e8590c;--bad:#c92a2a}
 *{box-sizing:border-box}body{margin:0;font:14px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--ink)}
 header{display:flex;gap:18px;align-items:center;padding:10px 20px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
-header h1{white-space:nowrap}#nav{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;flex:1;min-width:0}#nav::-webkit-scrollbar{display:none}nav button{white-space:nowrap}
+header h1{white-space:nowrap}#nav{display:flex;gap:2px;flex:1;min-width:0;flex-wrap:wrap;align-items:center}nav button{white-space:nowrap}
+.dd{position:relative}.ddb.on{background:#e7ecff;color:var(--acc);font-weight:600}.car{font-size:10px;opacity:.7}
+.ddm{display:none;position:absolute;top:calc(100% + 6px);left:0;min-width:250px;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(20,30,60,.12);padding:6px;z-index:20}
+.dd.open .ddm{display:block}.ddm button{display:block;width:100%;text-align:left;padding:8px 10px;border-radius:7px;color:var(--ink)}.ddm button:hover{background:#f3f5fa}.ddm button.on{background:#e7ecff;color:var(--acc)}
+.ddm small{display:block;font-size:11.5px;color:var(--mute);font-weight:400}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.toolbar input[type=search]{flex:1;min-width:180px}
+.qadd{display:grid;grid-template-columns:minmax(180px,2fr) minmax(130px,1fr) minmax(120px,1fr) 150px 90px auto;gap:8px;align-items:center}
+@media (max-width:900px){.qadd{grid-template-columns:1fr 1fr}.qadd input:first-child{grid-column:1/-1}}
+.tl td{padding:7px 8px}.tl .proj{font-size:12px;color:var(--mute);max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tl tr.tgrp td{background:#fafbfc;font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);padding:8px}
+.tl tr.tgrp.red td{color:var(--bad)}.tl tr.done td{opacity:.6}
 #me{white-space:nowrap;font-size:13px}
-@media (max-width:760px){header{flex-wrap:wrap;gap:6px;padding:10px 12px}header h1 .mute{display:none}#me{margin-left:auto}#nav{order:3;flex-basis:100%}}
+@media (max-width:760px){header{flex-wrap:wrap;gap:6px;padding:10px 12px}header h1 .mute{display:none}#me{margin-left:auto}#nav{order:3;flex-basis:100%}.ddm{position:fixed;left:12px;right:12px;top:auto}}
 header h1{font-size:17px;margin:0}nav button{background:none;border:0;padding:8px 12px;border-radius:6px;cursor:pointer;font:inherit;color:var(--mute)}
 nav button.on{background:#e7ecff;color:var(--acc);font-weight:600}
 main{max-width:1200px;margin:0 auto;padding:20px 16px}.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
@@ -87,14 +96,17 @@ textarea{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius
 <header><h1>📋 Task Manager <span class="mute" style="font-weight:400">· Blink-connected</span></h1>
 <nav id="nav">
   <button data-v="home" class="on">🏠 Home</button>
-  <button data-v="projects">Projects</button>
+  <div class="dd" data-g="tasks"><button class="ddb">Tasks <span class="car">▾</span></button><div class="ddm">
+    <button data-v="tasks">✓ All tasks<small>with or without a project</small></button>
+    <button data-v="projects">📁 Projects<small>start a new project, see progress</small></button>
+    <button data-v="templates" class="mgr">📋 Templates<small>reusable checklists</small></button>
+    <button data-v="recurring" class="mgr">🔁 Monthly recurring<small>projects created each month</small></button></div></div>
   <button data-v="calendar">Calendar</button>
   <button data-v="team" class="mgr">By person</button>
-  <button data-v="templates" class="mgr">Checklist templates</button>
-  <button data-v="recurring" class="mgr">Monthly recurring</button>
-  <button data-v="people" class="adm">People</button>
-  <button data-v="admin" class="adm">Reports &amp; backups</button>
-  <button data-v="chat" id="chatTab" class="adm">Blink chat (simulator)</button>
+  <div class="dd adm" data-g="admin"><button class="ddb">Admin <span class="car">▾</span></button><div class="ddm">
+    <button data-v="people">👥 People<small>team members, roles, project roles</small></button>
+    <button data-v="admin">📊 Reports &amp; backups<small>insights, automations, backups</small></button>
+    <button data-v="chat" id="chatTab">💬 Blink simulator<small>test the chat bot</small></button></div></div>
 </nav>
 <span id="me" class="mute"></span></header>
 <main>
@@ -109,6 +121,19 @@ textarea{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius
     </div>
   </div>
   <div id="home"></div>
+</section>
+
+<section id="v-tasks" class="hidden">
+  <div class="card"><h2>Add a task</h2>
+    <div class="qadd"><input id="qTitle" placeholder="What needs doing?" onkeydown="if(event.key==='Enter')quickAdd()">
+      <select id="qProj"></select><select id="qWho"></select><input id="qDue" type="date"><input id="qEst" placeholder="Est. 1h"><button class="b" onclick="quickAdd()">Add</button></div>
+    <p class="mute" style="margin:6px 0 0;font-size:12.5px">Tasks don't need a project — leave it as “No project” for one-off work. <span class="mgronly">Assign it to someone and they get a Blink message.</span></p></div>
+  <div class="toolbar">
+    <input type="search" id="tSearch" placeholder="Search tasks…" oninput="renderTasks()">
+    <select id="tWho" onchange="renderTasks()"></select><select id="tProj" onchange="renderTasks()"></select>
+    <select id="tStatus" onchange="renderTasks()"><option value="open">Open</option><option value="todo">To do</option><option value="in_progress">In progress</option><option value="blocked">Blocked</option><option value="done">Done</option><option value="all">All</option></select>
+    <span id="tCount" class="mute"></span></div>
+  <div class="card" style="padding:0;overflow:hidden"><table class="tl" id="tTable"></table></div>
 </section>
 
 <section id="v-projects" class="hidden">
@@ -215,9 +240,14 @@ const today=()=>iso(new Date());
 const isOver=t=>t.due_date&&t.due_date<today()&&t.status!=='done';
 const fmtMin=m=>{if(!m)return'';const h=Math.floor(m/60),r=m%60;return h&&r?`${h}h ${r}m`:h?`${h}h`:`${r}m`};
 const fmtDate=d=>d?new Date(d+'T12:00').toLocaleDateString(undefined,{month:'short',day:'numeric'}):'';
-function show(v){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-'+v));
+function show(v){document.querySelectorAll('nav button[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  document.querySelectorAll('.dd').forEach(d=>{d.classList.remove('open');d.querySelector('.ddb').classList.toggle('on',!!d.querySelector(`[data-v="${v}"]`))});
+  if(v==='tasks')renderTasks();document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-'+v));
   if(v==='home')renderHome();if(v==='chat')loadChat();if(v==='admin')loadAdmin();if(v==='calendar')renderCalendar();if(v==='team')renderTeam();}
-$('#nav').onclick=e=>{const v=e.target.dataset.v;if(v)show(v)};
+$('#nav').onclick=e=>{const b=e.target.closest('button');if(!b)return;
+  if(b.classList.contains('ddb')){const d=b.parentElement,o=!d.classList.contains('open');document.querySelectorAll('.dd').forEach(x=>x.classList.remove('open'));d.classList.toggle('open',o);return;}
+  if(b.dataset.v)show(b.dataset.v)};
+document.addEventListener('click',e=>{if(!e.target.closest('.dd'))document.querySelectorAll('.dd').forEach(x=>x.classList.remove('open'))});
 const userOpts=(sel,blank='Unassigned')=>`<option value="">${blank}</option>`+USERS.map(u=>`<option value="${u.id}" ${u.id==sel?'selected':''}>${esc(u.name)}</option>`).join('');
 const statusSel=(t)=>`<select class="pill ${t.status}" ${canEdit(t)?'':'disabled'} onchange="setStatus(${t.id},this.value)">${Object.keys(LBL).map(s=>`<option value="${s}" ${s===t.status?'selected':''}>${LBL[s]}</option>`).join('')}</select>`;
 
@@ -231,7 +261,15 @@ async function refresh(){
   const keepTpl=$('#pTpl').value;$('#pTpl').innerHTML=tOpts;$('#pTpl').value=keepTpl;$('#rTpl').innerHTML=TPLS.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
   const w=$('#calWho').value, pj=$('#calProj').value;
   $('#calWho').innerHTML=`<option value="">Everyone</option><option value="me">Just me</option><option value="none">Unassigned</option>`+USERS.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('');$('#calWho').value=w;
-  $('#calProj').innerHTML=`<option value="">All projects</option>`+PROJECTS.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');$('#calProj').value=pj;
+  const projOpts=PROJECTS.filter(p=>!p.is_general&&p.status!=='done').map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join(''),gen=PROJECTS.find(p=>p.is_general);
+  $('#calProj').innerHTML=`<option value="">All projects</option>${gen?`<option value="${gen.id}">No project</option>`:''}`+projOpts;$('#calProj').value=pj;
+  const tp=$('#tProj').value,tw=$('#tWho').value,qp=$('#qProj').value,qw=$('#qWho').value;
+  $('#tProj').innerHTML=`<option value="">All projects</option><option value="none">No project</option>`+projOpts;$('#tProj').value=tp;
+  $('#tWho').innerHTML=`<option value="me">My tasks</option><option value="">Everyone</option><option value="unassigned">Unassigned</option>`+USERS.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('');$('#tWho').value=tw||(isMgr()?'':'me');
+  $('#qProj').innerHTML=`<option value="">No project</option>`+(isMgr()?projOpts:'');$('#qProj').value=qp;
+  $('#qWho').innerHTML=isMgr()?`<option value="">Unassigned</option>`+USERS.map(u=>`<option value="${u.id}" ${u.id===ME.id?'selected':''}>${esc(u.name)}${u.id===ME.id?' (me)':''}</option>`).join(''):`<option value="${ME.id}">Me</option>`;if(qw)$('#qWho').value=qw;
+  document.querySelectorAll('.mgronly').forEach(el=>el.classList.toggle('hidden',!isMgr()));
+  if(!$('#v-tasks').classList.contains('hidden'))renderTasks();
   renderProjects();
   if(isAdmin()){renderPeople();renderRoles();}
   if(isMgr()){renderTemplates();renderNewTeam();renderPreview();
@@ -255,7 +293,7 @@ function badges(t){const subs=TASKS.filter(x=>x.parent_id===t.id),b=[];
   return b.length?`<span class="badges">${b.join('')}</span>`:'';}
 function renderProjects(){
   const mine=$('#pFilter').value==='mine', hideDone=$('#pHideDone').checked;
-  const ps=PROJECTS.filter(p=>!(hideDone&&p.status==='done')).map(p=>({...p,shown:mine?p.tasks.filter(t=>t.assignee_id===ME.id):p.tasks})).filter(p=>!mine||p.shown.length);
+  const ps=PROJECTS.filter(p=>!p.is_general&&!(hideDone&&p.status==='done')).map(p=>({...p,shown:mine?p.tasks.filter(t=>t.assignee_id===ME.id):p.tasks})).filter(p=>!mine||p.shown.length);
   $('#projects').innerHTML=ps.map(p=>{const done=p.tasks.filter(t=>t.status==='done').length,pct=p.tasks.length?Math.round(100*done/p.tasks.length):0;
   return `<div class="card"><div class="row" style="justify-content:space-between"><h3>${esc(p.name)} <span class="pill ${p.status==='done'?'done':''}">${p.status}</span></h3>
   <span class="mute">${done}/${p.tasks.length} done${projTime(p)} · started ${fmtDate(p.start_date)} <button class="b ghost" onclick="openProject(${p.id})">${isMgr()?'Details &amp; team':'Details'}</button> ${isMgr()?`<button class="b ghost" onclick="saveAsTpl(${p.id},'${esc(p.name).replace(/'/g,"")}')">Save as template</button>`:''}</span></div>
@@ -393,6 +431,33 @@ async function remDel(id){await api(`/api/reminders/${id}`,{method:'DELETE'});re
 async function previewDigest(){const r=await api('/api/me/digest-preview',{method:'POST'});
   $('#taskDlgBody').innerHTML=`<h2>🌆 Your 6pm recap</h2><p class="mute">${r.sent?'Sent to you in Blink just now. ':''}Everyone with a Blink ID gets this at 6pm each day (they can turn it off on their Home page).</p><div class="cm" style="white-space:pre-wrap">${r.text?esc(r.text).replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>'):'Nothing to report for you today.'}</div>`;taskDlg.showModal();}
 
+/* ---------- all tasks ---------- */
+function renderTasks(){const q=$('#tSearch').value.trim().toLowerCase(),w=$('#tWho').value,pj=$('#tProj').value,st=$('#tStatus').value,t0=today(),wk=isoAdd(t0,7);
+  const gen=(PROJECTS.find(p=>p.is_general)||{}).id;
+  let ts=TASKS.filter(t=>(st==='all'||(st==='open'?t.status!=='done':t.status===st))
+    &&(!w||(w==='me'?t.assignee_id===ME.id:w==='unassigned'?!t.assignee_id:t.assignee_id==w))
+    &&(!pj||(pj==='none'?t.project_id===gen:t.project_id==pj))
+    &&(t.project_status!=='done'||st==='done'||st==='all')
+    &&(!q||(t.title+' '+t.project_name+' '+(t.last_note||'')).toLowerCase().includes(q)));
+  ts.sort((a,b)=>(a.due_date||'9999').localeCompare(b.due_date||'9999')||a.id-b.id);
+  const groups=[['Overdue',t=>isOver(t),'red'],['Today',t=>t.status!=='done'&&t.due_date===t0],['Next 7 days',t=>t.status!=='done'&&t.due_date>t0&&t.due_date<=wk],
+    ['Later',t=>t.status!=='done'&&t.due_date>wk],['No due date',t=>t.status!=='done'&&!t.due_date],['Done',t=>t.status==='done']];
+  $('#tCount').textContent=`${ts.length} task${ts.length===1?'':'s'}`;
+  const used=new Set();
+  $('#tTable').innerHTML=ts.length?`<tr><th style="width:34px"></th><th>Task</th><th>Project</th><th>Assignee</th><th>Due</th><th>Status</th></tr>`+groups.map(([n,f,cls])=>{
+    const g=ts.filter(t=>!used.has(t.id)&&f(t));g.forEach(t=>used.add(t.id));if(!g.length)return'';
+    return `<tr class="tgrp ${cls||''}"><td colspan="6">${n} · ${g.length}</td></tr>`+g.map(t=>`<tr class="${t.status==='done'?'done':''}">
+      <td><input type="checkbox" ${t.status==='done'?'checked':''} ${canEdit(t)?'':'disabled'} onchange="setStatus(${t.id},this.checked?'done':'todo')"></td>
+      <td><span class="tlink" onclick="openTask(${t.id})">${t.parent_id?'<span class="mute">↳</span> ':''}${esc(t.title)}</span>${badges(t)}</td>
+      <td class="proj">${t.project_id===gen?'<span class="mute">—</span>':`<span class="tlink" onclick="openProject(${t.project_id})">${esc(t.project_name)}</span>`}</td>
+      <td class="mute">${esc((USERS.find(u=>u.id===t.assignee_id)||{}).name||'Unassigned')}</td>
+      <td class="${isOver(t)?'over':''}" style="white-space:nowrap">${fmtDate(t.due_date)||'—'}</td><td>${statusSel(t)}</td></tr>`).join('')}).join('')
+    :`<tr><td class="empty" style="padding:24px;text-align:center">No tasks match. ${w==='me'?'Add one above, or switch to “Everyone”.':''}</td></tr>`;}
+async function quickAdd(){const title=$('#qTitle').value.trim();if(!title){$('#qTitle').focus();return;}
+  await api('/api/tasks',{method:'POST',body:{title,project_id:+$('#qProj').value||null,assignee_id:+$('#qWho').value||null,due_date:$('#qDue').value||null,estimate:$('#qEst').value||null}});
+  $('#qTitle').value='';$('#qEst').value='';await refresh();toast('Task added');$('#qTitle').focus();}
+async function moveTask(id,pid){await api(`/api/tasks/${id}/project`,{method:'PUT',body:{project_id:+pid||null}});await refresh();openTask(id);toast('Moved');}
+
 /* ---------- calendar ---------- */
 let CAL=(()=>{const d=new Date();return{y:d.getFullYear(),m:d.getMonth()}})();
 function calMove(n){if(n===0){const d=new Date();CAL={y:d.getFullYear(),m:d.getMonth()}}else{const d=new Date(CAL.y,CAL.m+n,1);CAL={y:d.getFullYear(),m:d.getMonth()}}renderCalendar();}
@@ -424,7 +489,7 @@ async function openTask(id){OPEN_ID=id;const [d,h]=await Promise.all([api(`/api/
    <div class="row" style="justify-content:space-between;align-items:flex-start"><div>
      ${d.parent?`<div class="mute" style="font-size:12px">↳ subtask of <span class="tlink" onclick="openTask(${d.parent.id})">#${d.parent.id} ${esc(d.parent.title)}</span></div>`:''}
      <h2 style="margin:0">#${d.id} ${mg?`<input value="${esc(d.title)}" style="font:inherit;font-weight:600;width:420px;max-width:70vw" onchange="patch(${d.id},{title:this.value}).then(()=>openTask(${d.id}))">`:esc(d.title)}</h2>
-     <div class="mute">${esc(d.project_name)}</div></div>
+     <div class="mute">${mg&&!d.parent_id?`<select style="font-size:12.5px;padding:3px 6px" onchange="moveTask(${d.id},this.value)"><option value="">No project</option>${PROJECTS.filter(p=>!p.is_general&&(p.status!=='done'||p.id===d.project_id)).map(p=>`<option value="${p.id}" ${p.id===d.project_id?'selected':''}>${esc(p.name)}</option>`).join('')}</select>`:esc(d.project_name)}</div></div>
      ${mg?`<button class="b ghost" style="color:var(--bad);border-color:#f3c4c4" onclick="delTask(${d.id})">Delete</button>`:''}</div>
    <table style="margin-top:8px"><tr><td style="width:110px">Assignee</td><td>${mg?`<select onchange="patch(${d.id},{assignee_id:+this.value||0}).then(()=>openTask(${d.id}))">${userOpts(d.assignee_id)}</select>`:esc(who)}</td></tr>
    <tr><td>Due</td><td>${mg?`<input type="date" value="${d.due_date||''}" onchange="patch(${d.id},{due_date:this.value||null}).then(()=>openTask(${d.id}))">`:`<span class="${isOver(d)?'over':''}">${fmtDate(d.due_date)||'—'}</span>`}</td></tr>

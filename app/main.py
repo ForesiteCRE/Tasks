@@ -107,6 +107,7 @@ class TaskIn(BaseModel):
     parent_id: int | None = None
     title: str
     description: str | None = None
+    estimate: str | int | None = None
     assignee_id: int | None = None
     due_date: date | None = None
 
@@ -385,6 +386,26 @@ def create_project(p: ProjectIn):
     return {"id": pid}
 
 
+class TaskMove(BaseModel):
+    project_id: int | None = None   # None = no project
+
+@app.put("/api/tasks/{tid}/project")
+def move_task(tid: int, body: TaskMove, request: Request):
+    """Move a task (and its subtasks) to another project, or out of any project."""
+    if not auth.is_manager(request):
+        raise HTTPException(403, "Only managers can move tasks between projects.")
+    pid = body.project_id or team.general_project_id()
+    with tx() as c:
+        ids_, stack = [], [tid]
+        while stack:
+            cur = stack.pop(); ids_.append(cur)
+            stack += [r[0] for r in c.execute("SELECT id FROM tasks WHERE parent_id=?", (cur,))]
+        c.execute(f"UPDATE tasks SET project_id=?, role_id=NULL WHERE id IN ({','.join('?' * len(ids_))})", (pid, *ids_))
+        c.execute("UPDATE tasks SET parent_id=NULL WHERE id=?", (tid,))
+        c.execute("UPDATE projects SET status='active' WHERE id=?", (pid,))
+    return {"ok": True}
+
+
 class ProjectPatch(BaseModel):
     name: str | None = None
     property: str | None = None
@@ -448,18 +469,25 @@ def create_task(t: TaskIn, background: BackgroundTasks, request: Request):
                 raise HTTPException(404, "Parent task not found")
             t.project_id = parent["project_id"]
             allowed = auth.at_least(me, "manager") or parent["assignee_id"] == me.get("id")
+        elif not t.project_id:   # a task without a project: anyone can add one for themselves
+            allowed = auth.at_least(me, "manager") or t.assignee_id in (None, me.get("id"))
+            if not auth.at_least(me, "manager"):
+                t.assignee_id = me.get("id")
         else:
             allowed = auth.at_least(me, "manager")
         if not allowed:
-            raise HTTPException(403, "Only managers (or the parent task's assignee, for subtasks) can add tasks.")
-        if not t.project_id:
-            raise HTTPException(400, "project_id or parent_id is required")
+            raise HTTPException(403, "Only managers can add tasks to projects or for other people.")
+    if not t.project_id:
+        t.project_id = team.general_project_id()
+    with tx() as c:
         tid = c.execute(
             "INSERT INTO tasks(project_id,parent_id,title,description,assignee_id,due_date,position) VALUES(?,?,?,?,?,?,999)",
             (t.project_id, t.parent_id, t.title, t.description, t.assignee_id,
              t.due_date and t.due_date.isoformat())).lastrowid
         c.execute("UPDATE projects SET status='active' WHERE id=?", (t.project_id,))
         u = c.execute("SELECT blink_user_id FROM users WHERE id=?", (t.assignee_id,)).fetchone() if t.assignee_id else None
+    if t.estimate not in (None, ""):
+        timing.set_times(tid, estimate=timing.parse_duration(t.estimate) or 0)
     if u and u["blink_user_id"] and t.assignee_id != me.get("id"):
         kind = "subtask" if t.parent_id else "task"
         text = f"📌 New {kind} assigned: #{tid} {t.title}" + (f" – due {t.due_date:%b %d}" if t.due_date else "")

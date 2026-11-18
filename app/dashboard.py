@@ -74,7 +74,7 @@ def my_dashboard(uid: int) -> dict:
     agenda += [{"kind": "reminder", "date": r["remind_at"][:10], "time": r["remind_at"][11:16], "id": r["id"],
                 "title": r["text"], "task_id": r["task_id"]} for r in reminders if r["remind_at"][:10] <= horizon]
     my_projects = _q(
-        """SELECT DISTINCT p.* FROM projects p WHERE p.status='active' AND (
+        """SELECT DISTINCT p.* FROM projects p WHERE p.status='active' AND p.is_general=0 AND (
              EXISTS (SELECT 1 FROM tasks t WHERE t.project_id=p.id AND t.assignee_id=?)
              OR EXISTS (SELECT 1 FROM project_team pt WHERE pt.project_id=p.id AND pt.user_id=?))
            ORDER BY p.start_date DESC""", (uid, uid))
@@ -159,7 +159,7 @@ def team_dashboard() -> dict:
                          "done_week": sum(1 for t in done_week if t["assignee_id"] == u["id"])})
     workload.sort(key=lambda w: (-w["overdue"], -w["open"]))
 
-    projects = _q("SELECT * FROM projects WHERE status='active' ORDER BY start_date DESC")
+    projects = _q("SELECT * FROM projects WHERE status='active' AND is_general=0 ORDER BY start_date DESC")
     at_risk = []
     for p in projects:
         ts = _q("SELECT status, due_date FROM tasks WHERE project_id=?", (p["id"],))

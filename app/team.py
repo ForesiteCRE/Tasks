@@ -29,7 +29,7 @@ DEFAULT_ROLES = ["Property Manager", "Head of Accounting", "AP", "AR", "Leasing"
 def init():
     with tx() as c:
         c.executescript(SCHEMA)
-        for table, col, typ in [("projects", "description", "TEXT"), ("projects", "property", "TEXT"),
+        for table, col, typ in [("projects", "is_general", "INTEGER NOT NULL DEFAULT 0"), ("projects", "description", "TEXT"), ("projects", "property", "TEXT"),
                                 ("projects", "client", "TEXT"), ("tasks", "role_id", "INTEGER"),
                                 ("template_items", "default_role_id", "INTEGER")]:
             if col not in {r[1] for r in c.execute(f"PRAGMA table_info({table})")}:
@@ -37,6 +37,19 @@ def init():
         if not c.execute("SELECT 1 FROM project_roles").fetchone():
             c.executemany("INSERT INTO project_roles(name, position) VALUES(?,?)",
                           [(n, i) for i, n in enumerate(DEFAULT_ROLES)])
+
+
+# ---------- tasks without a project ----------
+
+def general_project_id() -> int:
+    """Tasks that don't belong to any project live in one hidden 'No project' bucket (is_general=1)."""
+    with tx() as c:
+        r = c.execute("SELECT id FROM projects WHERE is_general=1").fetchone()
+        if r:
+            c.execute("UPDATE projects SET status='active' WHERE id=?", (r["id"],))
+            return r["id"]
+        return c.execute("INSERT INTO projects(name, start_date, status, is_general) VALUES('No project', date('now'), 'active', 1)"
+                         ).lastrowid
 
 
 # ---------- roles ----------
