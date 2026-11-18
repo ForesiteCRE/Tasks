@@ -4,7 +4,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -13,7 +13,6 @@ from .db import init_db, rows, tx
 
 logging.basicConfig(level=logging.INFO)
 REMINDER_HOUR = int(os.getenv("REMINDER_HOUR", "9"))
-WEBHOOK_SECRET = os.getenv("BLINK_WEBHOOK_SECRET", "")
 STATIC = os.path.join(os.path.dirname(__file__), "..", "static")
 
 
@@ -207,11 +206,40 @@ def task_updates(tid: int):
 
 # ---------- Blink ----------
 @app.post("/blink/webhook")
-def blink_webhook(msg: InboundMessage, x_webhook_secret: str = Header(default="")):
-    """Inbound chat message from Blink (directly, or via a relay such as Make/Zapier/tray.ai)."""
-    if WEBHOOK_SECRET and x_webhook_secret != WEBHOOK_SECRET:
-        raise HTTPException(401, "bad secret")
-    return {"reply": services.handle_inbound(msg.blink_user_id, msg.text)}
+async def blink_webhook(request: Request, background: BackgroundTasks):
+    """Webhook URL for the Blink App Identity. Subscribe to `blink.chat.message-sent`."""
+    raw = await request.body()
+    if not blink.verify_webhook(raw, request.headers):
+        raise HTTPException(401, "invalid signature")
+    event = await request.json()
+    if event.get("@type") == "blink.chat.message-sent":
+        mid = event.get("detail", {}).get("message_id", {})
+        background.add_task(_process_chat_message, mid.get("chat_id"), mid.get("local_message_id"))
+    return {"ok": True}  # ack fast; Blink retries slow/failed deliveries
+
+
+def _process_chat_message(chat_id: str, message_id: str):
+    try:
+        msg = blink.get_message(chat_id, message_id)
+    except Exception:
+        logging.exception("couldn't fetch Blink message %s/%s", chat_id, message_id)
+        return
+    sender = msg.get("sender", {})
+    if sender.get("@type") != "user":  # ignore our own (and other apps') messages
+        return
+    user_id = sender.get("user_id")
+    with tx() as c:
+        u = c.execute("SELECT blink_chat_id FROM users WHERE blink_user_id=?", (user_id,)).fetchone()
+    # Only act on the person's 1:1 chat with the bot, not group chats the app was /addapp'ed to
+    if u and u["blink_chat_id"] and u["blink_chat_id"] != chat_id:
+        return
+    if u and not u["blink_chat_id"]:
+        with tx() as c:
+            c.execute("UPDATE users SET blink_chat_id=? WHERE blink_user_id=?", (chat_id, user_id))
+    text = blink.message_text(msg)
+    if text:
+        services.handle_inbound(user_id, text)
+
 
 @app.post("/api/blink/simulate")
 def blink_simulate(msg: InboundMessage):

@@ -28,12 +28,20 @@ Open http://localhost:8000 and use **Blink chat (simulator)** to test.
   waiting on Joe for CAM") is mapped onto the person's tasks by Claude.
 - Web checkboxes and Blink updates share one history (`task_updates`).
 
-## Connecting to real Blink
-1. In Blink admin, create an app/integration and generate an API token → `BLINK_API_TOKEN`.
-2. Confirm the "send message" endpoint & payload at developer.joinblink.com and set
-   `BLINK_SEND_MESSAGE_PATH` / adjust `app/blink.py::send_dm`.
-3. Route inbound DMs to `POST /blink/webhook` with body `{"blink_user_id","text"}` and header
-   `X-Webhook-Secret`. If Blink can't push webhooks directly, use a relay (Make / tray.ai have Blink
-   connectors) or poll the "list chat messages" endpoint.
-4. Fill each person's Blink user ID on the People tab.
-5. Deploy somewhere always-on (the scheduler runs in-process every 10 min).
+## Connecting to real Blink (Chat API, App Identity)
+Uses Blink's Chat API: https://developer.joinblink.com/docs/using-chat-api
+
+1. **Blink Admin portal → Manage Apps → Created Apps → your App Identity.** Copy into `.env`:
+   - `BLINK_CLIENT_ID` (the `aid-…` id), `BLINK_CLIENT_SECRET`, `BLINK_WEBHOOK_SECRET`.
+2. **Webhook URL** on the App Identity → `https://<your-server>/blink/webhook`, subscribed to the
+   **Chat message sent** event. Requests are signature-checked (Hook0 `X-Signature`); unsigned ones get 401.
+3. **People tab:** enter each person's Blink user id (`u-…`; Admin portal → user page, it's in the URL).
+4. The app opens a private 1:1 chat with each person automatically the first time it messages them.
+5. Deploy somewhere always-on with HTTPS (the scheduler runs in-process every 10 min).
+
+How it flows:
+```
+reminder/assignment ─► POST /oidc/token ─► POST /api/platform/chats (1:1, untitled = reused)
+                                           └► POST /chats/{id}/messages  ──► user's Blink chat
+user replies in Blink ─► webhook blink.chat.message-sent ─► GET message ─► update task ─► reply
+```

@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
     email TEXT,
-    blink_user_id TEXT UNIQUE          -- Blink user id used for DMs
+    blink_user_id TEXT UNIQUE,         -- Blink user id (u-…)
+    blink_chat_id TEXT                 -- cached 1:1 chat with the app (c-…)
 );
 
 -- Reusable checklist ("Monthly Rent Roll", "New Listing Launch", ...)
@@ -101,6 +102,9 @@ def tx():
 def init_db():
     with tx() as c:
         c.executescript(SCHEMA)
+        cols = {r[1] for r in c.execute("PRAGMA table_info(users)")}
+        if "blink_chat_id" not in cols:  # migrate DBs created before this column existed
+            c.execute("ALTER TABLE users ADD COLUMN blink_chat_id TEXT")
 
 
 def rows(cur) -> list[dict]:
