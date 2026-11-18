@@ -209,6 +209,61 @@ def load(me_id: int) -> dict:
             with tx() as c:
                 m["properties"] += [r[0] for r in c.execute("SELECT id FROM properties") if r[0] not in before and r[0] not in m["properties"]]
 
+        # --- vendors: ratings, current/past use at properties, one on a project
+        from . import vendors as V
+        if hq and hq["property_id"]:
+            hq_id = hq["property_id"]
+            fred = properties.property_for_address("4500 Fredericksburg Rd, San Antonio, TX")
+            res = properties.property_for_address("8800 Research Blvd, Austin, TX")
+            m["vendors"] = []
+            def vend(name, trades, contact, phone, notes=""):
+                with tx() as c:
+                    r = c.execute("SELECT id FROM vendors WHERE lower(name)=lower(?)", (name,)).fetchone()
+                if r:
+                    return r["id"]
+                vid = V.create({"name": name, "trades": trades, "contact_name": contact, "phone": phone, "notes": notes}, me_id)
+                m["vendors"].append(vid)
+                return vid
+            green = vend("Green Leaf Landscaping", ["Landscaping"], "Marco Ruiz", "(210) 555-0301", "Weekly service; irrigation checks included.")
+            lone = vend("Lone Star Lawn Care", ["Landscaping"], "Dale Pruitt", "(210) 555-0302")
+            cps = vend("CPS Energy", ["Utilities – Electric", "Utilities – Gas"], "Commercial accounts", "(210) 353-2222")
+            saws = vend("SAWS", ["Utilities – Water"], "Commercial service", "(210) 704-7297")
+            wm = vend("Waste Management", ["Trash / recycling"], "Kim Tran", "(210) 555-0305", "2x weekly pickup, 8yd containers.")
+            wash = vend("Alamo Power Wash", ["Power washing"], "Jess Ortega", "(210) 555-0306", "Quarterly storefronts + sidewalks.")
+            roof = vend("Hill Country Roofing", ["Roofing"], "Brian Cole", "(210) 555-0307")
+            hvac = vend("Cool Breeze HVAC", ["HVAC"], "Tony Vega", "(512) 555-0308")
+            hvac2 = vend("Alamo Air Mechanical", ["HVAC"], "Rita Shah", "(210) 555-0309", "Preventive maintenance contracts; 24/7 line.")
+            pest = vend("Bexar Pest Pros", ["Pest control"], "Luis Garza", "(210) 555-0310")
+            for prop_id, trade, vid in [(hq_id, "Landscaping", lone), (hq_id, "Landscaping", green), (hq_id, "Utilities – Electric", cps),
+                                        (hq_id, "Utilities – Gas", cps), (hq_id, "Utilities – Water", saws), (hq_id, "Trash / recycling", wm),
+                                        (hq_id, "Power washing", wash), (hq_id, "Roofing", roof), (hq_id, "HVAC", hvac2),
+                                        (hq_id, "Pest control", pest), (fred, "Landscaping", green), (fred, "HVAC", hvac),
+                                        (res, "HVAC", hvac), (res, "Power washing", wash)]:
+                if prop_id:
+                    V.set_property_vendor(prop_id, trade, vid, me_id)
+            with tx() as c:   # Lone Star was replaced by Green Leaf in March
+                c.execute("UPDATE property_vendors SET started='2024-04-01', ended='2026-03-15' WHERE vendor_id=? AND property_id=?", (lone, hq_id))
+                c.execute("UPDATE property_vendors SET started='2026-03-16' WHERE vendor_id=? AND property_id=?", (green, hq_id))
+                c.execute("UPDATE property_vendors SET started='2025-01-10' WHERE property_id=? AND started=?", (hq_id, date.today().isoformat()))
+            for vid, who, stars, note, prop_id in [
+                    (green, "Alex Rivera", 5, "Fixed the irrigation leak same day, beds look great.", hq_id),
+                    (green, "Sam Patel", 5, "Reliable every week; photos after each visit.", fred),
+                    (green, None, 4, "Slightly pricier but worth it.", hq_id),
+                    (lone, "Alex Rivera", 2, "Missed two mowing visits in July and slow to call back.", hq_id),
+                    (lone, None, 3, "OK on price, inconsistent crews.", hq_id),
+                    (wash, "Maria Garza", 5, "Storefronts spotless, worked after hours as asked.", hq_id),
+                    (wash, "Sam Patel", 5, "", res),
+                    (wm, "Jordan Lee (demo)", 4, "Billing errors twice this year but service is fine.", hq_id),
+                    (roof, None, 4, "Good leak repair; report with photos.", hq_id),
+                    (hvac, "Sam Patel", 1, "Billed for a compressor replacement that wasn't done. Disputed.", res),
+                    (hvac, "Alex Rivera", 3, "Fine for small calls.", fred),
+                    (hvac2, "Maria Garza", 5, "PM visits on schedule, clear quotes.", hq_id),
+                    (pest, None, 4, "", hq_id)]:
+                uid = ids.get(who.replace(" (demo)", "")) if who else me_id
+                V.add_review(vid, uid, stars, note, prop_id)
+            if onb and roof:
+                V.add_project_vendor(onb, roof, "Roofing", "Roof inspection before takeover", me_id)
+
         # --- a monthly recurring setup (paused, so it doesn't create real projects)
         with tx() as c:
             tpl_id = c.execute("SELECT id FROM templates WHERE name='Month-End Close'").fetchone()
@@ -241,6 +296,11 @@ def remove() -> dict:
     from . import properties
     for did in m.get("dates", []):
         properties.delete_date(did)
+    with tx() as c:
+        for vid in m.get("vendors", []):
+            for t in ("vendor_reviews", "property_vendors", "project_vendors"):
+                c.execute(f"DELETE FROM {t} WHERE vendor_id=?", (vid,))
+            c.execute("DELETE FROM vendors WHERE id=?", (vid,))
     for pid in m.get("properties", []):   # property pages that only existed because of the sample projects
         with tx() as c:
             empty = not c.execute("SELECT 1 FROM projects WHERE property_id=?", (pid,)).fetchone()

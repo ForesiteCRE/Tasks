@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import (audit, auth, automations, blink, chat, closeboard, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
+from . import (audit, auth, automations, blink, chat, closeboard, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
                starter_templates, team, timing, tpl)
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
@@ -419,6 +419,7 @@ def list_projects():
                    WHERE project_id=? ORDER BY position,id""", (p["id"],)))
     for p in ps:
         p["team"] = team.project_team(p["id"])
+        p["vendors"] = vendors.project_vendors(p["id"])
     return ps
 
 @app.post("/api/projects")
@@ -1125,6 +1126,184 @@ def patch_property_contact(cid: int, body: ContactIn, request: Request):
 def delete_property_contact(cid: int, request: Request):
     _require_manager(request)
     properties.delete_contact(cid)
+    return {"ok": True}
+
+
+# ---------- vendors ----------
+
+def _can_assign(request: Request, property_id: int | None = None, project_id: int | None = None) -> bool:
+    """Managers, or anyone on the property's (or project's) team."""
+    me = auth.current_user(request) or {}
+    if auth.at_least(me, "manager"):
+        return True
+    with tx() as c:
+        if project_id:
+            if c.execute("SELECT 1 FROM project_team WHERE project_id=? AND user_id=?", (project_id, me.get("id"))).fetchone():
+                return True
+            r = c.execute("SELECT property_id FROM projects WHERE id=?", (project_id,)).fetchone()
+            property_id = r["property_id"] if r else None
+        return bool(property_id and c.execute("SELECT 1 FROM property_team WHERE property_id=? AND user_id=?",
+                                              (property_id, me.get("id"))).fetchone())
+
+
+class VendorIn(BaseModel):
+    name: str | None = None
+    trades: list[str] | None = None
+    contact_name: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    website: str | None = None
+    notes: str | None = None
+    archived: bool | None = None
+
+class ReviewIn(BaseModel):
+    stars: int
+    note: str | None = None
+    property_id: int | None = None
+    project_id: int | None = None
+
+class PropVendorIn(BaseModel):
+    trade: str
+    vendor_id: int | None = None
+    replace: bool = True
+    notes: str | None = None
+
+class ProjVendorIn(BaseModel):
+    vendor_id: int
+    trade: str | None = None
+    notes: str | None = None
+
+
+@app.get("/api/vendors")
+def list_vendors(trade: str | None = None, q: str | None = None, archived: bool = False):
+    return {"vendors": vendors.list_all(trade, q, archived), "trades": vendors.TRADES}
+
+
+@app.post("/api/vendors")
+def create_vendor(body: VendorIn, request: Request):
+    try:
+        vid = vendors.create(body.model_dump(), _me_id(request))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    audit.log(_me_id(request), "added vendor", "vendor", vid, body.name)
+    return {"id": vid}
+
+
+@app.get("/api/vendors/{vid}")
+def get_vendor(vid: int):
+    v = vendors.get(vid)
+    if not v:
+        raise HTTPException(404, "Vendor not found")
+    return v
+
+
+@app.patch("/api/vendors/{vid}")
+def patch_vendor(vid: int, body: VendorIn, request: Request):
+    me = auth.current_user(request) or {}
+    v = vendors.get(vid)
+    if not v:
+        raise HTTPException(404, "Vendor not found")
+    if not auth.at_least(me, "manager") and v["created_by"] != me.get("id"):
+        raise HTTPException(403, "Only managers (or whoever added this vendor) can edit it.")
+    try:
+        vendors.update(vid, body.model_dump(exclude_unset=True))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+@app.post("/api/vendors/{vid}/reviews")
+def review_vendor(vid: int, body: ReviewIn, request: Request):
+    try:
+        rid = vendors.add_review(vid, _me_id(request), body.stars, body.note, body.property_id, body.project_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    v = vendors.get(vid)
+    audit.log(_me_id(request), f"rated vendor {body.stars}★", "vendor", vid, v["name"], body.note)
+    return {"id": rid}
+
+
+@app.delete("/api/vendor-reviews/{rid}")
+def delete_review(rid: int, request: Request):
+    me = auth.current_user(request) or {}
+    if not auth.at_least(me, "manager") and vendors.review_owner(rid) != me.get("id"):
+        raise HTTPException(403, "You can only remove your own reviews.")
+    vendors.delete_review(rid)
+    return {"ok": True}
+
+
+@app.get("/api/properties/{pid}/vendors")
+def get_property_vendors(pid: int):
+    return vendors.property_vendors(pid)
+
+
+@app.put("/api/properties/{pid}/vendors")
+def set_property_vendor(pid: int, body: PropVendorIn, request: Request):
+    if not _can_assign(request, property_id=pid):
+        raise HTTPException(403, "Only managers or people on this property's team can change its vendors.")
+    vendors.set_property_vendor(pid, body.trade, body.vendor_id, _me_id(request), body.notes, body.replace)
+    p = properties.get(pid)
+    v = vendors.get(body.vendor_id) if body.vendor_id else None
+    audit.log(_me_id(request), "vendor set" if v else "vendor ended", "property", pid, p["name"] if p else None,
+              f"{body.trade}: {v['name'] if v else 'none'}")
+    return {"ok": True}
+
+
+@app.post("/api/properties/{pid}/vendor-slots")
+def add_vendor_slot(pid: int, body: PropVendorIn, request: Request):
+    if not _can_assign(request, property_id=pid):
+        raise HTTPException(403, "Only managers or people on this property's team can change its vendors.")
+    try:
+        vendors.add_slot(pid, body.trade)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+@app.post("/api/property-vendors/{pvid}/end")
+def end_property_vendor(pvid: int, request: Request):
+    with tx() as c:
+        r = c.execute("SELECT property_id FROM property_vendors WHERE id=?", (pvid,)).fetchone()
+    if not r or not _can_assign(request, property_id=r["property_id"]):
+        raise HTTPException(403, "Only managers or people on this property's team can change its vendors.")
+    vendors.end_property_vendor(pvid)
+    return {"ok": True}
+
+
+@app.delete("/api/property-vendors/{pvid}")
+def delete_property_vendor(pvid: int, request: Request):
+    _require_manager(request)
+    vendors.remove_property_vendor(pvid)
+    return {"ok": True}
+
+
+@app.get("/api/projects/{pid}/vendors")
+def get_project_vendors(pid: int):
+    return vendors.project_vendors(pid)
+
+
+@app.post("/api/projects/{pid}/vendors")
+def add_project_vendor(pid: int, body: ProjVendorIn, request: Request):
+    if not _can_assign(request, project_id=pid):
+        raise HTTPException(403, "Only managers or people on this project's team can assign vendors.")
+    try:
+        rid = vendors.add_project_vendor(pid, body.vendor_id, body.trade, body.notes, _me_id(request))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    with tx() as c:
+        pj = c.execute("SELECT name FROM projects WHERE id=?", (pid,)).fetchone()
+    audit.log(_me_id(request), "vendor assigned", "project", pid, pj["name"] if pj else None,
+              f"{body.trade + ': ' if body.trade else ''}{vendors.get(body.vendor_id)['name']}")
+    return {"id": rid}
+
+
+@app.delete("/api/project-vendors/{pvid}")
+def remove_project_vendor(pvid: int, request: Request):
+    with tx() as c:
+        r = c.execute("SELECT project_id FROM project_vendors WHERE id=?", (pvid,)).fetchone()
+    if not r or not _can_assign(request, project_id=r["project_id"]):
+        raise HTTPException(403, "Only managers or people on this project's team can change its vendors.")
+    vendors.remove_project_vendor(pvid)
     return {"ok": True}
 
 

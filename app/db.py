@@ -174,6 +174,8 @@ def _init_extras():
     photos.init()
     recur.init()
     properties.init()   # after photos (uses projects.photo_path)
+    from . import vendors
+    vendors.init()
 
 
 def get_setting(key: str) -> str | None:

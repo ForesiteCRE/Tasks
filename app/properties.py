@@ -278,6 +278,8 @@ def delete(pid: int, keep_files: bool = False):
         c.executemany("DELETE FROM critical_date_alerts WHERE date_id=?", [(i,) for i in ids])
         c.execute("DELETE FROM critical_dates WHERE property_id=?", (pid,))
         c.execute("DELETE FROM property_contacts WHERE property_id=?", (pid,))
+        c.execute("DELETE FROM property_vendors WHERE property_id=?", (pid,))
+        c.execute("DELETE FROM property_vendor_slots WHERE property_id=?", (pid,))
         for d in c.execute("SELECT path FROM property_docs WHERE property_id=?", (pid,)).fetchall():
             if not keep_files:   # kept while the page sits in Recently deleted
                 _remove_file(d["path"])
@@ -352,10 +354,15 @@ def get(pid: int) -> dict | None:
             team_by_person[x["id"]]["roles"].append(x["role"])
     photo = next((pr for pr in projects if pr["photo_path"]), projects[0] if projects else None)
     return {**p, "projects": projects, "tasks": tasks, "team": list(team_by_person.values()), "dates": dates,
-            "roles": team_list(pid), "contacts": contacts(pid), "docs": docs(pid),
+            "roles": team_list(pid), "contacts": contacts(pid), "docs": docs(pid), "vendors": _vendors(pid),
             "insurance": _insurance_status_id(pid), "offered": OFFERED, "contact_roles": CONTACT_ROLES,
             "photo_project_id": photo["id"] if photo else None, "photo_path": photo["photo_path"] if photo else None,
             "kinds": KINDS}
+
+
+def _vendors(pid: int) -> dict:
+    from . import vendors
+    return vendors.property_vendors(pid)
 
 
 # ---------- critical dates ----------

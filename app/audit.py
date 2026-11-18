@@ -104,6 +104,8 @@ def snapshot_property(property_id: int) -> dict:
                 "property_contacts": _all(c, "SELECT * FROM property_contacts WHERE property_id=?", (property_id,)),
                 "property_docs": _all(c, "SELECT * FROM property_docs WHERE property_id=?", (property_id,)),
                 "property_team": _all(c, "SELECT * FROM property_team WHERE property_id=?", (property_id,)),
+                "property_vendors": _all(c, "SELECT * FROM property_vendors WHERE property_id=?", (property_id,)),
+                "property_vendor_slots": _all(c, "SELECT * FROM property_vendor_slots WHERE property_id=?", (property_id,)),
                 "linked_projects": [r[0] for r in c.execute("SELECT id FROM projects WHERE property_id=?", (property_id,))]}
 
 
@@ -175,7 +177,9 @@ def restore(trash_id: int, user_id) -> dict:
             if c.execute("SELECT 1 FROM properties WHERE norm=?", (p["norm"],)).fetchone():
                 raise ValueError("A property with that address exists again — restore isn't possible.")
             new_id = _insert(c, "properties", p)
-            for table in ("critical_dates", "property_contacts", "property_docs"):
+            for r in snap.get("property_vendor_slots", []):
+                c.execute("INSERT OR IGNORE INTO property_vendor_slots(property_id, trade) VALUES(?,?)", (new_id, r["trade"]))
+            for table in ("critical_dates", "property_contacts", "property_docs", "property_vendors"):
                 for r in snap.get(table, []):
                     _insert(c, table, {**r, "property_id": new_id, **({"task_id": r.get("task_id")} if table == "critical_dates" else {})})
             for r in snap.get("property_team", []):

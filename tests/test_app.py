@@ -887,3 +887,47 @@ def test_month_end_close_board(mgr):
     assert board["totals"]["Post receipts"] == 1 and board["prev"] == "2030-02" and board["next"] == "2030-04"
     assert [m["label"] for m in board["missing"]] == ["30 Close St"]                 # closed last month, not this month
     assert mgr.get("/api/close-board", params={"month": "March"}).status_code == 400
+
+
+def test_vendors_ratings_properties_and_projects(mgr, staff):
+    prop = ids(mgr.post("/api/properties", json={"address": "40 Vendor Ln, San Antonio, TX"}))["id"]
+    green = ids(mgr.post("/api/vendors", json={"name": "Green Thumb Landscaping", "trades": ["Landscaping"], "phone": "210-555-0101"}))["id"]
+    brown = ids(staff.post("/api/vendors", json={"name": "Brown Lawn Co", "trades": ["Landscaping"]}))["id"]   # staff can add
+    assert mgr.post("/api/vendors", json={"name": "green thumb landscaping"}).status_code == 400              # no duplicates
+    # reviews → badges
+    ids(mgr.post(f"/api/vendors/{green}/reviews", json={"stars": 5, "note": "Always on time", "property_id": prop}))
+    ids(staff.post(f"/api/vendors/{green}/reviews", json={"stars": 4, "note": "Good edging"}))
+    ids(staff.post(f"/api/vendors/{brown}/reviews", json={"stars": 2, "note": "Missed two visits in June"}))
+    assert mgr.post(f"/api/vendors/{brown}/reviews", json={"stars": 7}).status_code == 400
+    vs = {v["name"]: v for v in ids(mgr.get("/api/vendors", params={"trade": "Landscaping"}))["vendors"]}
+    assert vs["Green Thumb Landscaping"]["avg"] == 4.5 and vs["Green Thumb Landscaping"]["badge"] == "good"
+    assert vs["Brown Lawn Co"]["badge"] == "bad" and "Missed two visits" in vs["Brown Lawn Co"]["warning"]
+    # property slot: Brown first, then swapped to Green → Brown becomes 'previously used'
+    assert staff.put(f"/api/properties/{prop}/vendors", json={"trade": "Landscaping", "vendor_id": brown}).status_code == 403
+    ids(mgr.put(f"/api/properties/{prop}/vendors", json={"trade": "Landscaping", "vendor_id": brown}))
+    ids(mgr.put(f"/api/properties/{prop}/vendors", json={"trade": "Landscaping", "vendor_id": green}))
+    slot = [s for s in ids(mgr.get(f"/api/properties/{prop}"))["vendors"]["slots"] if s["trade"] == "Landscaping"][0]
+    assert [c["vendor_name"] for c in slot["current"]] == ["Green Thumb Landscaping"]
+    assert [p["vendor_name"] for p in slot["past"]] == ["Brown Lawn Co"] and slot["past"][0]["ended"]
+    ids(mgr.put(f"/api/properties/{prop}/vendors", json={"trade": "Utilities – Electric", "vendor_id": green}))   # adds the trade
+    prof = ids(mgr.get(f"/api/vendors/{green}"))
+    assert "Utilities – Electric" in prof["trades"] and {p["status"] for p in prof["properties"]} == {"current"}
+    assert [p for p in prof["properties"] if p["trade"] == "Landscaping"][0]["avg_here"] == 5
+    assert ids(mgr.get(f"/api/vendors/{brown}"))["properties"][0]["status"] == "past"
+    # someone on the property's team may change its vendors
+    with tx() as c:
+        sam = c.execute("SELECT id FROM users WHERE blink_user_id='u-sam'").fetchone()["id"]
+    ids(mgr.put(f"/api/properties/{prop}/team/{S['pm']}", json={"user_id": sam}))
+    ids(staff.post(f"/api/properties/{prop}/vendor-slots", json={"trade": "Gutter cleaning"}))
+    assert any(s["trade"] == "Gutter cleaning" for s in ids(mgr.get(f"/api/properties/{prop}/vendors"))["slots"])
+    # projects
+    pj = ids(mgr.post("/api/projects", json={"name": "Vendor Ln roof", "property": "40 Vendor Ln, San Antonio, TX"}))["id"]
+    roofer = ids(mgr.post("/api/vendors", json={"name": "Top Roofing", "trades": ["Roofing"]}))["id"]
+    pv = ids(staff.post(f"/api/projects/{pj}/vendors", json={"vendor_id": roofer, "trade": "Roofing"}))["id"]   # sam is PM there
+    proj = [p for p in ids(mgr.get("/api/projects")) if p["id"] == pj][0]
+    assert proj["vendors"][0]["vendor_name"] == "Top Roofing"
+    assert ids(mgr.get(f"/api/vendors/{roofer}"))["projects"][0]["project_id"] == pj
+    ids(staff.delete(f"/api/project-vendors/{pv}"))
+    # reviews: only author or a manager can delete
+    rid = ids(mgr.get(f"/api/vendors/{brown}"))["review_list"][0]["id"]
+    assert ids(staff.delete(f"/api/vendor-reviews/{rid}"))["ok"]
