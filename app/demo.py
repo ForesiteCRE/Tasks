@@ -263,6 +263,14 @@ def load(me_id: int) -> dict:
                 V.add_review(vid, uid, stars, note, prop_id, price=price)
             if onb and roof:
                 V.add_project_vendor(onb, roof, "Roofing", "Roof inspection before takeover", me_id)
+            # certificates of insurance at 777 E Sonterra: valid, expiring soon, not naming the property; rest missing
+            sample = b"%PDF-1.4\n% sample certificate of insurance (demo)\n"
+            for vid, days, named, carrier in [(green, 240, 1, "Travelers"), (wash, 20, 1, "Hartford"), (wm, 300, 0, "Zurich"),
+                                              (hvac2, 150, 1, "Liberty Mutual")]:
+                k = V.save_coi(hq_id, vid, sample, "ACORD 25 certificate (sample).pdf", "application/pdf", me_id, read=False)
+                V.set_coi(k["id"], {"expires": (date.today() + timedelta(days=days)).isoformat(), "insured_ok": named,
+                                    "carrier": carrier, "note": "Sample certificate" + ("" if named else
+                                    " — owner listed only as certificate holder, not additional insured")})
 
         # --- a monthly recurring setup (paused, so it doesn't create real projects)
         with tx() as c:
@@ -298,7 +306,11 @@ def remove() -> dict:
         properties.delete_date(did)
     with tx() as c:
         for vid in m.get("vendors", []):
-            for t in ("vendor_reviews", "property_vendors", "project_vendors"):
+            for k in c.execute("SELECT path, date_id FROM vendor_cois WHERE vendor_id=?", (vid,)).fetchall():
+                properties._remove_file(k["path"])
+                if k["date_id"]:
+                    c.execute("DELETE FROM critical_dates WHERE id=?", (k["date_id"],))
+            for t in ("vendor_reviews", "property_vendors", "project_vendors", "vendor_cois"):
                 c.execute(f"DELETE FROM {t} WHERE vendor_id=?", (vid,))
             c.execute("DELETE FROM vendors WHERE id=?", (vid,))
     for pid in m.get("properties", []):   # property pages that only existed because of the sample projects

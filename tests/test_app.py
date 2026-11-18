@@ -934,3 +934,45 @@ def test_vendors_ratings_properties_and_projects(mgr, staff):
     # reviews: only author or a manager can delete
     rid = ids(mgr.get(f"/api/vendors/{brown}"))["review_list"][0]["id"]
     assert ids(staff.delete(f"/api/vendor-reviews/{rid}"))["ok"]
+
+
+def test_vendor_coi_per_property(mgr, staff):
+    import base64
+    from datetime import date, timedelta
+    a = ids(mgr.post("/api/properties", json={"address": "50 Coi Ave, San Antonio, TX", "client": "Coi Owner LLC"}))["id"]
+    b = ids(mgr.post("/api/properties", json={"address": "60 Coi Ave, San Antonio, TX"}))["id"]
+    v = ids(mgr.post("/api/vendors", json={"name": "Coi Roofing", "trades": ["Roofing"]}))["id"]
+    for p in (a, b):
+        ids(mgr.put(f"/api/properties/{p}/vendors", json={"trade": "Roofing", "vendor_id": v}))
+    slot = lambda p: [x for x in ids(mgr.get(f"/api/properties/{p}/vendors"))["slots"] if x["trade"] == "Roofing"][0]["current"][0]
+    assert slot(a)["coi"]["state"] == "missing"
+    exp = (date.today() + timedelta(days=200)).isoformat()
+    CLAUDE.append({"is_coi": True, "named_insured": "Coi Roofing LLC", "carrier": "Hartford", "expires": exp,
+                   "property_additional_insured": "yes", "foresite_additional_insured": "yes", "evidence": "AI: Coi Owner LLC"})
+    doc = {"filename": "coi.pdf", "content_type": "application/pdf", "data_b64": base64.b64encode(b"%PDF coi").decode()}
+    out = ids(mgr.post(f"/api/properties/{a}/vendors/{v}/coi", json=doc))
+    assert out["status"]["state"] == "ok" and out["status"]["expires"] == exp
+    assert slot(a)["coi"]["state"] == "ok" and slot(b)["coi"]["state"] == "missing"          # one property's COI ≠ another's
+    dates = [d for d in ids(mgr.get(f"/api/properties/{a}"))["dates"] if d["kind"] == "vendor_coi"]
+    assert len(dates) == 1 and dates[0]["date"] == exp and dates[0]["remind_days"] == "30,7"
+    # a certificate that doesn't name the property
+    CLAUDE.append({"is_coi": True, "named_insured": "Coi Roofing LLC", "carrier": "Hartford", "expires": exp,
+                   "property_additional_insured": "no", "foresite_additional_insured": "unclear", "evidence": "Holder only"})
+    out_b = ids(mgr.post(f"/api/properties/{b}/vendors/{v}/coi", json=doc))
+    assert out_b["status"]["state"] == "not_named"
+    ids(mgr.patch(f"/api/vendor-cois/{out_b['id']}", json={"insured_ok": True}))           # a person checked the endorsement
+    assert slot(b)["coi"]["state"] == "ok"
+    # replacing the certificate retires the old expiry reminder; staff can't upload unless on the property team
+    CLAUDE.append({"is_coi": True, "named_insured": "x", "carrier": "x", "expires": (date.today() + timedelta(days=400)).isoformat(),
+                   "property_additional_insured": "yes", "foresite_additional_insured": "yes", "evidence": ""})
+    ids(mgr.post(f"/api/properties/{a}/vendors/{v}/coi", json=doc))
+    open_coi = [d for d in ids(mgr.get(f"/api/properties/{a}"))["dates"] if d["kind"] == "vendor_coi" and d["status"] == "open"]
+    assert len(open_coi) == 1 and open_coi[0]["date"] != exp
+    assert staff.post(f"/api/properties/{a}/vendors/{v}/coi", json=doc).status_code == 403
+    assert mgr.get(f"/api/vendor-cois/{out['id']}").content == b"%PDF coi"
+    prof = ids(mgr.get(f"/api/vendors/{v}"))
+    assert {p["coi"]["state"] for p in prof["properties"]} == {"ok"}
+    # stop using the vendor → their COI reminders stop too
+    pv = slot(a)["id"]
+    ids(mgr.post(f"/api/property-vendors/{pv}/end"))
+    assert not [d for d in ids(mgr.get(f"/api/properties/{a}"))["dates"] if d["kind"] == "vendor_coi" and d["status"] == "open"]

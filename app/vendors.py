@@ -37,6 +37,11 @@ def init():
         c.execute("""CREATE TABLE IF NOT EXISTS project_vendors(
             id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL, vendor_id INTEGER NOT NULL, trade TEXT, notes TEXT,
             created_by INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now')))""")
+        c.execute("""CREATE TABLE IF NOT EXISTS vendor_cois(
+            id INTEGER PRIMARY KEY, property_id INTEGER NOT NULL, vendor_id INTEGER NOT NULL, filename TEXT NOT NULL,
+            path TEXT NOT NULL, content_type TEXT, size INTEGER, expires TEXT, insured_ok INTEGER, foresite_ok INTEGER,
+            carrier TEXT, note TEXT, date_id INTEGER, verified_by INTEGER, uploaded_by INTEGER,
+            uploaded_at TEXT NOT NULL DEFAULT (datetime('now')))""")
         c.execute("""CREATE TABLE IF NOT EXISTS property_vendor_slots(
             property_id INTEGER NOT NULL, trade TEXT NOT NULL, PRIMARY KEY(property_id, trade))""")
 
@@ -118,6 +123,8 @@ def get(vendor_id: int) -> dict | None:
                       (SELECT COUNT(*) FROM vendor_reviews r WHERE r.vendor_id=pv.vendor_id AND r.property_id=pv.property_id) AS reviews_here
                FROM property_vendors pv JOIN properties p ON p.id=pv.property_id WHERE pv.vendor_id=?
                ORDER BY pv.status='past', COALESCE(pv.ended, '9999') DESC, p.name""", (vendor_id,)))
+        for p in v["properties"]:
+            p["coi"] = coi_status(c, p["property_id"], vendor_id)
         v["projects"] = rows(c.execute(
             """SELECT pj.id AS project_id, pj.name AS project_name, pj.status, pvj.trade, pvj.notes, pvj.created_at
                FROM project_vendors pvj JOIN projects pj ON pj.id=pvj.project_id WHERE pvj.vendor_id=?
@@ -196,6 +203,9 @@ def property_vendors(property_id: int) -> dict:
             (property_id,)))
         for a in assigned:
             a.update({k: v for k, v in _stats(c, a["vendor_id"]).items() if k in ("avg", "reviews", "badge", "badge_label", "warning", "price", "price_label")})
+            a["coi"] = coi_status(c, property_id, a["vendor_id"]) if needs_coi(a["trade"]) else {"state": "na", "label": ""}
+            a["coi_count"] = c.execute("SELECT COUNT(*) FROM vendor_cois WHERE property_id=? AND vendor_id=?",
+                                       (property_id, a["vendor_id"])).fetchone()[0]
     slots = list(PROPERTY_SLOTS)
     for t in extra + [a["trade"] for a in assigned]:
         if t not in slots:
@@ -213,8 +223,12 @@ def set_property_vendor(property_id: int, trade: str, vendor_id: int | None, use
     today = date.today().isoformat()
     with tx() as c:
         if replace or vendor_id is None:
+            leaving = [r[0] for r in c.execute("""SELECT vendor_id FROM property_vendors WHERE property_id=? AND trade=?
+                                                  AND status='current' AND vendor_id IS NOT ?""", (property_id, trade, vendor_id))]
             c.execute("""UPDATE property_vendors SET status='past', ended=? WHERE property_id=? AND trade=? AND status='current'
                          AND vendor_id IS NOT ?""", (today, property_id, trade, vendor_id))
+            for old in leaving:
+                _stop_coi_reminders(c, property_id, old)
         if vendor_id:
             if not c.execute("""SELECT 1 FROM property_vendors WHERE property_id=? AND trade=? AND vendor_id=?
                                 AND status='current'""", (property_id, trade, vendor_id)).fetchone():
@@ -227,8 +241,21 @@ def set_property_vendor(property_id: int, trade: str, vendor_id: int | None, use
 
 def end_property_vendor(pv_id: int):
     with tx() as c:
+        r = c.execute("SELECT property_id, vendor_id FROM property_vendors WHERE id=?", (pv_id,)).fetchone()
         c.execute("UPDATE property_vendors SET status='past', ended=? WHERE id=? AND status='current'",
                   (date.today().isoformat(), pv_id))
+        if r:
+            _stop_coi_reminders(c, r["property_id"], r["vendor_id"])
+
+
+def _stop_coi_reminders(c, property_id: int, vendor_id: int):
+    """No longer working there → no more 'COI expires' reminders for that vendor at that property."""
+    if c.execute("""SELECT 1 FROM property_vendors WHERE property_id=? AND vendor_id=? AND status='current'""",
+                 (property_id, vendor_id)).fetchone():
+        return
+    c.execute("""UPDATE critical_dates SET status='handled', handled_at=date('now') WHERE status='open' AND id IN
+                 (SELECT date_id FROM vendor_cois WHERE property_id=? AND vendor_id=? AND date_id IS NOT NULL)""",
+              (property_id, vendor_id))
 
 
 def remove_property_vendor(pv_id: int):
@@ -270,3 +297,179 @@ def add_project_vendor(project_id: int, vendor_id: int, trade: str | None, notes
 def remove_project_vendor(pv_id: int):
     with tx() as c:
         c.execute("DELETE FROM project_vendors WHERE id=?", (pv_id,))
+
+
+# ---------- certificates of insurance, per vendor per property ----------
+
+COI_WARN_DAYS = 30
+
+
+def needs_coi(trade: str | None) -> bool:
+    """Utility companies don't give certificates of insurance; every other vendor working on site does."""
+    return not (trade or "").startswith("Utilities")
+
+
+def coi_status(c, property_id: int, vendor_id: int) -> dict:
+    """Latest COI this vendor gave for this property: valid / expiring / expired / not named / unverified / missing."""
+    d = c.execute("""SELECT * FROM vendor_cois WHERE property_id=? AND vendor_id=?
+                     ORDER BY COALESCE(expires,'') DESC, id DESC LIMIT 1""", (property_id, vendor_id)).fetchone()
+    if not d:
+        return {"state": "missing", "label": "No COI on file"}
+    d = dict(d)
+    today = date.today()
+    exp = date.fromisoformat(d["expires"]) if d["expires"] else None
+    if exp and exp < today:
+        state, label = "expired", f"COI expired {exp:%b %d, %Y}"
+    elif d["insured_ok"] == 0:
+        state, label = "not_named", "Property not named additional insured"
+    elif exp and (exp - today).days <= COI_WARN_DAYS:
+        state, label = "expiring", f"COI expires {exp:%b %d} ({(exp - today).days} days)"
+    elif d["insured_ok"] == 1 and exp:
+        state, label = "ok", f"COI valid until {exp:%b %d, %Y}"
+    else:
+        state, label = "unverified", "COI on file — not verified" + (f" (expires {exp:%b %d, %Y})" if exp else "")
+    return {"state": state, "label": label, "coi_id": d["id"], "expires": d["expires"], "insured_ok": d["insured_ok"],
+            "foresite_ok": d["foresite_ok"], "carrier": d["carrier"], "note": d["note"], "filename": d["filename"]}
+
+
+def cois(property_id: int, vendor_id: int) -> list[dict]:
+    with tx() as c:
+        return rows(c.execute("""SELECT k.*, u.name AS uploaded_by_name FROM vendor_cois k LEFT JOIN users u ON u.id=k.uploaded_by
+                                 WHERE property_id=? AND vendor_id=? ORDER BY id DESC""", (property_id, vendor_id)))
+
+
+COI_SCHEMA = {
+    "type": "object", "additionalProperties": False,
+    "required": ["is_coi", "named_insured", "carrier", "expires", "property_additional_insured", "foresite_additional_insured", "evidence"],
+    "properties": {
+        "is_coi": {"type": "boolean"},
+        "named_insured": {"type": "string", "description": "the vendor/insured company on the certificate"},
+        "carrier": {"type": "string", "description": "insurer(s), short"},
+        "expires": {"type": "string", "description": "EARLIEST expiration among the general liability / auto / umbrella / workers comp policies listed, YYYY-MM-DD; empty if none"},
+        "property_additional_insured": {"type": "string", "enum": ["yes", "no", "unclear"]},
+        "foresite_additional_insured": {"type": "string", "enum": ["yes", "no", "unclear"]},
+        "evidence": {"type": "string", "description": "the additional insured / certificate holder / description-of-operations wording you relied on, and anything missing"},
+    },
+}
+
+
+def read_coi(data: bytes, content_type: str, filename: str, prop: dict, vendor_name: str) -> dict | None:
+    from . import intake
+    if not intake.ai_enabled():
+        return None
+    import json
+    import anthropic
+    client = anthropic.Anthropic()
+    system = ("You check vendor certificates of insurance (ACORD 25 etc.) for a commercial property manager, Foresite Real Estate. "
+              "A vendor must name THIS property's owner (or the property itself) as ADDITIONAL INSURED — look at the Additional "
+              "Insured box/column (ADDL INSD), the Description of Operations / Locations box and any attached endorsements. Being "
+              "listed only as Certificate Holder is NOT additional insured; say 'unclear' if the ADDL INSD box is ticked but nobody "
+              "is named. Also report whether Foresite (Foresite Real Estate, Inc. / Foresite Commercial Real Estate) is named.")
+    try:
+        resp = client.beta.messages.create(
+            model=intake.MODEL, max_tokens=2000, system=system,
+            betas=["server-side-fallback-2026-07-01"], fallbacks="default",
+            output_config={"effort": "medium", "format": {"type": "json_schema", "schema": COI_SCHEMA}},
+            messages=[{"role": "user", "content": [
+                intake.document_block(data, content_type, filename),
+                {"type": "text", "text": f"Vendor: {vendor_name}\nProperty: {prop.get('name')} — {prop.get('address')}\n"
+                                         f"Property owner: {prop.get('client') or 'unknown'}\nToday: {date.today():%Y-%m-%d}"}]}],
+        )
+        if resp.stop_reason != "end_turn":
+            return None
+        return json.loads(next(b.text for b in resp.content if b.type == "text"))
+    except Exception:
+        import logging
+        logging.getLogger("vendors").exception("COI read failed")
+        return None
+
+
+def _pm_for(c, property_id: int):
+    r = c.execute("""SELECT pt.user_id FROM property_team pt JOIN project_roles r ON r.id=pt.role_id
+                     WHERE pt.property_id=? AND r.name='Property Manager'""", (property_id,)).fetchone()
+    return r["user_id"] if r else None
+
+
+def save_coi(property_id: int, vendor_id: int, data: bytes, filename: str, content_type: str, user_id=None,
+             read: bool = True) -> dict:
+    """Keep the COI for this property+vendor, have Claude check it, and track its expiry as a critical date."""
+    import os
+    import secrets
+    from . import properties
+    ext = os.path.splitext(filename or "")[1][:8].lower() or ".pdf"
+    name = f"coi-{property_id}-{vendor_id}-{secrets.token_hex(5)}{ext}"
+    with open(os.path.join(properties._doc_dir(), name), "wb") as f:
+        f.write(data)
+    with tx() as c:
+        prop = dict(c.execute("SELECT * FROM properties WHERE id=?", (property_id,)).fetchone())
+        vendor = c.execute("SELECT name FROM vendors WHERE id=?", (vendor_id,)).fetchone()
+        cid = c.execute("""INSERT INTO vendor_cois(property_id, vendor_id, filename, path, content_type, size, uploaded_by)
+                           VALUES(?,?,?,?,?,?,?)""", (property_id, vendor_id, filename or "certificate", name, content_type,
+                                                      len(data), user_id)).lastrowid
+    out = read_coi(data, content_type, filename, prop, vendor["name"]) if read else None
+    if out:
+        exp = None
+        try:
+            exp = date.fromisoformat((out.get("expires") or "")[:10]).isoformat()
+        except ValueError:
+            pass
+        yn = {"yes": 1, "no": 0}
+        set_coi(cid, {"expires": exp, "insured_ok": yn.get(out.get("property_additional_insured")),
+                      "foresite_ok": yn.get(out.get("foresite_additional_insured")),
+                      "carrier": out.get("carrier") or None,
+                      "note": out.get("evidence") or None}, user_id=None)
+    with tx() as c:
+        st = coi_status(c, property_id, vendor_id)
+    return {"id": cid, "read": out, "status": st}
+
+
+def set_coi(coi_id: int, fields: dict, user_id=None):
+    """Update expiry / verification (by Claude, or a person confirming), and keep the expiry critical date in step."""
+    from . import properties
+    sets = {k: fields[k] for k in ("expires", "insured_ok", "foresite_ok", "carrier", "note") if k in fields}
+    if "insured_ok" in sets and sets["insured_ok"] is not None:
+        sets["insured_ok"] = int(bool(sets["insured_ok"]))
+    if user_id and "insured_ok" in fields:
+        sets["verified_by"] = user_id
+    with tx() as c:
+        if sets:
+            c.execute(f"UPDATE vendor_cois SET {', '.join(k + '=?' for k in sets)} WHERE id=?", (*sets.values(), coi_id))
+        k = dict(c.execute("SELECT * FROM vendor_cois WHERE id=?", (coi_id,)).fetchone())
+        vendor = c.execute("SELECT name FROM vendors WHERE id=?", (k["vendor_id"],)).fetchone()["name"]
+        # earlier certificates' expiry reminders are no longer needed
+        for r in c.execute("""SELECT date_id FROM vendor_cois WHERE property_id=? AND vendor_id=? AND id!=? AND date_id IS NOT NULL""",
+                           (k["property_id"], k["vendor_id"], coi_id)).fetchall():
+            c.execute("UPDATE critical_dates SET status='handled', handled_at=date('now') WHERE id=? AND status='open'", (r[0],))
+        pm = _pm_for(c, k["property_id"])
+    if k["expires"]:
+        if k["date_id"]:
+            properties.update_date(k["date_id"], {"date": k["expires"]})
+        else:
+            did = properties.add_date(k["property_id"], {
+                "kind": "vendor_coi", "title": f"COI expires – {vendor}", "date": k["expires"], "assignee_id": pm,
+                "remind_days": "30,7", "notes": f"Get an updated certificate from {vendor} naming the property as additional insured."},
+                source="coi")
+            with tx() as c:
+                c.execute("UPDATE vendor_cois SET date_id=? WHERE id=?", (did, coi_id))
+
+
+def coi_file(coi_id: int):
+    import os
+    from . import properties
+    with tx() as c:
+        d = c.execute("SELECT * FROM vendor_cois WHERE id=?", (coi_id,)).fetchone()
+    if not d:
+        return None
+    path = os.path.join(properties._doc_dir(), os.path.basename(d["path"]))
+    return (dict(d), path) if os.path.exists(path) else None
+
+
+def delete_coi(coi_id: int):
+    from . import properties
+    with tx() as c:
+        d = c.execute("SELECT path, date_id FROM vendor_cois WHERE id=?", (coi_id,)).fetchone()
+        c.execute("DELETE FROM vendor_cois WHERE id=?", (coi_id,))
+    if d:
+        properties._remove_file(d["path"])
+        if d["date_id"]:
+            properties.delete_date(d["date_id"])

@@ -1279,6 +1279,64 @@ def delete_property_vendor(pvid: int, request: Request):
     return {"ok": True}
 
 
+@app.post("/api/properties/{pid}/vendors/{vid}/coi")
+def upload_vendor_coi(pid: int, vid: int, body: DocIn, request: Request):
+    """A vendor's certificate of insurance for THIS property (each property needs its own, naming it additional insured)."""
+    if not _can_assign(request, property_id=pid):
+        raise HTTPException(403, "Only managers or people on this property's team can upload vendor COIs.")
+    import base64
+    data = base64.b64decode(body.data_b64)
+    if len(data) > intake.MAX_DOC_BYTES:
+        raise HTTPException(413, "File too large (25 MB max).")
+    if not vendors.get(vid) or not properties.get(pid):
+        raise HTTPException(404, "Not found")
+    out = vendors.save_coi(pid, vid, data, body.filename, body.content_type, _me_id(request))
+    audit.log(_me_id(request), "vendor COI uploaded", "property", pid, vendors.get(vid)["name"], out["status"]["label"])
+    return out
+
+
+@app.get("/api/properties/{pid}/vendors/{vid}/cois")
+def list_vendor_cois(pid: int, vid: int):
+    return vendors.cois(pid, vid)
+
+
+@app.get("/api/vendor-cois/{cid}")
+def download_vendor_coi(cid: int):
+    got = vendors.coi_file(cid)
+    if not got:
+        raise HTTPException(404, "File not found")
+    d, path = got
+    return FileResponse(path, media_type=d["content_type"] or "application/octet-stream", filename=d["filename"])
+
+
+class CoiPatch(BaseModel):
+    expires: str | None = None
+    insured_ok: bool | None = None
+    foresite_ok: bool | None = None
+
+@app.patch("/api/vendor-cois/{cid}")
+def patch_vendor_coi(cid: int, body: CoiPatch, request: Request):
+    with tx() as c:
+        k = c.execute("SELECT property_id FROM vendor_cois WHERE id=?", (cid,)).fetchone()
+    if not k or not _can_assign(request, property_id=k["property_id"]):
+        raise HTTPException(403, "Only managers or people on this property's team can update vendor COIs.")
+    f = body.model_dump(exclude_unset=True)
+    if f.get("expires"):
+        try:
+            f["expires"] = date.fromisoformat(f["expires"][:10]).isoformat()
+        except ValueError:
+            raise HTTPException(400, "Expiration must be a date.")
+    vendors.set_coi(cid, f, _me_id(request))
+    return {"ok": True}
+
+
+@app.delete("/api/vendor-cois/{cid}")
+def delete_vendor_coi(cid: int, request: Request):
+    _require_manager(request)
+    vendors.delete_coi(cid)
+    return {"ok": True}
+
+
 @app.get("/api/projects/{pid}/vendors")
 def get_project_vendors(pid: int):
     return vendors.project_vendors(pid)

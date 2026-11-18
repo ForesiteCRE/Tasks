@@ -106,10 +106,12 @@ def _staff_allowed(request: Request) -> bool:
     # Task-level writes: each endpoint checks ownership / manager itself.
     if method == "DELETE" and re.fullmatch(r"/api/projects/\d+", path):
         return True   # delete_project itself only allows the project's creator (or a manager)
-    if re.fullmatch(r"/api/(properties|projects)/\d+/(vendors|vendor-slots)", path):
+    if re.fullmatch(r"/api/(properties|projects)/\d+/(vendors|vendor-slots)", path) or \
+            re.fullmatch(r"/api/properties/\d+/vendors/\d+/coi", path):
         return True   # vendor endpoints check property/project team membership themselves
     return path.startswith(("/api/tasks", "/api/checklist/", "/api/reminders", "/api/me/", "/api/critical-dates/",
-                             "/api/vendors", "/api/vendor-reviews/", "/api/property-vendors/", "/api/project-vendors/"))
+                             "/api/vendors", "/api/vendor-reviews/", "/api/property-vendors/", "/api/project-vendors/",
+                             "/api/vendor-cois/"))
 
 
 _PUBLIC_HOST = PUBLIC_URL.split("://")[-1].split("/")[0].lower()

@@ -28,6 +28,7 @@ KINDS = {
     "budget_due": "Annual budget due to owner",
     "cam_recon": "CAM reconciliation due",
     "loan": "Lender reporting / loan deadline",
+    "vendor_coi": "Vendor insurance (COI) expires",
     "mgmt_agreement": "Management agreement renewal",
     "inspection": "Inspection / permit / license",
     "other": "Other",
@@ -38,7 +39,7 @@ KINDS = {
 OFFERED = ["tax_protest", "tax_payment", "insurance_renewal", "owner_report", "budget_due", "cam_recon", "loan",
            "mgmt_agreement", "inspection", "other"]
 ICONS = {"tax_protest": "🏛", "tax_payment": "💵", "insurance_renewal": "☂️", "owner_report": "📊", "budget_due": "📒",
-         "cam_recon": "🧮", "loan": "🏦", "mgmt_agreement": "🤝", "inspection": "🔎", "other": "📌",
+         "cam_recon": "🧮", "loan": "🏦", "mgmt_agreement": "🤝", "inspection": "🔎", "other": "📌", "vendor_coi": "🧰",
          "lease_expiration": "📄", "option_notice": "⚑", "rent_increase": "📈", "coi_expiry": "🛡"}
 REPEATS = {"monthly": 1, "quarterly": 3, "yearly": 12}
 DOC_KINDS = {"insurance": "Property insurance", "mgmt_agreement": "Management agreement", "tax_notice": "Tax notice / appraisal",
@@ -311,6 +312,10 @@ def list_all() -> list[dict]:
                                ORDER BY date LIMIT 1""", (p["id"],)).fetchone()
             p["next_date"] = _date_row(dict(nxt), today) if nxt else None
             p["insurance"] = _insurance_status(c, p["id"])
+            from .vendors import coi_status
+            p["coi_issues"] = sum(1 for r in c.execute("""SELECT DISTINCT vendor_id FROM property_vendors WHERE property_id=?
+                                                          AND status='current' AND trade NOT LIKE 'Utilities%'""",
+                                                       (p["id"],)).fetchall() if coi_status(c, p["id"], r[0])["state"] != "ok")
             p["open_dates"] = c.execute("SELECT COUNT(*) FROM critical_dates WHERE property_id=? AND status='open'",
                                         (p["id"],)).fetchone()[0]
             ph = c.execute("""SELECT id, photo_path FROM projects WHERE property_id=? ORDER BY photo_path IS NULL, id DESC
@@ -378,8 +383,8 @@ def add_date(property_id: int, d: dict, created_by=None, source="manual") -> int
     title = (d.get("title") or "").strip() or KINDS[kind] + (f" – {d['tenant']}" if d.get("tenant") else "")
     rep = d.get("repeat") if d.get("repeat") in REPEATS else None
     with tx() as c:
-        same = c.execute("SELECT id FROM critical_dates WHERE property_id=? AND kind=? AND date=? AND status='open'",
-                         (property_id, kind, when)).fetchone()
+        same = c.execute("""SELECT id FROM critical_dates WHERE property_id=? AND kind=? AND date=? AND status='open'
+                            AND (kind NOT IN ('vendor_coi','other') OR title=?)""", (property_id, kind, when, title)).fetchone()
         if same and source != "manual":   # reading a second document shouldn't double up dates already tracked
             return same["id"]
         return c.execute(
