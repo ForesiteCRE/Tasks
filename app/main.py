@@ -145,22 +145,17 @@ def create_user(u: UserIn):
 
 @app.post("/api/users/match-blink")
 def match_blink():
-    """Look up Blink ids by email for everyone who doesn't have one yet."""
+    """Look up Blink ids by email for everyone who doesn't have one yet; report Blink's answer per person."""
     with tx() as c:
         todo = rows(c.execute("SELECT id, email FROM users WHERE blink_user_id IS NULL AND email IS NOT NULL"))
-    found, missing = 0, []
+    results = []
     for u in todo:
-        try:
-            buid = blink.find_user_id_by_email(u["email"])
-        except PermissionError as e:
-            return {"error": str(e), "found": found}
-        if buid:
+        res = blink.lookup_user(u["email"])
+        if res["id"]:
             with tx() as c:
-                c.execute("UPDATE users SET blink_user_id=? WHERE id=?", (buid, u["id"]))
-            found += 1
-        else:
-            missing.append(u["email"])
-    return {"found": found, "not_found": missing}
+                c.execute("UPDATE users SET blink_user_id=? WHERE id=?", (res["id"], u["id"]))
+        results.append({"email": u["email"], **res})
+    return {"checked": len(todo), "found": sum(1 for r in results if r["id"]), "results": results}
 
 
 # ---------- templates ----------

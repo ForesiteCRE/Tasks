@@ -140,25 +140,35 @@ def log_inbound(blink_user_id: str, text: str):
 
 # ---------- user lookup ----------
 
-def find_user_id_by_email(email: str) -> str | None:
-    """Blink user id (u-…) for an email via GET /v2/user?email=…, or None if not found/not allowed.
-    Uses BLINK_LEGACY_TOKEN when set, otherwise tries the App Identity token."""
+def lookup_user(email: str) -> dict:
+    """Ask Blink for the user with this email (GET /v2/user?email=…).
+    Returns {"id": "u-…" or None, "status": http status, "detail": short reason}. Never raises."""
     if MOCK and not LEGACY_TOKEN:
-        return None
+        return {"id": None, "status": 0, "detail": "Blink not connected (mock mode)"}
     try:
         token = LEGACY_TOKEN or _access_token()
-        r = httpx.get(f"{API}/v2/user", params={"email": email, "limit": 1}, timeout=15,
+        r = httpx.get(f"{API}/v2/user", params={"email": email}, timeout=15,
                       headers={"Authorization": f"Bearer {token}", "Accept": "application/json"})
     except (BlinkError, httpx.HTTPError) as e:
-        log.warning("Blink user lookup failed for %s: %s", email, e)
-        return None
-    if r.status_code in (401, 403):
-        log.warning("Blink user lookup not permitted (%s) - set BLINK_LEGACY_TOKEN", r.status_code)
-        raise PermissionError("Blink user lookup not permitted - add BLINK_LEGACY_TOKEN")
+        return {"id": None, "status": 0, "detail": str(e)[:200]}
     if r.status_code != 200:
-        return None
-    data = r.json().get("data") or []
-    return data[0]["id"] if data else None
+        return {"id": None, "status": r.status_code,
+                "detail": f"{'legacy token' if LEGACY_TOKEN else 'app identity token'}: {r.text[:200]}"}
+    try:
+        data = r.json().get("data") or []
+    except ValueError:
+        return {"id": None, "status": 200, "detail": "unexpected response: " + r.text[:200]}
+    # Blink's email filter should return one user; match defensively on the id field
+    uid = next((u.get("id") for u in data if str(u.get("id", "")).startswith("u-")), None)
+    return {"id": uid, "status": 200, "detail": "ok" if uid else "no Blink user with that email"}
+
+
+def find_user_id_by_email(email: str) -> str | None:
+    res = lookup_user(email)
+    if res["status"] in (401, 403):
+        log.warning("Blink user lookup not permitted: %s", res["detail"])
+        raise PermissionError(f"Blink refused the lookup ({res['status']}). {res['detail']}")
+    return res["id"]
 
 
 # ---------- webhook signature ----------
