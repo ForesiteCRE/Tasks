@@ -30,6 +30,8 @@ CLIENT_ID = os.getenv("BLINK_CLIENT_ID", "")          # App Identity ID, "aid-�
 CLIENT_SECRET = os.getenv("BLINK_CLIENT_SECRET", "")
 WEBHOOK_SECRET = os.getenv("BLINK_WEBHOOK_SECRET", "")
 ORG_ID = os.getenv("BLINK_ORG_ID", "")                # optional; read from the token if blank
+# Optional: token from a Blink "Legacy App" - used only to look people up by email (Get Users API).
+LEGACY_TOKEN = os.getenv("BLINK_LEGACY_TOKEN", "")
 MOCK = not (CLIENT_ID and CLIENT_SECRET)
 
 _token = {"value": "", "exp": 0.0}
@@ -134,6 +136,29 @@ def log_inbound(blink_user_id: str, text: str):
     with tx() as c:
         c.execute("INSERT INTO blink_messages(direction, blink_user_id, text, delivered) VALUES('in',?,?,1)",
                   (blink_user_id, text))
+
+
+# ---------- user lookup ----------
+
+def find_user_id_by_email(email: str) -> str | None:
+    """Blink user id (u-…) for an email via GET /v2/user?email=…, or None if not found/not allowed.
+    Uses BLINK_LEGACY_TOKEN when set, otherwise tries the App Identity token."""
+    if MOCK and not LEGACY_TOKEN:
+        return None
+    try:
+        token = LEGACY_TOKEN or _access_token()
+        r = httpx.get(f"{API}/v2/user", params={"email": email, "limit": 1}, timeout=15,
+                      headers={"Authorization": f"Bearer {token}", "Accept": "application/json"})
+    except (BlinkError, httpx.HTTPError) as e:
+        log.warning("Blink user lookup failed for %s: %s", email, e)
+        return None
+    if r.status_code in (401, 403):
+        log.warning("Blink user lookup not permitted (%s) - set BLINK_LEGACY_TOKEN", r.status_code)
+        raise PermissionError("Blink user lookup not permitted - add BLINK_LEGACY_TOKEN")
+    if r.status_code != 200:
+        return None
+    data = r.json().get("data") or []
+    return data[0]["id"] if data else None
 
 
 # ---------- webhook signature ----------

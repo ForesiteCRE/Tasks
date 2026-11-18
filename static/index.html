@@ -53,7 +53,8 @@ table{width:100%;border-collapse:collapse}td,th{padding:6px 8px;border-top:1px s
 </section>
 
 <section id="v-people" class="hidden">
-  <div class="card"><h2>Add person</h2><div class="row"><input id="uName" placeholder="Name"><input id="uEmail" placeholder="Email"><input id="uBlink" placeholder="Blink user ID (u-…)"><button class="b" onclick="addUser()">Add</button></div></div>
+  <div class="card"><h2>Add person</h2><div class="row"><input id="uName" placeholder="Name"><input id="uEmail" placeholder="name@foresitecre.com"><input id="uBlink" placeholder="Blink ID (optional – found by email)"><button class="b" onclick="addUser()">Add</button><button class="b ghost" onclick="matchBlink()">🔗 Find missing Blink IDs</button></div>
+<p class="mute">Add teammates by work email — their Blink account is found automatically, so you can assign them tasks before they ever sign in.</p></div>
   <div class="card"><table id="people"></table><p class="mute">People who sign in with Google are added automatically — paste their Blink user ID (u-…, from their page in Blink Admin) so they get chat reminders.</p></div>
 </section>
 
@@ -112,6 +113,8 @@ async function addTask(p){const t=$('#nt'+p).value;if(!t)return;await api('/api/
 async function saveRecurrence(){await api('/api/recurrences',{method:'POST',body:{template_id:+$('#rTpl').value,name_pattern:$('#rPattern').value,day_of_month:+$('#rDay').value}});refresh();}
 async function toggleRec(id,a){await api(`/api/recurrences/${id}?active=${a}`,{method:'PATCH'});refresh();}
 async function addUser(){await api('/api/users',{method:'POST',body:{name:$('#uName').value,email:$('#uEmail').value,blink_user_id:$('#uBlink').value||null}});refresh();}
+async function matchBlink(){const r=await api('/api/users/match-blink',{method:'POST'});refresh();
+  alert(r.error?r.error:`Linked ${r.found} people to Blink.`+(r.not_found&&r.not_found.length?`\nNo Blink account found for: ${r.not_found.join(', ')}`:''));}
 async function loadChat(){const id=$('#cUser').value;if(!id)return;const ms=await api('/api/blink/messages?blink_user_id='+encodeURIComponent(id));
   $('#chat').innerHTML=ms.map(m=>`<div class="msg ${m.direction}">${esc(m.text).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*([^*]+)\*/g,'<b>$1</b>')}</div>`).join('')||'<p class="mute">No messages yet.</p>';$('#chat').scrollTop=1e9;}
 async function sendChat(){const text=$('#cText').value;if(!text)return;$('#cText').value='';await api('/api/blink/simulate',{method:'POST',body:{blink_user_id:$('#cUser').value,text}});loadChat();refresh();}

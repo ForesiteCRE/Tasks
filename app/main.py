@@ -52,7 +52,7 @@ SIMULATOR = os.getenv("ENABLE_SIMULATOR", "1" if blink.MOCK else "0") == "1"
 def healthz():
     """Which settings the running app can see (yes/no only - never values)."""
     names = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "PUBLIC_URL", "SESSION_SECRET",
-             "BLINK_CLIENT_ID", "BLINK_CLIENT_SECRET", "BLINK_WEBHOOK_SECRET", "DB_PATH", "TZ"]
+             "BLINK_CLIENT_ID", "BLINK_CLIENT_SECRET", "BLINK_WEBHOOK_SECRET", "BLINK_LEGACY_TOKEN", "DB_PATH", "TZ"]
     return {"ok": True, "sign_in_enabled": auth.ENABLED, "blink_connected": not blink.MOCK,
             "settings_present": {n: bool(os.getenv(n, "").strip()) for n in names},
             "deploy_commit": (os.getenv("RAILWAY_GIT_COMMIT_SHA") or "")[:7]}
@@ -137,8 +137,30 @@ def config():
 @app.post("/api/users")
 def create_user(u: UserIn):
     with tx() as c:
-        return {"id": c.execute("INSERT INTO users(name,email,blink_user_id) VALUES(?,?,?)",
-                                (u.name, u.email, u.blink_user_id)).lastrowid}
+        uid = c.execute("INSERT INTO users(name,email,blink_user_id) VALUES(?,?,?)",
+                        (u.name, (u.email or "").strip().lower() or None, u.blink_user_id or None)).lastrowid
+    if u.email and not u.blink_user_id:
+        auth.link_blink_account(uid, u.email.strip().lower())
+    return {"id": uid}
+
+@app.post("/api/users/match-blink")
+def match_blink():
+    """Look up Blink ids by email for everyone who doesn't have one yet."""
+    with tx() as c:
+        todo = rows(c.execute("SELECT id, email FROM users WHERE blink_user_id IS NULL AND email IS NOT NULL"))
+    found, missing = 0, []
+    for u in todo:
+        try:
+            buid = blink.find_user_id_by_email(u["email"])
+        except PermissionError as e:
+            return {"error": str(e), "found": found}
+        if buid:
+            with tx() as c:
+                c.execute("UPDATE users SET blink_user_id=? WHERE id=?", (buid, u["id"]))
+            found += 1
+        else:
+            missing.append(u["email"])
+    return {"found": found, "not_found": missing}
 
 
 # ---------- templates ----------

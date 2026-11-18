@@ -95,7 +95,25 @@ def callback(request: Request, code: str = "", state: str = "", error: str = "")
         uid = row["id"] if row else c.execute(
             "INSERT INTO users(name, email) VALUES(?,?)", (name, email)).lastrowid
     request.session["user"] = {"id": uid, "name": row["name"] if row else name, "email": email}
+    link_blink_account(uid, email)
     return RedirectResponse("/")
+
+
+def link_blink_account(uid: int, email: str) -> str | None:
+    """Fill in the person's Blink user id from their email, if we don't have it yet."""
+    from . import blink
+    with tx() as c:
+        have = c.execute("SELECT blink_user_id FROM users WHERE id=?", (uid,)).fetchone()["blink_user_id"]
+    if have:
+        return have
+    try:
+        buid = blink.find_user_id_by_email(email)
+    except PermissionError:
+        return None
+    if buid:
+        with tx() as c:
+            c.execute("UPDATE users SET blink_user_id=? WHERE id=? AND blink_user_id IS NULL", (buid, uid))
+    return buid
 
 
 @router.get("/logout")
