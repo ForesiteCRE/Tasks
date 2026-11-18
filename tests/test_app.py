@@ -976,3 +976,28 @@ def test_vendor_coi_per_property(mgr, staff):
     pv = slot(a)["id"]
     ids(mgr.post(f"/api/property-vendors/{pv}/end"))
     assert not [d for d in ids(mgr.get(f"/api/properties/{a}"))["dates"] if d["kind"] == "vendor_coi" and d["status"] == "open"]
+
+
+def test_expiring_reminders_go_to_property_manager(mgr):
+    from datetime import date, timedelta
+    from app import properties
+    with tx() as c:
+        sam = c.execute("SELECT id FROM users WHERE blink_user_id='u-sam'").fetchone()["id"]
+        jo = c.execute("SELECT id FROM users WHERE blink_user_id='u-jo'").fetchone()["id"]
+    pid = ids(mgr.post("/api/properties", json={"address": "70 Pm Way, Austin, TX"}))["id"]
+    ids(mgr.put(f"/api/properties/{pid}/team/{S['pm']}", json={"user_id": sam}))
+    soon = lambda n: (date.today() + timedelta(days=n)).isoformat()
+    before = len(SENT)
+    ids(mgr.post(f"/api/properties/{pid}/dates", json={"dates": [
+        {"kind": "insurance_renewal", "title": "Policy renewal", "date": soon(20)},                     # nobody assigned
+        {"kind": "tax_protest", "title": "Protest deadline", "date": soon(5), "assignee_id": jo}]}))     # someone else too
+    got = [(b, t.split("\n")[0]) for b, t in SENT[before:]]
+    assert ("u-sam", "☂️ **Critical date in 20 days:** Policy renewal") in got
+    assert {b for b, t in got if "Protest deadline" in t} == {"u-sam", "u-jo"}
+    d = [x for x in ids(mgr.get(f"/api/properties/{pid}"))["dates"] if x["title"] == "Policy renewal"][0]
+    assert ids_task(d["task_id"])["assignee_id"] == sam                                             # task goes to the PM
+    # PM changes → the next reminder goes to the new PM
+    ids(mgr.put(f"/api/properties/{pid}/team/{S['pm']}", json={"user_id": jo}))
+    before = len(SENT)
+    properties.run_alerts(date.today() + timedelta(days=14))                                         # crosses the 7-day mark
+    assert [b for b, t in SENT[before:] if "Policy renewal" in t] == ["u-jo"]

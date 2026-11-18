@@ -440,13 +440,12 @@ def set_coi(coi_id: int, fields: dict, user_id=None):
         for r in c.execute("""SELECT date_id FROM vendor_cois WHERE property_id=? AND vendor_id=? AND id!=? AND date_id IS NOT NULL""",
                            (k["property_id"], k["vendor_id"], coi_id)).fetchall():
             c.execute("UPDATE critical_dates SET status='handled', handled_at=date('now') WHERE id=? AND status='open'", (r[0],))
-        pm = _pm_for(c, k["property_id"])
     if k["expires"]:
         if k["date_id"]:
             properties.update_date(k["date_id"], {"date": k["expires"]})
         else:
             did = properties.add_date(k["property_id"], {
-                "kind": "vendor_coi", "title": f"COI expires – {vendor}", "date": k["expires"], "assignee_id": pm,
+                "kind": "vendor_coi", "title": f"COI expires – {vendor}", "date": k["expires"], "assignee_id": None,
                 "remind_days": "30,7", "notes": f"Get an updated certificate from {vendor} naming the property as additional insured."},
                 source="coi")
             with tx() as c:

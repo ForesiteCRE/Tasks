@@ -359,10 +359,16 @@ def get(pid: int) -> dict | None:
             team_by_person[x["id"]]["roles"].append(x["role"])
     photo = next((pr for pr in projects if pr["photo_path"]), projects[0] if projects else None)
     return {**p, "projects": projects, "tasks": tasks, "team": list(team_by_person.values()), "dates": dates,
-            "roles": team_list(pid), "contacts": contacts(pid), "docs": docs(pid), "vendors": _vendors(pid),
+            "pm": _pm_name(pid), "roles": team_list(pid), "contacts": contacts(pid), "docs": docs(pid), "vendors": _vendors(pid),
             "insurance": _insurance_status_id(pid), "offered": OFFERED, "contact_roles": CONTACT_ROLES,
             "photo_project_id": photo["id"] if photo else None, "photo_path": photo["photo_path"] if photo else None,
             "kinds": KINDS}
+
+
+def _pm_name(pid: int):
+    with tx() as c:
+        pm = property_manager(c, pid)
+    return pm["name"] if pm else None
 
 
 def _vendors(pid: int) -> dict:
@@ -457,6 +463,14 @@ def delete_date(date_id: int):
         c.execute("DELETE FROM critical_dates WHERE id=?", (date_id,))
 
 
+def property_manager(c, property_id: int) -> dict | None:
+    """Whoever currently holds the Property Manager role at this property."""
+    r = c.execute("""SELECT u.id, u.name, u.blink_user_id FROM property_team pt JOIN project_roles r ON r.id=pt.role_id
+                     JOIN users u ON u.id=pt.user_id WHERE pt.property_id=? AND r.name='Property Manager'""",
+                  (property_id,)).fetchone()
+    return dict(r) if r else None
+
+
 def _ensure_task(c, d: dict) -> int:
     if d["task_id"] and c.execute("SELECT 1 FROM tasks WHERE id=?", (d["task_id"],)).fetchone():
         return d["task_id"]
@@ -467,7 +481,7 @@ def _ensure_task(c, d: dict) -> int:
     tid = c.execute("""INSERT INTO tasks(project_id, title, description, assignee_id, due_date, position)
                        VALUES(?,?,?,?,?,999)""",
                     (team.general_project_id(), f"{ICONS.get(d['kind'], '📌')} {d['title']} – {prop['name']}", desc,
-                     d["assignee_id"], d["date"])).lastrowid
+                     d["assignee_id"] or (property_manager(c, d["property_id"]) or {}).get("id"), d["date"])).lastrowid
     c.execute("UPDATE critical_dates SET task_id=? WHERE id=?", (tid, d["id"]))
     return tid
 
@@ -505,7 +519,11 @@ def run_alerts(today: date | None = None) -> int:
                 f"{d['property_name']} · {date.fromisoformat(d['date']):%a %b %d, %Y}"
                 + (f" · {d['tenant']}" if d["tenant"] else "") + (f"\n_{d['notes']}_" if d["notes"] else "")
                 + f"\nTask #{tid} is on your list — mark it done when it's handled.")
-        recipients = [d["assignee_blink"]] if d["assignee_blink"] else automations._managers()
+        # Expiring / due items go to the property's Property Manager (whoever holds the role today), plus the person
+        # assigned to the date if that's someone else; with neither, managers hear about it.
+        with tx() as c:
+            pm = property_manager(c, d["property_id"])
+        recipients = [x for x in [(pm or {}).get("blink_user_id"), d["assignee_blink"]] if x] or automations._managers()
         automations._send(recipients, text)
         sent += 1
     return sent
@@ -513,7 +531,10 @@ def run_alerts(today: date | None = None) -> int:
 
 def upcoming(days: int = 120, user_id: int | None = None) -> list[dict]:
     today = date.today()
-    q = """SELECT cd.*, p.name AS property_name, u.name AS assignee_name FROM critical_dates cd
+    q = """SELECT cd.*, p.name AS property_name, COALESCE(u.name, (SELECT pu.name FROM property_team pt
+             JOIN project_roles r ON r.id=pt.role_id JOIN users pu ON pu.id=pt.user_id
+             WHERE pt.property_id=cd.property_id AND r.name='Property Manager') || ' (property manager)') AS assignee_name
+           FROM critical_dates cd
            JOIN properties p ON p.id=cd.property_id LEFT JOIN users u ON u.id=cd.assignee_id
            WHERE cd.status='open' AND cd.date <= ?"""
     args = [(today + timedelta(days=days)).isoformat()]

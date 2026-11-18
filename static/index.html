@@ -699,7 +699,7 @@ function renderProperty(){const p=PROP,mg=isMgr(),dis=mg?'':'disabled',open=p.da
 function cdRow(d){const mg=isMgr(),mine=d.assignee_id===ME.id;
   return `<div class="cdrow ${d.status!=='open'?'isdone':''}"><span class="ico">${d.icon}</span><div class="grow">
     <div><b>${esc(d.title)}</b>${d.repeat_label?` <span class="chip2">🔁 ${esc(d.repeat_label)}</span>`:''}${d.source==='lease'?' <span class="chip2" title="Found by reading a document">from document</span>':''}</div>
-    <div class="sub">${esc(d.kind_label)}${d.tenant?' · '+esc(d.tenant):''} · ${esc(d.assignee_name||'No one assigned')}${d.task_id?` · <span class="tlink" onclick="openTask(${d.task_id})">task #${d.task_id}</span>`:''}</div>
+    <div class="sub">${esc(d.kind_label)}${d.tenant?' · '+esc(d.tenant):''} · ${d.assignee_name?esc(d.assignee_name)+(PROP.pm&&d.assignee_name!==PROP.pm?` + ${esc(PROP.pm)} (PM)`:''):PROP.pm?`${esc(PROP.pm)} (property manager)`:'<span class="over">No property manager set — managers get reminders</span>'}${d.task_id?` · <span class="tlink" onclick="openTask(${d.task_id})">task #${d.task_id}</span>`:''}</div>
     ${d.notes?`<div class="sub">${esc(d.notes)}</div>`:''}${d.quote?`<div class="note">“${esc(d.quote)}”</div>`:''}
     <div class="sub">🔔 Reminders ${esc(d.remind_days.split(',').map(x=>x+'d').join(' / '))} before</div></div>
     <div class="cdact"><div style="font-weight:600">${new Date(d.date+'T12:00').toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}</div>${d.status==='open'?daysBadge(d.days_left):'<span class="dl">handled</span>'}
@@ -711,7 +711,7 @@ function dateForm(id){const d=id?PROP.dates.find(x=>x.id===id):{kind:'tax_protes
   $('#cdForm').innerHTML=`<div class="cdform"><div class="team-grid">
     <label>Type<select id="cdKind">${kindOpts(d.kind)}</select></label><label>Date<input type="date" id="cdDate" value="${d.date||''}"></label>
     <label>What is it?<input id="cdTitle" value="${esc(d.title||'')}" placeholder="e.g. Monthly owner report due"></label><label>Repeats<select id="cdRepeat">${repOpts(d.repeat)}</select></label>
-    <label>Who's responsible<select id="cdWho">${userOpts(d.assignee_id,'— (managers get the reminder)')}</select></label><label>Remind (days before)<input id="cdRemind" value="${esc(d.remind_days)}" placeholder="90,30,7"></label></div>
+    <label>Also notify <span class="via">the property manager always gets it</span><select id="cdWho">${userOpts(d.assignee_id,'— (the property manager)')}</select></label><label>Remind (days before)<input id="cdRemind" value="${esc(d.remind_days)}" placeholder="90,30,7"></label></div>
     <label class="mute" style="font-size:12px">Notes</label><textarea id="cdNotes" rows="2">${esc(d.notes||'')}</textarea>
     <div class="row" style="justify-content:flex-end"><button class="b ghost" onclick="$('#cdForm').innerHTML=''">Cancel</button><button class="b" onclick="saveDate(${id||0})">${id?'Save':'Add date'}</button></div></div>`;
   $('#cdForm').scrollIntoView({behavior:'smooth',block:'nearest'});}
@@ -753,7 +753,7 @@ function renderLease(){const L=LEASE,ins=L.insurance||{},isIns=L.doc_kind==='ins
     ${L.bank_name?`<div class="lrow"><input type="checkbox" id="lxBank" checked style="width:auto"><div class="grow">🏦 Bank: <b>${esc(L.bank_name)}</b>${PROP.bank_name&&PROP.bank_name!==L.bank_name?` <span class="mute">(currently ${esc(PROP.bank_name)})</span>`:''}</div></div>`:''}
     ${L.report_notes?`<div class="lrow"><input type="checkbox" id="lxRep" checked style="width:auto"><div class="grow">📊 Reporting requirements<div class="sub">${esc(L.report_notes)}</div></div></div>`:''}
     ${L.contacts.map((c,i)=>`<div class="lrow"><input type="checkbox" id="lc${i}" checked style="width:auto"><div class="grow">📇 ${esc(c.role)}: <b>${esc(c.name||c.company)}</b>${c.name&&c.company?' · '+esc(c.company):''}<div class="sub">${esc([c.email,c.phone].filter(Boolean).join(' · '))}</div></div></div>`).join('')}
-    ${L.dates.length?`<div class="row" style="margin-top:10px"><label>Dates go to <select id="lWho">${userOpts('','— (managers get the reminder)')}</select></label><label>Remind <input id="lRemind" value="90,30,7" style="width:110px"> days before</label></div>`:''}
+    ${L.dates.length?`<div class="row" style="margin-top:10px"><label>Also notify <select id="lWho">${userOpts('','— (the property manager)')}</select></label><label>Remind <input id="lRemind" value="90,30,7" style="width:110px"> days before</label></div>`:''}
     <div class="row" style="justify-content:flex-end"><button class="b ghost" onclick="LEASE=null;$('#leaseBox').innerHTML=''">${n?'Skip':'Close'}</button>${n?`<button class="b" onclick="leaseSave()">Add checked items</button>`:''}</div></div>`;}
 async function leaseSave(){const L=LEASE,who=$('#lWho')?+$('#lWho').value||null:null,rem=$('#lRemind')?$('#lRemind').value:'90,30,7';let added=0;
   const dates=L.dates.map((d,i)=>$('#lx'+i).checked?{...d,kind:$('#lk'+i).value,date:$('#ld'+i).value,repeat:$('#lr'+i).value,title:$('#lt'+i).value,assignee_id:who,remind_days:rem}:null).filter(Boolean);
