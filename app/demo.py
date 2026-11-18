@@ -245,22 +245,22 @@ def load(me_id: int) -> dict:
                 c.execute("UPDATE property_vendors SET started='2024-04-01', ended='2026-03-15' WHERE vendor_id=? AND property_id=?", (lone, hq_id))
                 c.execute("UPDATE property_vendors SET started='2026-03-16' WHERE vendor_id=? AND property_id=?", (green, hq_id))
                 c.execute("UPDATE property_vendors SET started='2025-01-10' WHERE property_id=? AND started=?", (hq_id, date.today().isoformat()))
-            for vid, who, stars, note, prop_id in [
-                    (green, "Alex Rivera", 5, "Fixed the irrigation leak same day, beds look great.", hq_id),
-                    (green, "Sam Patel", 5, "Reliable every week; photos after each visit.", fred),
-                    (green, None, 4, "Slightly pricier but worth it.", hq_id),
-                    (lone, "Alex Rivera", 2, "Missed two mowing visits in July and slow to call back.", hq_id),
-                    (lone, None, 3, "OK on price, inconsistent crews.", hq_id),
-                    (wash, "Maria Garza", 5, "Storefronts spotless, worked after hours as asked.", hq_id),
-                    (wash, "Sam Patel", 5, "", res),
-                    (wm, "Jordan Lee (demo)", 4, "Billing errors twice this year but service is fine.", hq_id),
-                    (roof, None, 4, "Good leak repair; report with photos.", hq_id),
-                    (hvac, "Sam Patel", 1, "Billed for a compressor replacement that wasn't done. Disputed.", res),
-                    (hvac, "Alex Rivera", 3, "Fine for small calls.", fred),
-                    (hvac2, "Maria Garza", 5, "PM visits on schedule, clear quotes.", hq_id),
-                    (pest, None, 4, "", hq_id)]:
+            for vid, who, stars, price, note, prop_id in [
+                    (green, "Alex Rivera", 5, 4, "Fixed the irrigation leak same day, beds look great.", hq_id),
+                    (green, "Sam Patel", 5, 4, "Reliable every week; photos after each visit.", fred),
+                    (green, None, 4, 5, "Slightly pricier but worth it.", hq_id),
+                    (lone, "Alex Rivera", 2, 2, "Missed two mowing visits in July and slow to call back.", hq_id),
+                    (lone, None, 3, 1, "OK on price, inconsistent crews.", hq_id),
+                    (wash, "Maria Garza", 5, 3, "Storefronts spotless, worked after hours as asked.", hq_id),
+                    (wash, "Sam Patel", 5, 3, "", res),
+                    (wm, "Jordan Lee (demo)", 4, 3, "Billing errors twice this year but service is fine.", hq_id),
+                    (roof, None, 4, 4, "Good leak repair; report with photos.", hq_id),
+                    (hvac, "Sam Patel", 1, 4, "Billed for a compressor replacement that wasn't done. Disputed.", res),
+                    (hvac, "Alex Rivera", 3, 3, "Fine for small calls.", fred),
+                    (hvac2, "Maria Garza", 5, 4, "PM visits on schedule, clear quotes.", hq_id),
+                    (pest, None, 4, 2, "", hq_id)]:
                 uid = ids.get(who.replace(" (demo)", "")) if who else me_id
-                V.add_review(vid, uid, stars, note, prop_id)
+                V.add_review(vid, uid, stars, note, prop_id, price=price)
             if onb and roof:
                 V.add_project_vendor(onb, roof, "Roofing", "Roof inspection before takeover", me_id)
 

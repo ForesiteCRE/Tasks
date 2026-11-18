@@ -895,12 +895,15 @@ def test_vendors_ratings_properties_and_projects(mgr, staff):
     brown = ids(staff.post("/api/vendors", json={"name": "Brown Lawn Co", "trades": ["Landscaping"]}))["id"]   # staff can add
     assert mgr.post("/api/vendors", json={"name": "green thumb landscaping"}).status_code == 400              # no duplicates
     # reviews → badges
-    ids(mgr.post(f"/api/vendors/{green}/reviews", json={"stars": 5, "note": "Always on time", "property_id": prop}))
-    ids(staff.post(f"/api/vendors/{green}/reviews", json={"stars": 4, "note": "Good edging"}))
+    ids(mgr.post(f"/api/vendors/{green}/reviews", json={"stars": 5, "price": 4, "note": "Always on time", "property_id": prop}))
+    ids(staff.post(f"/api/vendors/{green}/reviews", json={"stars": 4, "price": 5, "note": "Good edging"}))
+    assert mgr.post(f"/api/vendors/{green}/reviews", json={"stars": 4, "price": 9}).status_code == 400
     ids(staff.post(f"/api/vendors/{brown}/reviews", json={"stars": 2, "note": "Missed two visits in June"}))
     assert mgr.post(f"/api/vendors/{brown}/reviews", json={"stars": 7}).status_code == 400
     vs = {v["name"]: v for v in ids(mgr.get("/api/vendors", params={"trade": "Landscaping"}))["vendors"]}
     assert vs["Green Thumb Landscaping"]["avg"] == 4.5 and vs["Green Thumb Landscaping"]["badge"] == "good"
+    assert vs["Green Thumb Landscaping"]["price"] == 4 and vs["Green Thumb Landscaping"]["price_label"] == "Above average"
+    assert vs["Brown Lawn Co"]["price"] is None
     assert vs["Brown Lawn Co"]["badge"] == "bad" and "Missed two visits" in vs["Brown Lawn Co"]["warning"]
     # property slot: Brown first, then swapped to Green → Brown becomes 'previously used'
     assert staff.put(f"/api/properties/{prop}/vendors", json={"trade": "Landscaping", "vendor_id": brown}).status_code == 403

@@ -1158,6 +1158,7 @@ class VendorIn(BaseModel):
 
 class ReviewIn(BaseModel):
     stars: int
+    price: int | None = None
     note: str | None = None
     property_id: int | None = None
     project_id: int | None = None
@@ -1215,11 +1216,12 @@ def patch_vendor(vid: int, body: VendorIn, request: Request):
 @app.post("/api/vendors/{vid}/reviews")
 def review_vendor(vid: int, body: ReviewIn, request: Request):
     try:
-        rid = vendors.add_review(vid, _me_id(request), body.stars, body.note, body.property_id, body.project_id)
+        rid = vendors.add_review(vid, _me_id(request), body.stars, body.note, body.property_id, body.project_id, body.price)
     except ValueError as e:
         raise HTTPException(400, str(e))
     v = vendors.get(vid)
-    audit.log(_me_id(request), f"rated vendor {body.stars}★", "vendor", vid, v["name"], body.note)
+    audit.log(_me_id(request), f"rated vendor {body.stars}★" + (f" {'$' * body.price}" if body.price else ""), "vendor", vid,
+              v["name"], body.note)
     return {"id": rid}
 
 

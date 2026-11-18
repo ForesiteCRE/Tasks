@@ -174,6 +174,8 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 .row .cc{width:20px;height:20px;font-size:11px;border-radius:5px;cursor:default;vertical-align:middle}
 .vengrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px}.vcard{padding:12px 14px;cursor:pointer}
 .vtr{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.price{color:#3d6b1f;font-weight:700;letter-spacing:1px;font-size:13px}.price .dim{color:#d5dbe0;font-weight:400}
+.pricepick{display:flex;gap:6px;flex-wrap:wrap}.pricepick button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 10px;font-weight:700;color:#3d6b1f;cursor:pointer;min-width:44px}.pricepick button.on{background:#3d6b1f;color:#fff;border-color:#3d6b1f}
 .stars{color:#e8a317;letter-spacing:1px}.stars.sm{font-size:12px}
 .vbadge{font-size:11.5px;padding:2px 8px;border-radius:99px;white-space:nowrap}.vbadge.good{background:#eef6e4;color:#3d6b1f}.vbadge.warn{background:#fdf1e2;color:#9a5b0c}.vbadge.bad{background:#fde8e8;color:var(--bad)}
 .vacts{font-size:12px;margin-top:2px;color:var(--mute)}.vslot a[href^=tel]{color:inherit}
@@ -804,6 +806,7 @@ async function startClose(propId){const p=await api('/api/properties/'+propId);o
 let VENDORS=[],TRADES=[],VEN=null;
 const starStr=(n)=>{const f=Math.round(n||0);return '★'.repeat(f)+'☆'.repeat(5-f);};
 const rating=v=>v.reviews?`<span class="stars" title="${v.avg} average from ${v.reviews} review${v.reviews>1?'s':''}">${starStr(v.avg)}</span> <b>${v.avg}</b> <span class="mute">(${v.reviews})</span>`:'<span class="mute">No ratings yet</span>';
+const priceTag=(v,long)=>v.price?`<span class="price" title="${esc(v.price_label||'')}${v.price_votes?` — from ${v.price_votes} rating${v.price_votes>1?'s':''}`:''}">${'$'.repeat(v.price)}<span class="dim">${'$'.repeat(5-v.price)}</span></span>${long?` <span class="mute">${esc(v.price_label)}</span>`:''}`:'';
 const vbadge=v=>v.badge?`<span class="vbadge ${v.badge}" title="${esc(v.warning||'')}">${esc(v.badge_label)}</span>`:'';
 async function loadVendors(){const r=await api('/api/vendors');VENDORS=r.vendors;TRADES=r.trades;return VENDORS;}
 async function renderVendors(fetch){if(fetch||!VENDORS.length)await loadVendors();
@@ -811,7 +814,7 @@ async function renderVendors(fetch){if(fetch||!VENDORS.length)await loadVendors(
   const q=($('#venSearch').value||'').toLowerCase(),list=VENDORS.filter(v=>(!tv||v.trades.includes(tv))&&(!q||(v.name+' '+v.trades.join(' ')+' '+(v.contact_name||'')).toLowerCase().includes(q)));
   $('#venList').innerHTML=list.map(v=>`<div class="pcard vcard" onclick="openVendor(${v.id})"><div class="row" style="justify-content:space-between;margin:0;align-items:flex-start"><h4 style="margin:0">${esc(v.name)}</h4>${vbadge(v)}</div>
     <div class="vtr">${v.trades.map(t=>`<span class="chip2">${esc(t)}</span>`).join('')||'<span class="mute">No trade set</span>'}</div>
-    <div style="margin:6px 0">${rating(v)}</div>
+    <div style="margin:6px 0">${rating(v)} ${priceTag(v)}</div>
     <div class="sub">${v.current_properties.length?'Used at '+v.current_properties.map(p=>esc(p.name)).filter((x,i,a)=>a.indexOf(x)===i).join(', '):'Not used at any property right now'}${v.past_count?` · ${v.past_count} past`:''}</div>
     ${v.phone||v.contact_name?`<div class="sub">${esc([v.contact_name,v.phone].filter(Boolean).join(' · '))}</div>`:''}</div>`).join('')
     ||`<p class="mute">${VENDORS.length?'No vendors match.':'No vendors yet — add the ones your team uses.'}</p>`;}
@@ -820,7 +823,7 @@ async function openVendor(id){VEN=await api('/api/vendors/'+id);if(taskDlg.open)
 function renderVendor(){const v=VEN,canEdit=isMgr()||v.created_by===ME.id,cur=v.properties.filter(p=>p.status==='current'),past=v.properties.filter(p=>p.status!=='current');
   $('#venPage').innerHTML=`<div class="row" style="margin:0 0 10px"><button class="b ghost" onclick="show('vendors')">← All vendors</button></div>
   <div class="card"><div class="row" style="justify-content:space-between;margin:0;align-items:flex-start"><div><h2 style="margin:0">${esc(v.name)}</h2>
-    <div class="vtr">${v.trades.map(t=>`<span class="chip2">${esc(t)}</span>`).join('')}</div></div><div style="text-align:right">${vbadge(v)}<div style="margin-top:6px;font-size:15px">${rating(v)}</div></div></div>
+    <div class="vtr">${v.trades.map(t=>`<span class="chip2">${esc(t)}</span>`).join('')}</div></div><div style="text-align:right">${vbadge(v)}<div style="margin-top:6px;font-size:15px">${rating(v)}</div><div style="margin-top:4px">${priceTag(v,true)}</div></div></div>
     ${v.badge&&v.badge!=='good'&&v.warning?`<div class="warnbox bad" style="margin-top:10px">⚠️ ${esc(v.warning)}</div>`:''}
     ${v.badge==='good'?`<div class="warnbox okbox" style="margin-top:10px">👍 Consistently well rated by the team.</div>`:''}
     <div class="sub" style="margin-top:8px;font-size:14px">${[v.contact_name?esc(v.contact_name):'',v.phone?`<a href="tel:${esc(v.phone)}">${esc(v.phone)}</a>`:'',v.email?`<a href="mailto:${esc(v.email)}">${esc(v.email)}</a>`:'',v.website?`<a href="${esc(/^https?:/.test(v.website)?v.website:'https://'+v.website)}" target="_blank" rel="noopener">website</a>`:''].filter(Boolean).join(' · ')}</div>
@@ -835,7 +838,7 @@ function renderVendor(){const v=VEN,canEdit=isMgr()||v.created_by===ME.id,cur=v.
       ${v.projects.map(p=>`<div class="row2" style="cursor:pointer" onclick="openProject(${p.project_id})"><span class="ico">📁</span><div class="grow">${esc(p.project_name)}<div class="sub">${esc(p.trade||'')}${p.status==='done'?' · finished':''}</div></div></div>`).join('')||'<div class="empty">Not assigned to any project.</div>'}</div></div>
   </div><div>
     <div class="panel"><header><h3>⭐ Reviews</h3><span class="cnt">${v.review_list.length}</span></header><div class="body">
-      ${v.review_list.map(r=>`<div class="rev"><div class="row" style="justify-content:space-between;margin:0"><span class="stars">${starStr(r.stars)}</span><span class="mute" style="font-size:12px">${fmtDate(r.created_at.slice(0,10))}</span></div>
+      ${v.review_list.map(r=>`<div class="rev"><div class="row" style="justify-content:space-between;margin:0"><span><span class="stars">${starStr(r.stars)}</span>${r.price?` <span class="price">${'$'.repeat(r.price)}<span class="dim">${'$'.repeat(5-r.price)}</span></span>`:''}</span><span class="mute" style="font-size:12px">${fmtDate(r.created_at.slice(0,10))}</span></div>
         ${r.note?`<div>${esc(r.note)}</div>`:''}<div class="sub">${esc(r.who)}${r.property_name?' · '+esc(r.property_name):''}${r.project_name?' · '+esc(r.project_name):''}${isMgr()||r.user_id===ME.id?` · <span class="tlink" onclick="revDel(${r.id})">remove</span>`:''}</div></div>`).join('')||'<div class="empty">No reviews yet — be the first.</div>'}</div></div>
   </div></div>`;}
 async function revDel(id){if(!confirm('Remove this review?'))return;await api('/api/vendor-reviews/'+id,{method:'DELETE'});openVendor(VEN.id);}
@@ -857,19 +860,24 @@ function rateForm(vid,propertyId,projectId,after){const v=VEN&&VEN.id===vid?VEN:
   $('#taskDlgBody').innerHTML=`<h2 style="margin-top:0">Rate ${esc(v.name)}</h2>
     <div class="starpick" id="rfStars">${[1,2,3,4,5].map(i=>`<button data-s="${i}" aria-label="${i} star${i>1?'s':''}">☆</button>`).join('')}</div>
     <div class="mute" id="rfLbl" style="margin:4px 0 10px">Tap a star</div>
+    <label class="lbl">How expensive are they? <span class="mute">(optional)</span></label>
+    <div class="pricepick" id="rfPrice">${[1,2,3,4,5].map(i=>`<button data-p="${i}" title="${['','Budget','Below average','Average','Above average','Premium'][i]}">${'$'.repeat(i)}</button>`).join('')}</div>
+    <div class="mute" id="rfPLbl" style="margin:2px 0 10px;font-size:12.5px">$ budget … $$$$$ premium</div>
     <label class="lbl">Notes — what went well or badly? (helps the next person decide)</label><textarea id="rfNote" rows="3" placeholder="e.g. Fast response, fair price, cleaned up well / missed two visits"></textarea>
     ${propertyId||projectId?'':`<label class="lbl">For which property? (optional)</label><select id="rfProp"><option value="">—</option>${(PROPS.length?PROPS:[]).map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>`}
     <div class="row" style="justify-content:flex-end"><button class="b ghost" onclick="taskDlg.close()">Cancel</button><button class="b" id="rfSave" disabled>Save rating</button></div>`;
   const words=['','Poor — wouldn\'t use again','Below expectations','OK','Good','Excellent — recommend'];
   document.querySelectorAll('#rfStars button').forEach(b=>b.onclick=()=>{st=+b.dataset.s;document.querySelectorAll('#rfStars button').forEach(x=>{x.textContent=+x.dataset.s<=st?'★':'☆';x.classList.toggle('on',+x.dataset.s<=st)});$('#rfLbl').textContent=words[st];$('#rfSave').disabled=false;});
-  $('#rfSave').onclick=async()=>{await api(`/api/vendors/${vid}/reviews`,{method:'POST',body:{stars:st,note:$('#rfNote').value,property_id:propertyId||(+($('#rfProp')||{}).value||null),project_id:projectId||null}});
+  let pr=null;document.querySelectorAll('#rfPrice button').forEach(b=>b.onclick=()=>{pr=pr===+b.dataset.p?null:+b.dataset.p;
+    document.querySelectorAll('#rfPrice button').forEach(x=>x.classList.toggle('on',+x.dataset.p===pr));$('#rfPLbl').textContent=pr?['','Budget','Below average','Average','Above average','Premium'][pr]:'$ budget … $$$$$ premium';});
+  $('#rfSave').onclick=async()=>{await api(`/api/vendors/${vid}/reviews`,{method:'POST',body:{stars:st,price:pr,note:$('#rfNote').value,property_id:propertyId||(+($('#rfProp')||{}).value||null),project_id:projectId||null}});
     taskDlg.close();toast('Thanks — rating saved');await loadVendors();if(after)after();else openVendor(vid);};
   if(!taskDlg.open)taskDlg.showModal();
   if(!PROPS.length&&!propertyId&&!projectId)api('/api/properties').then(ps=>{PROPS=ps;const s=$('#rfProp');if(s)s.innerHTML='<option value="">—</option>'+ps.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');});}
 // vendor picker for a trade: best-rated first, the trade's vendors on top, warnings on bad ones
 function vendorOpts(trade,preferIds=[]){const has=v=>v.trades.includes(trade);
   const sorted=[...VENDORS].sort((a,b)=>(preferIds.includes(b.id)-preferIds.includes(a.id))||(has(b)-has(a))||((b.avg||0)-(a.avg||0)));
-  const lab=v=>`${v.name}${v.reviews?` — ${'★'.repeat(Math.round(v.avg))} ${v.avg}`:''}${v.badge==='good'?' 👍':v.badge?' ⚠️':''}${preferIds.includes(v.id)?' (used at this property)':''}`;
+  const lab=v=>`${v.name}${v.reviews?` — ${'★'.repeat(Math.round(v.avg))} ${v.avg}`:''}${v.price?' · '+'$'.repeat(v.price):''}${v.badge==='good'?' 👍':v.badge?' ⚠️':''}${preferIds.includes(v.id)?' (used at this property)':''}`;
   const inT=sorted.filter(has),other=sorted.filter(v=>!has(v));
   return `<option value="">Choose a vendor…</option>${inT.length?`<optgroup label="${esc(trade)}">${inT.map(v=>`<option value="${v.id}">${esc(lab(v))}</option>`).join('')}</optgroup>`:''}
     ${other.length?`<optgroup label="Other vendors">${other.map(v=>`<option value="${v.id}">${esc(lab(v))}</option>`).join('')}</optgroup>`:''}<option value="new">＋ Add a new vendor…</option>`;}
@@ -879,7 +887,7 @@ function vendorOk(vid){const v=VENDORS.find(x=>x.id===vid);if(!v||!v.badge||v.ba
 function propVendorsPanel(p){const V=p.vendors,can=isMgr()||p.roles.some(r=>r.user_id===ME.id);
   return `<div class="panel"><header><h3>🧰 Vendors</h3><span class="cnt">${V.slots.filter(s=>s.current.length).length}/${V.slots.length} filled</span></header><div class="body">
     ${V.slots.map(s=>`<div class="vslot"><div class="vt">${esc(s.trade)}</div><div class="grow">
-      ${s.current.map(c=>`<div class="vcur"><span class="tlink" onclick="openVendor(${c.vendor_id})"><b>${esc(c.vendor_name)}</b></span> ${c.reviews?`<span class="stars sm">${starStr(c.avg)}</span>`:''} ${vbadge(c)}
+      ${s.current.map(c=>`<div class="vcur"><span class="tlink" onclick="openVendor(${c.vendor_id})"><b>${esc(c.vendor_name)}</b></span> ${c.reviews?`<span class="stars sm">${starStr(c.avg)}</span>`:''} ${priceTag(c)} ${vbadge(c)}
         <div class="sub">${[c.contact_name,c.phone?`<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>`:''].filter(Boolean).join(' · ')}${c.started?` · since ${fmtDate(c.started)}`:''}</div>
         <div class="vacts"><span class="tlink" onclick="rateForm(${c.vendor_id},${p.id},null,()=>openProperty(${p.id}))">⭐ Rate</span>${can?` · <span class="tlink" onclick="pvPick(${p.id},'${encodeURIComponent(s.trade)}',true)">Change</span> · <span class="tlink" onclick="pvEnd(${c.id})">Stop using</span> · <span class="tlink" onclick="pvPick(${p.id},'${encodeURIComponent(s.trade)}',false)">+ another</span>`:''}</div></div>`).join('')}
       ${!s.current.length?(can?`<span class="tlink" onclick="pvPick(${p.id},'${encodeURIComponent(s.trade)}',true)">+ Choose vendor</span>`:'<span class="mute">—</span>'):''}
@@ -897,7 +905,7 @@ async function pvSlot(pid){const t=$('#pvNewSlot').value.trim();if(!t)return;awa
 /* project panel: vendors section */
 function projVendors(p){const can=isMgr()||p.team.some(m=>m.user_id===ME.id);
   return `<div class="sec"><h3 style="margin:0 0 6px">🧰 Vendors</h3>
-    ${p.vendors.map(v=>`<div class="row2"><span class="ico">🧰</span><div class="grow"><span class="tlink" onclick="openVendor(${v.vendor_id})"><b>${esc(v.vendor_name)}</b></span>${v.trade?` <span class="mute">· ${esc(v.trade)}</span>`:''} ${v.reviews?`<span class="stars sm">${starStr(v.avg)}</span>`:''} ${vbadge(v)}
+    ${p.vendors.map(v=>`<div class="row2"><span class="ico">🧰</span><div class="grow"><span class="tlink" onclick="openVendor(${v.vendor_id})"><b>${esc(v.vendor_name)}</b></span>${v.trade?` <span class="mute">· ${esc(v.trade)}</span>`:''} ${v.reviews?`<span class="stars sm">${starStr(v.avg)}</span>`:''} ${priceTag(v)} ${vbadge(v)}
       <div class="sub">${[v.contact_name,v.phone?`<a href="tel:${esc(v.phone)}">${esc(v.phone)}</a>`:'',v.notes].filter(Boolean).map(x=>x.startsWith('<a')?x:esc(x)).join(' · ')}</div></div>
       <button class="b ghost sm" onclick="rateForm(${v.vendor_id},${p.property_id||'null'},${p.id},()=>openProject(${p.id}))">⭐</button>${can?`<button class="b ghost sm" style="color:var(--bad)" onclick="pjvDel(${v.id},${p.id})">✕</button>`:''}</div>`).join('')||'<div class="mute" style="font-size:13px">No vendors assigned.</div>'}
     ${can?`<div class="row" style="margin-top:6px"><select id="pjvTrade" style="width:auto" onchange="pjvList(${p.id})"><option value="">Any trade</option>${(TRADES.length?TRADES:[]).map(t=>`<option>${esc(t)}</option>`).join('')}</select><select id="pjvSel" style="flex:1;min-width:180px"></select><button class="b ghost" onclick="pjvAdd(${p.id})">Assign</button></div>`:''}</div>`;}

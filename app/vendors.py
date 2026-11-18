@@ -13,6 +13,7 @@ TRADES = ["Landscaping", "Utilities – Electric", "Utilities – Water", "Utili
           "Power washing", "Roofing", "HVAC", "Plumbing", "Electrical", "Pest control", "Parking lot / paving",
           "Fire & life safety", "Janitorial", "Security", "Elevator", "Painting", "Signage", "Locksmith",
           "General contractor", "Other"]
+PRICE_LABELS = {1: "Budget", 2: "Below average", 3: "Average", 4: "Above average", 5: "Premium"}
 # Slots every property page shows (others can be added per property)
 PROPERTY_SLOTS = ["Landscaping", "Utilities – Electric", "Utilities – Water", "Utilities – Gas", "Trash / recycling",
                   "Power washing", "Roofing", "HVAC", "Plumbing", "Pest control", "Parking lot / paving",
@@ -28,6 +29,8 @@ def init():
         c.execute("""CREATE TABLE IF NOT EXISTS vendor_reviews(
             id INTEGER PRIMARY KEY, vendor_id INTEGER NOT NULL, user_id INTEGER, property_id INTEGER, project_id INTEGER,
             stars INTEGER NOT NULL, note TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')))""")
+        if "price" not in {r[1] for r in c.execute("PRAGMA table_info(vendor_reviews)")}:
+            c.execute("ALTER TABLE vendor_reviews ADD COLUMN price INTEGER")   # 1 ($, budget) … 5 ($$$$$, premium)
         c.execute("""CREATE TABLE IF NOT EXISTS property_vendors(
             id INTEGER PRIMARY KEY, property_id INTEGER NOT NULL, trade TEXT NOT NULL, vendor_id INTEGER NOT NULL,
             status TEXT NOT NULL DEFAULT 'current', started TEXT, ended TEXT, notes TEXT, created_by INTEGER)""")
@@ -59,6 +62,8 @@ def _stats(c, vendor_id: int) -> dict:
     recent_bad = c.execute("""SELECT stars, note, created_at FROM vendor_reviews WHERE vendor_id=? AND stars<=2
                               AND created_at >= ? ORDER BY id DESC LIMIT 1""",
                            (vendor_id, (date.today() - timedelta(days=365)).isoformat())).fetchone()
+    pr = c.execute("SELECT COUNT(price) n, AVG(price) avg FROM vendor_reviews WHERE vendor_id=? AND price IS NOT NULL",
+                   (vendor_id,)).fetchone()
     n, avg = r["n"], round(r["avg"], 1) if r["avg"] is not None else None
     if n and (avg < 3 or recent_bad):
         badge = "warn" if avg >= 3 else "bad"
@@ -66,7 +71,9 @@ def _stats(c, vendor_id: int) -> dict:
         badge = "good"
     else:
         badge = None
-    return {"reviews": n, "avg": avg, "badge": badge,
+    price = round(pr["avg"]) if pr["avg"] is not None else None
+    return {"reviews": n, "avg": avg, "badge": badge, "price": price, "price_votes": pr["n"],
+            "price_label": PRICE_LABELS.get(price),
             "badge_label": {"good": "👍 Recommended", "warn": "⚠️ Mixed reviews", "bad": "⚠️ Not recommended"}.get(badge),
             "warning": (f"{recent_bad['stars']}★ on {recent_bad['created_at'][:10]}: “{recent_bad['note']}”"
                         if recent_bad and recent_bad["note"] else
@@ -152,16 +159,19 @@ def update(vendor_id: int, d: dict):
             c.execute(f"UPDATE vendors SET {', '.join(k + '=?' for k in sets)} WHERE id=?", (*sets.values(), vendor_id))
 
 
-def add_review(vendor_id: int, user_id, stars: int, note: str | None, property_id=None, project_id=None) -> int:
+def add_review(vendor_id: int, user_id, stars: int, note: str | None, property_id=None, project_id=None,
+               price: int | None = None) -> int:
     stars = int(stars)
     if not 1 <= stars <= 5:
         raise ValueError("Pick 1 to 5 stars.")
+    if price is not None and not 1 <= int(price) <= 5:
+        raise ValueError("Price is $ to $$$$$.")
     with tx() as c:
         if not c.execute("SELECT 1 FROM vendors WHERE id=?", (vendor_id,)).fetchone():
             raise ValueError("Vendor not found.")
-        return c.execute("""INSERT INTO vendor_reviews(vendor_id, user_id, property_id, project_id, stars, note)
-                            VALUES(?,?,?,?,?,?)""", (vendor_id, user_id, property_id or None, project_id or None, stars,
-                                                     (note or "").strip() or None)).lastrowid
+        return c.execute("""INSERT INTO vendor_reviews(vendor_id, user_id, property_id, project_id, stars, note, price)
+                            VALUES(?,?,?,?,?,?,?)""", (vendor_id, user_id, property_id or None, project_id or None, stars,
+                                                       (note or "").strip() or None, int(price) if price else None)).lastrowid
 
 
 def delete_review(review_id: int):
@@ -185,7 +195,7 @@ def property_vendors(property_id: int) -> dict:
                JOIN vendors v ON v.id=pv.vendor_id WHERE pv.property_id=? ORDER BY pv.status='past', pv.ended DESC, pv.id""",
             (property_id,)))
         for a in assigned:
-            a.update({k: v for k, v in _stats(c, a["vendor_id"]).items() if k in ("avg", "reviews", "badge", "badge_label", "warning")})
+            a.update({k: v for k, v in _stats(c, a["vendor_id"]).items() if k in ("avg", "reviews", "badge", "badge_label", "warning", "price", "price_label")})
     slots = list(PROPERTY_SLOTS)
     for t in extra + [a["trade"] for a in assigned]:
         if t not in slots:
@@ -241,7 +251,7 @@ def project_vendors(project_id: int) -> list[dict]:
         vs = rows(c.execute("""SELECT pv.*, v.name AS vendor_name, v.phone, v.email, v.contact_name FROM project_vendors pv
                                JOIN vendors v ON v.id=pv.vendor_id WHERE pv.project_id=? ORDER BY pv.id""", (project_id,)))
         for a in vs:
-            a.update({k: v for k, v in _stats(c, a["vendor_id"]).items() if k in ("avg", "reviews", "badge", "badge_label", "warning")})
+            a.update({k: v for k, v in _stats(c, a["vendor_id"]).items() if k in ("avg", "reviews", "badge", "badge_label", "warning", "price", "price_label")})
     return vs
 
 
