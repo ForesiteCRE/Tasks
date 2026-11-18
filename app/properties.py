@@ -428,6 +428,7 @@ def update_date(date_id: int, fields: dict):
         c.execute(f"UPDATE critical_dates SET {', '.join(k + '=?' for k in sets)} WHERE id=?", (*sets.values(), date_id))
         if old and ("date" in sets and sets["date"] != old["date"] or "remind_days" in sets):
             c.execute("DELETE FROM critical_date_alerts WHERE date_id=?", (date_id,))   # new schedule, fresh reminders
+            c.execute("DELETE FROM automation_log WHERE rule='dept_date' AND task_id=?", (date_id,))
         if old and old["task_id"]:  # keep the linked task in step
             if "date" in sets:
                 c.execute("UPDATE tasks SET due_date=? WHERE id=?", (sets["date"], old["task_id"]))

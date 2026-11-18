@@ -178,6 +178,7 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 .pricepick{display:flex;gap:6px;flex-wrap:wrap}.pricepick button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 10px;font-weight:700;color:#3d6b1f;cursor:pointer;min-width:44px}.pricepick button.on{background:#3d6b1f;color:#fff;border-color:#3d6b1f}
 .stars{color:#e8a317;letter-spacing:1px}.stars.sm{font-size:12px}
 .vbadge{font-size:11.5px;padding:2px 8px;border-radius:99px;white-space:nowrap}.vbadge.good{background:#eef6e4;color:#3d6b1f}.vbadge.warn{background:#fdf1e2;color:#9a5b0c}.vbadge.bad{background:#fde8e8;color:var(--bad)}
+.pill.dh{background:#efe7fa;color:#6741a5}
 .pchip.sm{font-size:11.5px;padding:2px 8px}.coiline{margin-top:4px;font-size:12px}.coirow{background:#f7fafc;border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px;font-size:13px}.coirow a{color:var(--ink)}.b.sm.on{background:var(--acc);color:#fff}
 .vacts{font-size:12px;margin-top:2px;color:var(--mute)}.vslot a[href^=tel]{color:inherit}
 .vslot{display:flex;gap:12px;padding:8px 2px;border-bottom:1px solid var(--line)}.vslot .vt{width:150px;flex:none;font-size:13px;color:var(--mute);padding-top:2px}.vcur+.vcur{margin-top:8px}.vpast{margin-top:4px}
@@ -386,6 +387,9 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 <section id="v-people" class="hidden">
   <div class="card"><h2>Add person</h2><div class="row"><input id="uName" placeholder="Name"><input id="uEmail" placeholder="name@foresitecre.com"><input id="uBlink" placeholder="Blink ID (optional – found by email)"><button class="b" onclick="addUser()">Add</button><button class="b ghost" onclick="matchBlink()">🔗 Find missing Blink IDs</button></div>
   <p class="mute">Add teammates by work email — their Blink account is found automatically, so you can assign them tasks before they ever sign in.</p></div>
+  <div class="card"><h2>🏛 Departments</h2><p class="mute" style="margin-top:0">Each department has a head. When something in their department goes on too long — a task overdue or blocked for days, a critical date passed and not handled — the head gets a daily Blink digest (set the timing in Reports &amp; backups → Automations).</p>
+    <table id="depts"></table>
+    <div class="row" style="margin-top:8px"><input id="dName" placeholder="New department (e.g. Land)" style="flex:1;min-width:180px"><select id="dHead"></select><button class="b ghost" onclick="deptAdd()">Add department</button></div></div>
   <div class="card"><table id="people"></table>
   <p class="mute"><b>Admin</b> = everything, plus this People page and Reports &amp; backups. <b>Manager</b> = can create projects, assign/reassign tasks, edit templates, manage people. <b>Staff</b> = can see everything but only update their own tasks. Duplicate entry for the same person? Choose “Merge into …” on the extra row and click Remove — their tasks move over.</p></div>
   <div class="card"><h2>👥 Project roles</h2><p class="mute" style="margin-top:0">Roles each project can have. Template items can be assigned to a role instead of a person — when a project starts, those tasks go to whoever holds that role on that project. The default person is pre-filled on new projects.</p>
@@ -486,7 +490,7 @@ async function refresh(){
   document.querySelectorAll('.mgronly').forEach(el=>el.classList.toggle('hidden',!isMgr()));
   if(!$('#v-tasks').classList.contains('hidden'))renderTasks();
   renderProjects();
-  if(isAdmin()){renderPeople();renderRoles();}
+  if(isAdmin()){renderDepts().then(renderPeople);renderRoles();}
   if(isMgr()){renderTemplates();renderNewTeam();renderPreview();
     $('#cUser').innerHTML=USERS.filter(u=>u.blink_user_id).map(u=>`<option value="${esc(u.blink_user_id)}">${esc(u.name)}</option>`).join('');
     renderRecurring();}
@@ -1245,11 +1249,22 @@ function renderTeam(){
 }
 
 /* ---------- people (managers) ---------- */
+let DEPTS=[];
+async function renderDepts(){DEPTS=await api('/api/departments');
+  $('#depts').innerHTML='<tr><th>Department</th><th>Head</th><th>People</th><th></th></tr>'+DEPTS.map(d=>`<tr>
+    <td><input value="${esc(d.name)}" style="width:100%" onchange="api('/api/departments/${d.id}',{method:'PATCH',body:{name:this.value}}).then(renderDepts)"></td>
+    <td><select onchange="api('/api/departments/${d.id}',{method:'PATCH',body:{head_user_id:+this.value||null}}).then(async()=>{await refresh();toast('Department head set')})">${userOpts(d.head_user_id,'— no head (managers get escalations)')}</select></td>
+    <td class="mute">${d.members}</td><td><button class="b ghost sm" onclick="deptDel(${d.id})">Remove</button></td></tr>`).join('');
+  $('#dHead').innerHTML=userOpts('','Head (optional)');}
+async function deptAdd(){await api('/api/departments',{method:'POST',body:{name:$('#dName').value,head_user_id:+$('#dHead').value||null}});$('#dName').value='';await refresh();toast('Department added');}
+async function deptDel(id){if(!confirm('Remove this department? People in it just become unassigned.'))return;await api('/api/departments/'+id,{method:'DELETE'});await refresh();}
 function renderPeople(){
-  $('#people').innerHTML='<tr><th>Name</th><th>Email</th><th>Role</th><th>Open</th><th>Weekly summary</th><th>Blink user ID</th><th></th></tr>'+USERS.map(u=>`<tr>
+  const heads=new Map(DEPTS.filter(d=>d.head_user_id).map(d=>[d.head_user_id,d.name]));
+  $('#people').innerHTML='<tr><th>Name</th><th>Email</th><th>Role</th><th>Department</th><th>Open</th><th>Weekly summary</th><th>Blink user ID</th><th></th></tr>'+USERS.map(u=>`<tr>
     <td><input value="${esc(u.name)}" style="width:100%" onchange="api('/api/users/${u.id}',{method:'PATCH',body:{name:this.value}}).then(refresh)"></td>
-    <td>${esc(u.email)}${u.id===ME.id?' <span class="pill">you</span>':''}</td>
+    <td>${esc(u.email)}${u.id===ME.id?' <span class="pill">you</span>':''}${heads.has(u.id)?` <span class="pill dh" title="Head of ${esc(heads.get(u.id))}">Dept head</span>`:''}</td>
     <td><select onchange="api('/api/users/${u.id}',{method:'PATCH',body:{role:this.value}}).then(refresh,refresh)"><option value="staff" ${u.role==='staff'?'selected':''}>Staff</option><option value="manager" ${u.role==='manager'?'selected':''}>Manager</option><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option></select></td>
+    <td><select onchange="api('/api/users/${u.id}',{method:'PATCH',body:{department_id:+this.value||null}}).then(()=>renderDepts().then(renderPeople))"><option value="">—</option>${DEPTS.map(d=>`<option value="${d.id}" ${d.id===u.department_id?'selected':''}>${esc(d.name)}</option>`).join('')}</select></td>
     <td>${u.open_tasks}</td>
     <td><input type="checkbox" ${u.weekly_summary?'checked':''} ${u.blink_user_id?'':'disabled title="Needs a Blink ID"'} onchange="api('/api/users/${u.id}',{method:'PATCH',body:{weekly_summary:this.checked}})"></td>
     <td><input value="${esc(u.blink_user_id)}" placeholder="u-…" style="width:100%" onchange="api('/api/users/${u.id}',{method:'PATCH',body:{blink_user_id:this.value}}).then(refresh)"></td>
@@ -1371,9 +1386,11 @@ async function loadAdmin(){loadDemo();loadAutomations();loadInsights();const c=a
   $('#bkInfo').textContent=c.last_backup?`Last backup: ${c.last_backup}`:'No backup yet';
   $('#aiInfo').innerHTML=c.plain_english?'✅ On — people can reply like “finished the rent roll, still waiting on Joe for CAM” and Claude updates the right tasks.':'Off — add an <code>ANTHROPIC_API_KEY</code> variable in Railway to let people reply in plain English. Commands like <code>done 12</code> work either way.';
   const b=await api('/api/backups');$('#backups').innerHTML=b.length?'<tr><th>File</th><th>Size</th><th></th></tr>'+b.map(x=>`<tr><td>${esc(x.name)}</td><td>${x.size_kb} KB</td><td><a href="/api/backups/${encodeURIComponent(x.name)}">Download</a></td></tr>`).join(''):'';}
-const AUTO=[['blocked','⛔ Task marked Blocked','Managers'],['overdue_days','⚠️ Task overdue','Managers (once per task)'],['your_turn','▶️ “Your turn” when what a task was waiting on is done','The task\'s assignee'],['project_done','🎉 Project completed','Managers'],['comment_assignee','💬 Someone comments on your task','The task\'s assignee']];
+const AUTO=[['blocked','⛔ Task marked Blocked','Managers'],['overdue_days','⚠️ Task overdue','Managers (once per task)'],
+  ['dept_overdue_days','📣 Task overdue too long','Head of the assignee\'s department (daily digest)'],['dept_blocked_days','📣 Task blocked too long','Head of the assignee\'s department'],
+  ['dept_date_days','📣 Critical date passed, not handled','Head of the property manager\'s department'],['your_turn','▶️ “Your turn” when what a task was waiting on is done','The task\'s assignee'],['project_done','🎉 Project completed','Managers'],['comment_assignee','💬 Someone comments on your task','The task\'s assignee']];
 async function loadAutomations(){const a=await api('/api/automations');
-  $('#autoTbl').innerHTML='<tr><th>When</th><th>Who gets a Blink message</th><th>On</th></tr>'+AUTO.map(([k,l,w])=>`<tr><td>${l}</td><td class="mute">${w}</td><td>${k==='overdue_days'?`<select onchange="saveAuto('${k}',this.value)">${[0,1,2,3,5,7].map(n=>`<option value="${n}" ${+a[k]===n?'selected':''}>${n?`${n}+ day${n>1?'s':''} late`:'Off'}</option>`).join('')}</select>`:`<input type="checkbox" ${a[k]==='1'?'checked':''} onchange="saveAuto('${k}',this.checked?1:0)">`}</td></tr>`).join('');}
+  $('#autoTbl').innerHTML='<tr><th>When</th><th>Who gets a Blink message</th><th>On</th></tr>'+AUTO.map(([k,l,w])=>`<tr><td>${l}</td><td class="mute">${w}</td><td>${k.endsWith('_days')?`<select onchange="saveAuto('${k}',this.value)">${[0,1,2,3,5,7,10,14].map(n=>`<option value="${n}" ${+a[k]===n?'selected':''}>${n?`after ${n} day${n>1?'s':''}`:'Off'}</option>`).join('')}</select>`:`<input type="checkbox" ${a[k]==='1'?'checked':''} onchange="saveAuto('${k}',this.checked?1:0)">`}</td></tr>`).join('');}
 async function saveAuto(k,v){await api('/api/automations',{method:'PUT',body:{[k]:v}});toast('Saved');}
 async function previewSummary(){const r=await api('/api/summary/preview');$('#sumPreview').textContent=r.text;$('#sumPreview').classList.remove('hidden');}
 async function sendSummary(){const r=await api('/api/summary/send',{method:'POST'});alert(r.sent_to?`Sent to ${r.sent_to} people.`:'Nobody is ticked for the weekly summary yet (People tab).');}

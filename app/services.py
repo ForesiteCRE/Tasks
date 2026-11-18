@@ -73,6 +73,9 @@ def apply_update(task_id: int, user_id: int | None, source: str, status: str | N
         elif status and status != "done":  # reopening a task reopens its project
             c.execute("UPDATE projects SET status='active' WHERE id=? AND status='done'", (t["project_id"],))
     automations.on_status_change(task_id, old, status, user_id, note)
+    if old == "blocked" and status and status != "blocked":
+        from . import departments
+        departments.reset("dept_blocked", task_id)
     if status and status != old:
         from . import audit
         audit.log(user_id, f"status → {STATUS_LABEL.get(status, status)}", "task", task_id, t["title"],

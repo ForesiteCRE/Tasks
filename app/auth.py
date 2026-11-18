@@ -90,7 +90,7 @@ def _apply_role_rules(uid: int, email: str):
 # Admin-only areas: People (managing users & project roles) and Reports & backups.
 ADMIN_ONLY_PREFIXES = ("/api/backups", "/api/summary", "/api/automations", "/api/insights", "/api/blink/messages",
                        "/api/blink/simulate", "/api/reminders/run", "/api/users/match-blink", "/api/demo")
-ADMIN_ONLY_WRITE_PREFIXES = ("/api/users", "/api/roles")   # reading the people/role lists is fine for everyone
+ADMIN_ONLY_WRITE_PREFIXES = ("/api/users", "/api/roles", "/api/departments")   # reading the people/role lists is fine for everyone
 
 
 def _admin_only(request: Request) -> bool:

@@ -1001,3 +1001,43 @@ def test_expiring_reminders_go_to_property_manager(mgr):
     before = len(SENT)
     properties.run_alerts(date.today() + timedelta(days=14))                                         # crosses the 7-day mark
     assert [b for b, t in SENT[before:] if "Policy renewal" in t] == ["u-jo"]
+
+
+def test_department_heads_get_escalations(mgr, staff):
+    from datetime import date, timedelta
+    from app import departments
+    with tx() as c:
+        sam = c.execute("SELECT id FROM users WHERE blink_user_id='u-sam'").fetchone()["id"]
+        jo = c.execute("SELECT id FROM users WHERE blink_user_id='u-jo'").fetchone()["id"]
+        c.execute("DELETE FROM automation_log WHERE rule LIKE 'dept_%'")
+    assert staff.post("/api/departments", json={"name": "X"}).status_code == 403          # admin only
+    acct = ids(mgr.post("/api/departments", json={"name": "Test Accounting", "head_user_id": jo}))["id"]
+    ids(mgr.patch(f"/api/users/{sam}", json={"department_id": acct}))
+    d = [x for x in ids(mgr.get("/api/departments")) if x["id"] == acct][0]
+    assert d["head_name"] and d["members"] == 2
+    today = date.today()
+    late = ids(mgr.post("/api/tasks", json={"title": "Late bank rec", "assignee_id": sam, "due_date": (today - timedelta(days=4)).isoformat()}))["id"]
+    fresh = ids(mgr.post("/api/tasks", json={"title": "Barely late", "assignee_id": sam, "due_date": (today - timedelta(days=1)).isoformat()}))["id"]
+    blk = ids(mgr.post("/api/tasks", json={"title": "Stuck on owner", "assignee_id": sam}))["id"]
+    ids(mgr.patch(f"/api/tasks/{blk}", json={"status": "blocked", "note": "waiting on owner"}))
+    with tx() as c:
+        c.execute("UPDATE task_updates SET created_at=datetime('now','-5 days') WHERE task_id=? AND status='blocked'", (blk,))
+    before = len(SENT)
+    departments.run_escalations()
+    msgs = [t for b, t in SENT[before:] if b == "u-jo"]
+    digest = next(m for m in msgs if "Test Accounting" in m)
+    assert "Late bank rec" in digest and "Stuck on owner" in digest and "Barely late" not in digest
+    before = len(SENT)
+    departments.run_escalations()                                                           # each item only once
+    assert not [t for b, t in SENT[before:] if "Late bank rec" in t]
+    # moving the due date allows a fresh escalation later; the head's own tasks don't go to themselves
+    ids(mgr.patch(f"/api/tasks/{late}", json={"due_date": (today - timedelta(days=10)).isoformat()}))
+    own = ids(mgr.post("/api/tasks", json={"title": "Head's own late task", "assignee_id": jo, "due_date": (today - timedelta(days=9)).isoformat()}))["id"]
+    before = len(SENT)
+    departments.run_escalations()
+    new = SENT[before:]
+    assert any(b == "u-jo" and "Late bank rec" in t for b, t in new)
+    assert not any(b == "u-jo" and "Head's own late task" in t for b, t in new)            # goes to managers instead
+    s = ids(mgr.get("/api/automations"))
+    assert s["dept_overdue_days"] == "3" and ids(mgr.put("/api/automations", json={"dept_overdue_days": 5}))["dept_overdue_days"] == "5"
+    ids(mgr.put("/api/automations", json={"dept_overdue_days": 3}))

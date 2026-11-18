@@ -19,12 +19,14 @@ DEFAULTS = {"your_turn": "1", "blocked": "1", "overdue_days": "2", "project_done
 
 
 def settings() -> dict:
-    return {k: get_setting(f"automation.{k}") or v for k, v in DEFAULTS.items()}
+    from .departments import DEFAULTS as DEPT
+    return {k: get_setting(f"automation.{k}") or v for k, v in {**DEFAULTS, **DEPT}.items()}
 
 
 def update_settings(new: dict):
+    from .departments import DEFAULTS as DEPT
     for k, v in new.items():
-        if k in DEFAULTS:
+        if k in DEFAULTS or k in DEPT:
             set_setting(f"automation.{k}", str(v))
 
 

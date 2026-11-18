@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import (audit, auth, automations, blink, chat, closeboard, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
+from . import (audit, auth, automations, blink, chat, closeboard, departments, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
                starter_templates, team, timing, tpl)
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
@@ -34,7 +34,7 @@ async def scheduler_loop():
                 logging.exception("scheduler job %s failed", job.__name__)
         if datetime.now().hour >= REMINDER_HOUR:
             for job in (services.send_reminders, maintenance.send_weekly_summary, automations.overdue_escalation,
-                        extras.send_week_ahead, properties.run_alerts, audit.purge):
+                        extras.send_week_ahead, properties.run_alerts, audit.purge, departments.run_escalations):
                 try:
                     job()
                 except Exception:
@@ -190,6 +190,7 @@ def delete_user(uid: int, request: Request, merge_into: int | None = None):
     return {"ok": True}
 
 class UserPatch(BaseModel):
+    department_id: int | None = None
     role: str | None = None
     name: str | None = None
     blink_user_id: str | None = None
@@ -210,6 +211,37 @@ def patch_user(uid: int, p: UserPatch):
             c.execute("UPDATE users SET role=? WHERE id=?", (p.role, uid))
         if p.weekly_summary is not None:
             c.execute("UPDATE users SET weekly_summary=? WHERE id=?", (int(p.weekly_summary), uid))
+    if "department_id" in p.model_fields_set:
+        departments.set_user_department(uid, p.department_id)
+    return {"ok": True}
+
+
+class DeptIn(BaseModel):
+    name: str | None = None
+    head_user_id: int | None = None
+
+@app.get("/api/departments")
+def list_departments():
+    return departments.list_all()
+
+
+@app.post("/api/departments")
+def create_department(body: DeptIn):
+    try:
+        return {"id": departments.create(body.name, body.head_user_id)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.patch("/api/departments/{did}")
+def patch_department(did: int, body: DeptIn):
+    departments.update(did, body.model_dump(exclude_unset=True))
+    return {"ok": True}
+
+
+@app.delete("/api/departments/{did}")
+def delete_department(did: int):
+    departments.delete(did)
     return {"ok": True}
 
 @app.get("/api/config")
@@ -705,6 +737,7 @@ def patch_task(tid: int, p: TaskPatch, request: Request):
             audit.log(p.user_id, action, "task", tid, p.title or before["title"], detail)
     if p.due_date is not None:
         automations.reset_overdue_flag(tid)
+        departments.reset("dept_overdue", tid)
     if p.estimate is not None or p.actual is not None or p.time_notes is not None:
         def mins(v):
             if v is None:
