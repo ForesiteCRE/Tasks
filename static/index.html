@@ -689,8 +689,8 @@ function renderCalendar(){
   // list mode: every day of the month that has something, overdue first
   const mk=`${CAL.y}-${String(CAL.m+1).padStart(2,'0')}`,allDays=Object.keys(byDay).filter(k=>k.startsWith(mk)).sort();
   const past=CAL.showPast?[]:allDays.filter(k=>k<today()),days=allDays.filter(k=>!past.includes(k));
-  const over=CAL.y===new Date().getFullYear()&&CAL.m===new Date().getMonth()?ts.filter(t=>isOver(t)&&!t.due_date.startsWith(mk)):[];
-  $('#calList').innerHTML=(past.length?`<button class="b ghost" style="width:100%;margin-top:8px" onclick="CAL.showPast=true;renderCalendar()">Show ${past.length} earlier day${past.length>1?'s':''} this month</button>`:'')+(over.length?`<div class="grp red">Overdue from earlier · ${over.length}</div>${over.map(calRow).join('')}`:'')+
+  const over=CAL.y===new Date().getFullYear()&&CAL.m===new Date().getMonth()?ts.filter(t=>isOver(t)&&(!t.due_date.startsWith(mk)||past.includes(t.due_date))):[];
+  $('#calList').innerHTML=(past.length?`<button class="b ghost" style="width:100%;margin-top:8px" onclick="CAL.showPast=true;renderCalendar()">Show ${past.length} earlier day${past.length>1?'s':''} this month</button>`:'')+(over.length?`<div class="grp red">Overdue · ${over.length}</div>${over.map(calRow).join('')}`:'')+
     (days.map(k=>`<div class="grp ${k===today()?'tday':''}" ${k===today()?'id="calToday"':''}>${calDayLabel(k)} <span class="mute" style="font-weight:500">· ${byDay[k].length}</span></div>${byDay[k].sort((a,b)=>(a.status==='done')-(b.status==='done')).map(calRow).join('')}`).join('')||'<div class="empty">Nothing due this month.</div>');
   document.querySelectorAll('#calMode button').forEach(b=>b.classList.toggle('on',b.dataset.m===CALMODE));
   $('#cal').classList.toggle('hidden',CALMODE==='list');$('#calDay').classList.toggle('hidden',CALMODE==='list');$('#calList').classList.toggle('hidden',CALMODE!=='list');
