@@ -43,7 +43,7 @@ ICONS = {"tax_protest": "🏛", "tax_payment": "💵", "insurance_renewal": "☂
 REPEATS = {"monthly": 1, "quarterly": 3, "yearly": 12}
 DOC_KINDS = {"insurance": "Property insurance", "mgmt_agreement": "Management agreement", "tax_notice": "Tax notice / appraisal",
              "loan": "Loan document", "other": "Other"}
-CONTACT_ROLES = ["Owner contact", "Asset manager", "CPA", "Insurance agent", "Lender", "Tax protest company", "Lawyer", "Other"]
+CONTACT_ROLES = ["Owner contact", "Asset manager", "CPA", "Bank", "Insurance agent", "Lender", "Tax protest company", "Lawyer", "Other"]
 DEFAULT_REMIND = "90,30,7"
 
 
@@ -63,6 +63,7 @@ def init():
         if "property_id" not in {r[1] for r in c.execute("PRAGMA table_info(projects)")}:
             c.execute("ALTER TABLE projects ADD COLUMN property_id INTEGER")
         for table, col, typ in [("properties", "spend_limit", "REAL"), ("properties", "report_notes", "TEXT"),
+                                ("properties", "bank_name", "TEXT"), ("properties", "bank_accounts", "TEXT"),
                                 ("critical_dates", "repeat", "TEXT")]:
             if col not in {r[1] for r in c.execute(f"PRAGMA table_info({table})")}:
                 c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
@@ -247,7 +248,9 @@ def create(address: str, name: str | None = None, client: str | None = None, not
 
 
 def update(pid: int, fields: dict):
-    allowed = {k: v for k, v in fields.items() if k in ("name", "client", "notes", "address", "report_notes") and v is not None}
+    allowed = {k: v for k, v in fields.items() if k in ("name", "client", "notes", "address", "report_notes", "bank_name", "bank_accounts") and v is not None}
+    if "bank_accounts" in allowed:
+        allowed["bank_accounts"] = mask_accounts(allowed["bank_accounts"])
     if "spend_limit" in fields:
         allowed["spend_limit"] = float(fields["spend_limit"]) if fields["spend_limit"] not in (None, "", 0) else None
     if "address" in allowed:
@@ -260,6 +263,12 @@ def update(pid: int, fields: dict):
         c.execute(f"UPDATE properties SET {', '.join(k + '=?' for k in allowed)} WHERE id=?", (*allowed.values(), pid))
         if "address" in allowed:  # keep the projects' address text in step
             c.execute("UPDATE projects SET property=? WHERE property_id=?", (allowed["address"], pid))
+
+
+def mask_accounts(text: str) -> str:
+    """Never keep full account numbers: any run of 5+ digits becomes ••last4."""
+    return re.sub(r"\d[\d -]{3,}\d", lambda m: "••" + re.sub(r"\D", "", m.group())[-4:]
+                  if len(re.sub(r"\D", "", m.group())) >= 5 else m.group(), text or "")
 
 
 def delete(pid: int, keep_files: bool = False):
@@ -507,7 +516,7 @@ def upcoming(days: int = 120, user_id: int | None = None) -> list[dict]:
 
 EXTRACT_SCHEMA = {
     "type": "object", "additionalProperties": False,
-    "required": ["doc_type", "summary", "dates", "spend_limit", "report_notes", "contacts", "insurance"],
+    "required": ["doc_type", "summary", "dates", "spend_limit", "report_notes", "bank_name", "contacts", "insurance"],
     "properties": {
         "doc_type": {"type": "string", "enum": list(DOC_KINDS)},
         "summary": {"type": "string", "description": "2-4 lines: what this document is and what matters for managing the property"},
@@ -525,6 +534,7 @@ EXTRACT_SCHEMA = {
             }}},
         "spend_limit": {"type": "number", "description": "max the manager may spend on one item/repair without owner approval, in dollars; 0 if not stated"},
         "report_notes": {"type": "string", "description": "how/when the owner wants reports: contents, format, recipients, deadlines. Empty if none."},
+        "bank_name": {"type": "string", "description": "bank holding the property's operating/trust account, if named; else empty"},
         "contacts": {"type": "array", "items": {
             "type": "object", "additionalProperties": False, "required": ["role", "name", "company", "email", "phone"],
             "properties": {"role": {"type": "string", "enum": CONTACT_ROLES}, "name": {"type": "string"},
@@ -547,7 +557,8 @@ Find:
 - Property-level critical dates: tax protest deadline, tax payment due, insurance renewal/expiration, owner report due dates (monthly/quarterly — give the next one and set repeat), annual budget due, CAM reconciliation due, lender reporting, management agreement term/renewal/termination notice, required inspections. Use exact dates; when the document gives a rule ("by the 15th of each month", "60 days after year end"), compute the next occurrence on or after today and say how in notes. Skip anything that would be a guess.
 - spend_limit: the most the manager may spend without the owner's prior approval (per item/repair/contract — say which in report_notes if it matters). 0 if not stated.
 - report_notes: what the owner wants in reports and how (format, contents, who receives them, when).
-- contacts: owner contact, the owner's asset manager, CPA/accountant, insurance agent/broker, lender, tax protest company/property tax consultant, lawyer/attorney — only people/companies actually named.
+- bank_name: the bank where the property's operating / trust / security deposit accounts are held. Never copy account numbers.
+- contacts: owner contact, the owner's asset manager, CPA/accountant, banker at the property's bank (role Bank), insurance agent/broker, lender, tax protest company/property tax consultant, lawyer/attorney — only people/companies actually named.
 - insurance: for an insurance document, carrier, policy number, expiration, and whether Foresite is named as an ADDITIONAL INSURED (look at additional insured sections, endorsements, certificate holder boxes — being only the certificate holder is NOT additional insured). Otherwise use not_applicable and empty strings.
 - confidence: high when stated, medium when calculated, low when ambiguous."""
 
@@ -612,6 +623,7 @@ def read_document(pid: int, data: bytes, content_type: str, filename: str, user_
     out["doc_id"] = doc_id
     out["doc_kind"] = kind
     out["spend_limit"] = out.get("spend_limit") or 0
+    out["bank_name"] = (out.get("bank_name") or "").strip()
     return out
 
 

@@ -635,6 +635,13 @@ function renderProperty(){const p=PROP,mg=isMgr(),dis=mg?'':'disabled',open=p.da
       <div class="row" style="margin:2px 0 10px"><span style="font-size:18px">$</span><input ${dis} type="number" min="0" step="100" value="${p.spend_limit||''}" placeholder="e.g. 5000" style="width:150px" onchange="propPatch({spend_limit:+this.value||null})"><span class="mute" style="font-size:12.5px">per repair / purchase</span></div>
       <label class="lbl">How the owner wants reports</label><textarea ${dis} rows="3" placeholder="What's included, format, who gets it, when…" onchange="propPatch({report_notes:this.value})">${esc(p.report_notes||'')}</textarea>
       <label class="lbl">Other notes</label><textarea ${dis} rows="2" placeholder="Owner preferences, access, vendors…" onchange="propPatch({notes:this.value})">${esc(p.notes||'')}</textarea></div></div>
+    <div class="panel"><header><h3>🏦 Banking</h3></header><div class="body">
+      <div class="team-grid"><label>Bank<input ${dis} value="${esc(p.bank_name||'')}" placeholder="e.g. Broadway Bank" onchange="propPatch({bank_name:this.value})"></label>
+      <label>Accounts <span class="via">last 4 only</span><input ${dis} value="${esc(p.bank_accounts||'')}" placeholder="Operating ••1234 · Deposits ••5678" onchange="propPatch({bank_accounts:this.value})"></label></div>
+      <div class="mute" style="font-size:11.5px;margin:2px 0 6px">For safety only the last 4 digits of an account number are kept.</div>
+      ${p.contacts.filter(c=>c.role==='Bank').map(c=>`<div class="row2"><span class="ico">🏦</span><div class="grow"><b>${esc(c.name||c.company||'')}</b>${c.name&&c.company?` · ${esc(c.company)}`:''}
+        <div class="sub">${c.email?`<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`:''}${c.email&&c.phone?' · ':''}${c.phone?`<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>`:''}${c.notes?' · '+esc(c.notes):''}</div></div>${mg?`<button class="b ghost sm" style="color:var(--bad)" onclick="ctDel(${c.id})">✕</button>`:''}</div>`).join('')
+        ||`<div class="empty" style="padding:6px 0">No bank contact yet.${mg?` <span class="tlink" onclick="ctBank()">+ Add bank contact</span>`:''}</div>`}</div></div>
     <div class="panel"><header><h3>🛡 Insurance &amp; documents</h3><span class="cnt">${p.docs.length}</span></header><div class="body">
       ${p.insurance.state==='missing'?`<div class="warnbox">No property insurance on file. ${mg?'Upload the policy or certificate — Claude checks that Foresite is named additional insured and adds the renewal date.':''}</div>`:''}
       ${p.insurance.state==='not_named'?`<div class="warnbox bad">⚠️ Foresite is <b>not</b> named additional insured on the latest policy. Ask the insurance agent for an additional insured endorsement.${p.insurance.note?`<div class="sub">${esc(p.insurance.note)}</div>`:''}</div>`:''}
@@ -694,6 +701,8 @@ async function propTeamSet(rid,uid){const r=await api(`/api/properties/${PROP.id
 async function propPatch(b){await api('/api/properties/'+PROP.id,{method:'PATCH',body:b});PROPS=[];await refresh();openProperty(PROP.id);toast('Saved');}
 async function delProperty(){const r=await api(`/api/properties/${PROP.id}?confirm=${encodeURIComponent($('#propDelConfirm').value)}`,{method:'DELETE'});PROPS=[];show('properties');toast('Property page deleted',()=>restoreTrash(r.trash_id),'Undo');}
 async function ctAdd(){await api(`/api/properties/${PROP.id}/contacts`,{method:'POST',body:{role:$('#ctRole').value,name:$('#ctName').value,company:$('#ctCompany').value,email:$('#ctEmail').value,phone:$('#ctPhone').value,notes:$('#ctNotes').value}});toast('Contact added');openProperty(PROP.id);}
+function ctBank(){const d=[...document.querySelectorAll('#propPage details')].find(x=>x.querySelector('#ctRole'));if(!d)return;d.open=true;$('#ctRole').value='Bank';
+  if(PROP.bank_name&&!$('#ctCompany').value)$('#ctCompany').value=PROP.bank_name;d.scrollIntoView({behavior:'smooth',block:'center'});$('#ctName').focus();}
 async function ctDel(id){if(!confirm('Remove this contact?'))return;await api('/api/property-contacts/'+id,{method:'DELETE'});openProperty(PROP.id);}
 async function docPatch(id,b){await api('/api/property-docs/'+id,{method:'PATCH',body:b});PROPS=[];openProperty(PROP.id);toast('Saved');}
 async function docDel(id){if(!confirm('Delete this file from the property?'))return;await api('/api/property-docs/'+id,{method:'DELETE'});PROPS=[];openProperty(PROP.id);}
@@ -706,7 +715,7 @@ async function leaseRead(f){if(!f)return;if(f.size>25e6){alert('That file is ove
   catch(e){$('#leaseBox').innerHTML=`<div class="cdform" style="color:var(--bad)">${esc(e.message||e)}</div>`;return;}
   PROP=await api('/api/properties/'+PROP.id);renderProperty();}
 function renderLease(){const L=LEASE,ins=L.insurance||{},isIns=L.doc_kind==='insurance';
-  const n=L.dates.length+(L.spend_limit?1:0)+(L.report_notes?1:0)+L.contacts.length;
+  const n=L.dates.length+(L.spend_limit?1:0)+(L.report_notes?1:0)+(L.bank_name?1:0)+L.contacts.length;
   $('#leaseBox').innerHTML=`<div class="cdform"><h3 style="margin:0 0 4px">📄 ${esc(L.doc_kind==='mgmt_agreement'?'Management agreement':L.doc_kind==='insurance'?'Insurance policy':L.doc_kind==='tax_notice'?'Tax notice':'Document')} read — the file is saved on this property</h3>
     <p class="mute" style="margin:0 0 8px">${esc(L.summary)}</p>
     ${isIns?`<div class="warnbox ${ins.foresite_additional_insured==='yes'?'okbox':ins.foresite_additional_insured==='no'?'bad':''}">${ins.foresite_additional_insured==='yes'?'✅ Foresite is named additional insured':ins.foresite_additional_insured==='no'?'⚠️ Foresite is NOT named additional insured — ask the agent for an endorsement':'❔ Couldn\'t tell whether Foresite is named additional insured — please check'}${ins.carrier?` · ${esc(ins.carrier)}`:''}${ins.expires?` · expires ${fmtDate(ins.expires)}`:''}${ins.evidence?`<div class="sub">${esc(ins.evidence)}</div>`:''}</div>`:''}
@@ -715,6 +724,7 @@ function renderLease(){const L=LEASE,ins=L.insurance||{},isIns=L.doc_kind==='ins
       <div class="grow"><div class="row" style="margin:0;gap:6px"><select id="lk${i}" style="width:auto">${kindOpts(d.kind)}</select><input type="date" id="ld${i}" value="${d.date}" style="width:auto"><select id="lr${i}" style="width:auto">${repOpts(d.repeat)}</select><span class="conf ${d.confidence}">${d.confidence==='high'?'stated':d.confidence==='medium'?'calculated — double-check':'unclear — check'}</span></div>
       <input id="lt${i}" value="${esc(d.title)}" style="margin-top:6px">${d.notes?`<div class="sub">${esc(d.notes)}</div>`:''}${d.quote?`<div class="note">“${esc(d.quote)}”</div>`:''}</div></div>`).join('')}
     ${L.spend_limit?`<div class="lrow"><input type="checkbox" id="lxSpend" checked style="width:auto"><div class="grow">💲 Owner approval needed over <b>${money(L.spend_limit)}</b>${PROP.spend_limit&&PROP.spend_limit!==L.spend_limit?` <span class="mute">(currently ${money(PROP.spend_limit)})</span>`:''}</div></div>`:''}
+    ${L.bank_name?`<div class="lrow"><input type="checkbox" id="lxBank" checked style="width:auto"><div class="grow">🏦 Bank: <b>${esc(L.bank_name)}</b>${PROP.bank_name&&PROP.bank_name!==L.bank_name?` <span class="mute">(currently ${esc(PROP.bank_name)})</span>`:''}</div></div>`:''}
     ${L.report_notes?`<div class="lrow"><input type="checkbox" id="lxRep" checked style="width:auto"><div class="grow">📊 Reporting requirements<div class="sub">${esc(L.report_notes)}</div></div></div>`:''}
     ${L.contacts.map((c,i)=>`<div class="lrow"><input type="checkbox" id="lc${i}" checked style="width:auto"><div class="grow">📇 ${esc(c.role)}: <b>${esc(c.name||c.company)}</b>${c.name&&c.company?' · '+esc(c.company):''}<div class="sub">${esc([c.email,c.phone].filter(Boolean).join(' · '))}</div></div></div>`).join('')}
     ${L.dates.length?`<div class="row" style="margin-top:10px"><label>Dates go to <select id="lWho">${userOpts('','— (managers get the reminder)')}</select></label><label>Remind <input id="lRemind" value="90,30,7" style="width:110px"> days before</label></div>`:''}
@@ -723,6 +733,7 @@ async function leaseSave(){const L=LEASE,who=$('#lWho')?+$('#lWho').value||null:
   const dates=L.dates.map((d,i)=>$('#lx'+i).checked?{...d,kind:$('#lk'+i).value,date:$('#ld'+i).value,repeat:$('#lr'+i).value,title:$('#lt'+i).value,assignee_id:who,remind_days:rem}:null).filter(Boolean);
   if(dates.length){await api(`/api/properties/${PROP.id}/dates`,{method:'POST',body:{dates,source:'lease'}});added+=dates.length;}
   const patch={};if(L.spend_limit&&$('#lxSpend').checked)patch.spend_limit=L.spend_limit;
+  if(L.bank_name&&$('#lxBank').checked)patch.bank_name=L.bank_name;
   if(L.report_notes&&$('#lxRep').checked)patch.report_notes=(PROP.report_notes?PROP.report_notes+'\n\n':'')+L.report_notes;
   if(Object.keys(patch).length){await api('/api/properties/'+PROP.id,{method:'PATCH',body:patch});added+=Object.keys(patch).length;}
   for(const [i,c] of L.contacts.entries())if($('#lc'+i).checked){await api(`/api/properties/${PROP.id}/contacts`,{method:'POST',body:c}).catch(()=>0);added++;}

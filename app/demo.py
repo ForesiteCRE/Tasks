@@ -164,9 +164,11 @@ def load(me_id: int) -> dict:
                 "report_notes": "One combined PDF by the 15th: P&L (month + YTD vs budget), balance sheet, rent roll, aged "
                                 "delinquency, GL detail. Email to owner and copy the CPA. Variance comments on anything over "
                                 "10% / $1,000.",
-                "notes": "Owner prefers calls before 10am. Emergency repairs: call owner first if over the spend limit."})
+                "notes": "Owner prefers calls before 10am. Emergency repairs: call owner first if over the spend limit.",
+                "bank_name": "Broadway Bank", "bank_accounts": "Operating ••4417 · Security deposits ••9023"})
             for ct in [("Owner contact", "Rebecca Torres", "Sonterra Commons Owner LLC", "rtorres@example.com", "(210) 555-0142"),
                        ("CPA", "Dana Cho", "Cho & Partners CPAs", "dana@example.com", "(210) 555-0188"),
+                       ("Bank", "Sam Ortiz (treasury management)", "Broadway Bank", "sortiz@example.com", "(210) 555-0121"),
                        ("Insurance agent", "Pat Lee", "Alamo Commercial Insurance", "pat@example.com", "(210) 555-0110"),
                        ("Lender", "Loan servicing", "Frost Bank", "servicing@example.com", ""),
                        ("Asset manager", "Chris Nguyen", "Alamo Retail Fund II", "cnguyen@example.com", "(210) 555-0175"),

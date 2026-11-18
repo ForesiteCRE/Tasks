@@ -864,6 +864,8 @@ class PropertyPatch(BaseModel):
     notes: str | None = None
     report_notes: str | None = None
     spend_limit: float | None = None
+    bank_name: str | None = None
+    bank_accounts: str | None = None
 
 class DateIn(BaseModel):
     kind: str = "other"

@@ -741,7 +741,7 @@ def test_read_property_document_and_insurance_check(mgr, staff):
     CLAUDE.append({"doc_type": "insurance", "summary": "Commercial property policy, Travelers.",
                    "dates": [{"kind": "tax_protest", "title": "x", "date": "not a date", "repeat": "", "notes": "",
                               "quote": "", "confidence": "low"}],
-                   "spend_limit": 0, "report_notes": "", "contacts": [
+                   "spend_limit": 0, "report_notes": "", "bank_name": "", "contacts": [
                        {"role": "Insurance agent", "name": "Pat Lee", "company": "Alamo Insurance", "email": "pat@x.com", "phone": ""}],
                    "insurance": {"carrier": "Travelers", "policy_number": "P-123", "expires": "2031-03-01",
                                  "foresite_additional_insured": "yes", "evidence": "Additional Insured endorsement CG 20 26"}})
@@ -763,6 +763,10 @@ def test_read_property_document_and_insurance_check(mgr, staff):
     assert staff.post(f"/api/properties/{pid}/contacts", json={"role": "CPA", "name": "x"}).status_code == 403
     page = ids(mgr.get(f"/api/properties/{pid}"))
     assert page["spend_limit"] == 5000 and page["contacts"][0]["id"] == cid
+    ids(mgr.patch(f"/api/properties/{pid}", json={"bank_name": "Broadway Bank", "bank_accounts": "Operating 1234567890"}))
+    page = ids(mgr.get(f"/api/properties/{pid}"))
+    assert page["bank_name"] == "Broadway Bank" and page["bank_accounts"] == "Operating ••7890"   # full number never kept
+    ids(mgr.post(f"/api/properties/{pid}/contacts", json={"role": "Bank", "name": "Sam Ortiz", "company": "Broadway Bank"}))
 
 
 def test_repeating_property_date_rolls_forward(mgr):
