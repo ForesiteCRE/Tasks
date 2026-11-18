@@ -6,7 +6,7 @@
 <style>
 :root{--bg:#f6f7f9;--card:#fff;--ink:#1d2330;--mute:#6b7280;--line:#e3e6eb;--acc:#3b5bdb;--ok:#2f9e44;--warn:#e8590c;--bad:#c92a2a}
 *{box-sizing:border-box}body{margin:0;font:14px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--ink)}
-header{display:flex;gap:18px;align-items:center;padding:10px 20px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+body>header{display:flex;gap:18px;align-items:center;padding:10px 20px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:50}
 header h1{white-space:nowrap}#nav{display:flex;gap:2px;flex:1;min-width:0;flex-wrap:wrap;align-items:center}nav button{white-space:nowrap}
 .nbadge{display:inline-block;min-width:18px;height:18px;line-height:18px;padding:0 5px;margin-left:6px;border-radius:99px;background:var(--bad);color:#fff;font-size:11px;font-weight:700;text-align:center;vertical-align:1px}
 .newtag{font-size:10px;font-weight:700;color:#fff;background:var(--bad);border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:1px}
@@ -22,7 +22,7 @@ header h1{white-space:nowrap}#nav{display:flex;gap:2px;flex:1;min-width:0;flex-w
 .tl td{padding:7px 8px}.tl .proj{font-size:12px;color:var(--mute);max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tl tr.tgrp td{background:#fafbfc;font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);padding:8px}
 .tl tr.tgrp.red td{color:var(--bad)}.tl tr.done td{opacity:.6}
 #me{white-space:nowrap;font-size:13px}
-@media (max-width:760px){header{flex-wrap:wrap;gap:6px;padding:10px 12px}header h1 .mute{display:none}#me{margin-left:auto}#nav{order:3;flex-basis:100%}.ddm{position:fixed;left:12px;right:12px;top:auto}}
+@media (max-width:760px){body>header{flex-wrap:wrap;gap:6px;padding:10px 12px}body>header h1 .mute{display:none}#me{margin-left:auto}#nav{order:3;flex-basis:100%}.ddm{position:fixed;left:12px;right:12px;top:auto}}
 header h1{font-size:17px;margin:0}nav button{background:none;border:0;padding:8px 12px;border-radius:6px;cursor:pointer;font:inherit;color:var(--mute)}
 nav button.on{background:#e7ecff;color:var(--acc);font-weight:600}
 main{max-width:1200px;margin:0 auto;padding:20px 16px}.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
