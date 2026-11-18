@@ -18,6 +18,7 @@ log = logging.getLogger("blink")
 
 API_BASE = os.getenv("BLINK_API_BASE", "https://api.joinblink.com/v2").rstrip("/")
 TOKEN = os.getenv("BLINK_API_TOKEN", "")
+APP_ID = os.getenv("BLINK_APP_ID", "")
 SEND_PATH = os.getenv("BLINK_SEND_MESSAGE_PATH", "/chats/messages")
 MOCK = not TOKEN
 
@@ -32,7 +33,7 @@ def send_dm(blink_user_id: str, text: str) -> bool:
             r = httpx.post(
                 f"{API_BASE}{SEND_PATH}",
                 headers={"Authorization": f"Bearer {TOKEN}"},
-                json={"recipients": [blink_user_id], "text": text},
+                json={"app_id": APP_ID, "recipients": [blink_user_id], "text": text},
                 timeout=15,
             )
             r.raise_for_status()
