@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS template_dependencies (
 
 
 def init():
+    from . import team
+    team.init()
     with tx() as c:
         c.executescript(SCHEMA)
         cols = {r[1] for r in c.execute("PRAGMA table_info(template_items)")}
@@ -69,19 +71,25 @@ def list_templates() -> list[dict]:
 
 # ---------- project <-> template ----------
 
-def create_project(template_id: int, name: str, start: date, recurrence_id=None, overrides: dict | None = None) -> int:
-    overrides = overrides or {}
+def create_project(template_id: int, name: str, start: date, recurrence_id=None, overrides: dict | None = None,
+                   team_overrides: dict | None = None, details: dict | None = None) -> int:
+    from . import team as team_mod
+    overrides, details = overrides or {}, details or {}
+    team = team_mod.resolve_team(team_overrides)
     with tx() as c:
-        pid = c.execute("INSERT INTO projects(name, template_id, recurrence_id, start_date) VALUES(?,?,?,?)",
-                        (name, template_id, recurrence_id, start.isoformat())).lastrowid
+        pid = c.execute(
+            "INSERT INTO projects(name, template_id, recurrence_id, start_date, property, client, description) VALUES(?,?,?,?,?,?,?)",
+            (name, template_id, recurrence_id, start.isoformat(), details.get("property"), details.get("client"),
+             details.get("description"))).lastrowid
         items = _ordered(rows(c.execute(
             "SELECT * FROM template_items WHERE template_id=? ORDER BY position, id", (template_id,))))
         task_of = {}
         for it in items:  # parents first, so parent task ids exist
+            role = it.get("default_role_id")
+            who = overrides.get(it["id"]) or (team.get(role) if role else None) or it["default_assignee_id"]
             task_of[it["id"]] = c.execute(
-                "INSERT INTO tasks(project_id, parent_id, title, assignee_id, due_date, position) VALUES(?,?,?,?,?,?)",
-                (pid, task_of.get(it["parent_item_id"]), it["title"],
-                 overrides.get(it["id"], it["default_assignee_id"]),
+                "INSERT INTO tasks(project_id, parent_id, title, assignee_id, role_id, due_date, position) VALUES(?,?,?,?,?,?,?)",
+                (pid, task_of.get(it["parent_item_id"]), it["title"], who, role,
                  (start + timedelta(days=it["due_offset_days"] or 0)).isoformat(), it["position"])).lastrowid
             for n, ck in enumerate(rows(c.execute(
                     "SELECT text FROM template_checklist WHERE template_item_id=? ORDER BY position, id", (it["id"],)))):
@@ -93,6 +101,7 @@ def create_project(template_id: int, name: str, start: date, recurrence_id=None,
             if d["item_id"] in task_of and d["depends_on_item_id"] in task_of:
                 c.execute("INSERT OR IGNORE INTO task_dependencies(task_id, depends_on_id) VALUES(?,?)",
                           (task_of[d["item_id"]], task_of[d["depends_on_item_id"]]))
+    team_mod.save_team(pid, team)
     return pid
 
 
@@ -106,10 +115,12 @@ def save_from_project(project_id: int, name: str) -> int:
         item_of = {}
         for i, t in enumerate(tasks):
             offset = (date.fromisoformat(t["due_date"]) - start).days if t["due_date"] else 0
+            by_role = t.get("role_id")
             item_of[t["id"]] = c.execute(
-                """INSERT INTO template_items(template_id, parent_item_id, title, default_assignee_id, due_offset_days, position)
-                   VALUES(?,?,?,?,?,?)""",
-                (tid, item_of.get(t["parent_id"]), t["title"], t["assignee_id"], max(offset, 0), i)).lastrowid
+                """INSERT INTO template_items(template_id, parent_item_id, title, default_assignee_id, default_role_id,
+                                              due_offset_days, position) VALUES(?,?,?,?,?,?,?)""",
+                (tid, item_of.get(t["parent_id"]), t["title"], None if by_role else t["assignee_id"], by_role,
+                 max(offset, 0), i)).lastrowid
             for n, ck in enumerate(rows(c.execute(
                     "SELECT text FROM task_checklist WHERE task_id=? ORDER BY position, id", (t["id"],)))):
                 c.execute("INSERT INTO template_checklist(template_item_id, text, position) VALUES(?,?,?)",
@@ -125,18 +136,50 @@ def save_from_project(project_id: int, name: str) -> int:
 
 # ---------- editing a template ----------
 
-def add_item(template_id: int, title: str, parent_item_id=None, default_assignee_id=None, due_offset_days=0) -> int:
+def add_item(template_id: int, title: str, parent_item_id=None, default_assignee_id=None, due_offset_days=0,
+             default_role_id=None) -> int:
     with tx() as c:
         pos = c.execute("SELECT COALESCE(MAX(position),0)+1 FROM template_items WHERE template_id=?",
                         (template_id,)).fetchone()[0]
         return c.execute(
-            """INSERT INTO template_items(template_id, parent_item_id, title, default_assignee_id, due_offset_days, position)
-               VALUES(?,?,?,?,?,?)""",
-            (template_id, parent_item_id, title.strip(), default_assignee_id, due_offset_days or 0, pos)).lastrowid
+            """INSERT INTO template_items(template_id, parent_item_id, title, default_assignee_id, default_role_id,
+                                          due_offset_days, position) VALUES(?,?,?,?,?,?,?)""",
+            (template_id, parent_item_id, title.strip(), default_assignee_id, default_role_id,
+             due_offset_days or 0, pos)).lastrowid
+
+
+def update_template(template_id: int, fields: dict):
+    with tx() as c:
+        if fields.get("name"):
+            c.execute("UPDATE templates SET name=? WHERE id=?", (fields["name"].strip(), template_id))
+        if "description" in fields:
+            c.execute("UPDATE templates SET description=? WHERE id=?", (fields["description"] or "", template_id))
+
+
+def move_item(item_id: int, direction: int):
+    """Swap with the previous/next sibling (same parent)."""
+    with tx() as c:
+        it = c.execute("SELECT * FROM template_items WHERE id=?", (item_id,)).fetchone()
+        if not it:
+            return
+        sibs = [r["id"] for r in c.execute(
+            """SELECT id FROM template_items WHERE template_id=? AND parent_item_id IS ? ORDER BY position, id""",
+            (it["template_id"], it["parent_item_id"]))]
+        i = sibs.index(item_id)
+        j = i + (1 if direction > 0 else -1)
+        if 0 <= j < len(sibs):
+            sibs[i], sibs[j] = sibs[j], sibs[i]
+            c.executemany("UPDATE template_items SET position=? WHERE id=?", [(n, sid) for n, sid in enumerate(sibs)])
 
 
 def update_item(item_id: int, fields: dict):
-    allowed = {k: v for k, v in fields.items() if k in ("title", "default_assignee_id", "due_offset_days")}
+    # An item is assigned either to a person or to a project role, never both.
+    if fields.get("default_role_id"):
+        fields["default_assignee_id"] = None
+    elif fields.get("default_assignee_id"):
+        fields["default_role_id"] = None
+    allowed = {k: v for k, v in fields.items()
+               if k in ("title", "default_assignee_id", "default_role_id", "due_offset_days")}
     if not allowed:
         return
     with tx() as c:

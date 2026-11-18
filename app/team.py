@@ -1,0 +1,121 @@
+"""Project roles (Property Manager, Head of Accounting, AP, AR, ...) and each project's team.
+
+- project_roles: the list of roles, each with an optional default person.
+- project_team: who holds each role on a given project.
+- tasks.role_id / template_items.default_role_id: a task assigned "by role" goes to whoever holds that
+  role on its project, and follows the role if the person changes. Assigning a task to someone directly
+  detaches it from the role.
+"""
+from . import blink
+from .db import rows, tx
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS project_roles (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    default_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    position INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS project_team (
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    role_id INTEGER NOT NULL REFERENCES project_roles(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    PRIMARY KEY (project_id, role_id)
+);
+"""
+DEFAULT_ROLES = ["Property Manager", "Head of Accounting", "AP", "AR", "Leasing", "Asset Manager"]
+
+
+def init():
+    with tx() as c:
+        c.executescript(SCHEMA)
+        for table, col, typ in [("projects", "description", "TEXT"), ("projects", "property", "TEXT"),
+                                ("projects", "client", "TEXT"), ("tasks", "role_id", "INTEGER"),
+                                ("template_items", "default_role_id", "INTEGER")]:
+            if col not in {r[1] for r in c.execute(f"PRAGMA table_info({table})")}:
+                c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+        if not c.execute("SELECT 1 FROM project_roles").fetchone():
+            c.executemany("INSERT INTO project_roles(name, position) VALUES(?,?)",
+                          [(n, i) for i, n in enumerate(DEFAULT_ROLES)])
+
+
+# ---------- roles ----------
+
+def list_roles() -> list[dict]:
+    with tx() as c:
+        return rows(c.execute("""SELECT r.*, u.name AS default_user_name FROM project_roles r
+                                 LEFT JOIN users u ON u.id=r.default_user_id ORDER BY r.position, r.id"""))
+
+
+def add_role(name: str, default_user_id=None) -> int:
+    with tx() as c:
+        pos = c.execute("SELECT COALESCE(MAX(position),0)+1 FROM project_roles").fetchone()[0]
+        return c.execute("INSERT INTO project_roles(name, default_user_id, position) VALUES(?,?,?)",
+                         (name.strip(), default_user_id, pos)).lastrowid
+
+
+def update_role(role_id: int, fields: dict):
+    with tx() as c:
+        if fields.get("name"):
+            c.execute("UPDATE project_roles SET name=? WHERE id=?", (fields["name"].strip(), role_id))
+        if "default_user_id" in fields:
+            c.execute("UPDATE project_roles SET default_user_id=? WHERE id=?", (fields["default_user_id"] or None, role_id))
+
+
+def delete_role(role_id: int):
+    with tx() as c:
+        c.execute("UPDATE tasks SET role_id=NULL WHERE role_id=?", (role_id,))
+        c.execute("UPDATE template_items SET default_role_id=NULL WHERE default_role_id=?", (role_id,))
+        c.execute("DELETE FROM project_team WHERE role_id=?", (role_id,))
+        c.execute("DELETE FROM project_roles WHERE id=?", (role_id,))
+
+
+# ---------- a project's team ----------
+
+def resolve_team(overrides: dict | None) -> dict:
+    """role_id -> user_id for a new project: role defaults, overridden by what was picked."""
+    team = {r["id"]: r["default_user_id"] for r in list_roles()}
+    for k, v in (overrides or {}).items():
+        team[int(k)] = int(v) if v else None
+    return team
+
+
+def save_team(project_id: int, team: dict):
+    with tx() as c:
+        c.executemany("INSERT OR REPLACE INTO project_team(project_id, role_id, user_id) VALUES(?,?,?)",
+                      [(project_id, r, u) for r, u in team.items() if u])
+
+
+def project_team(project_id: int) -> list[dict]:
+    with tx() as c:
+        return rows(c.execute(
+            """SELECT r.id AS role_id, r.name AS role, t.user_id, u.name AS user_name FROM project_roles r
+               LEFT JOIN project_team t ON t.role_id=r.id AND t.project_id=?
+               LEFT JOIN users u ON u.id=t.user_id ORDER BY r.position, r.id""", (project_id,)))
+
+
+def set_member(project_id: int, role_id: int, user_id) -> int:
+    """Change who holds a role on a project; open tasks assigned by that role move to the new person.
+    Returns how many tasks moved."""
+    with tx() as c:
+        if user_id:
+            c.execute("INSERT OR REPLACE INTO project_team(project_id, role_id, user_id) VALUES(?,?,?)",
+                      (project_id, role_id, user_id))
+        else:
+            c.execute("DELETE FROM project_team WHERE project_id=? AND role_id=?", (project_id, role_id))
+        moved = rows(c.execute(
+            "SELECT id, title, due_date FROM tasks WHERE project_id=? AND role_id=? AND status!='done'",
+            (project_id, role_id)))
+        c.execute("UPDATE tasks SET assignee_id=? WHERE project_id=? AND role_id=? AND status!='done'",
+                  (user_id or None, project_id, role_id))
+        u = c.execute("SELECT blink_user_id FROM users WHERE id=?", (user_id,)).fetchone() if user_id else None
+        role = c.execute("SELECT name FROM project_roles WHERE id=?", (role_id,)).fetchone()
+        proj = c.execute("SELECT name FROM projects WHERE id=?", (project_id,)).fetchone()
+    if moved and u and u["blink_user_id"]:
+        lines = "\n".join(f"#{t['id']} {t['title']}" + (f" – due {t['due_date']}" if t["due_date"] else "") for t in moved)
+        try:
+            blink.send_dm(u["blink_user_id"],
+                          f"👤 You're now **{role['name']}** on *{proj['name']}* — these tasks are yours:\n{lines}")
+        except Exception:
+            pass
+    return len(moved)

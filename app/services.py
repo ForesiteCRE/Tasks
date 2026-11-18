@@ -13,9 +13,10 @@ STATUS_LABEL = {"todo": "To do", "in_progress": "In progress", "blocked": "Block
 # ---------- projects & templates ----------
 
 def create_project_from_template(template_id: int, name: str, start: date, recurrence_id=None,
-                                 assignee_overrides: dict | None = None) -> int:
-    """New project from a template: tasks, subtasks, checklist items and 'waiting on' links."""
-    pid = tpl.create_project(template_id, name, start, recurrence_id, assignee_overrides)
+                                 assignee_overrides: dict | None = None, team: dict | None = None,
+                                 details: dict | None = None) -> int:
+    """New project from a template: tasks, subtasks, checklist items, 'waiting on' links and role-based assignees."""
+    pid = tpl.create_project(template_id, name, start, recurrence_id, assignee_overrides, team, details)
     notify_new_assignments(pid)
     return pid
 

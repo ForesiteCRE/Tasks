@@ -42,6 +42,10 @@ dialog{border:1px solid var(--line);border-radius:12px;padding:18px;max-width:70
 .ck{display:flex;align-items:center;gap:8px;padding:3px 0}.ck.done span{text-decoration:line-through;color:var(--mute)}.ck .x{margin-left:auto;cursor:pointer;color:var(--mute);border:0;background:none}
 .cm{padding:8px 10px;background:#f6f7f9;border-radius:8px;margin:6px 0}.cm .who{font-weight:600;font-size:12px}.cm .when{color:var(--mute);font-size:11px;margin-left:6px}.cm b.at{color:var(--acc)}
 .ac{position:absolute;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.08);z-index:5;min-width:200px}.ac div{padding:6px 10px;cursor:pointer}.ac div:hover,.ac div.on{background:#e7ecff}
+.team-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin:8px 0}.team-grid label{display:flex;flex-direction:column;font-size:12px;color:var(--mute);gap:3px}
+.summary{display:flex;gap:6px 14px;flex-wrap:wrap;font-size:13px;margin:4px 0 2px}.summary .k{color:var(--mute)}
+.preview{background:#fafbfc;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:10px}.preview td{padding:4px 6px;font-size:13px}
+.via{font-size:11px;color:var(--mute)}
 textarea{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius:6px;width:100%;resize:vertical}dialog::backdrop{background:rgba(20,24,33,.35)}
 @media (max-width:700px){.cal .day{min-height:70px}.chip{font-size:11px}main{padding:12px}}
 </style>
@@ -64,8 +68,11 @@ textarea{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius
 <section id="v-projects">
   <div class="card mgr"><h2>Start a project</h2>
     <div class="row"><input id="pName" placeholder="Project name (e.g. 123 Main St Listing)" style="flex:1;min-width:220px">
-      <select id="pTpl"></select><input id="pStart" type="date"><button class="b" onclick="newProject()">Create</button></div>
-    <p class="mute">Pick a checklist template to copy its tasks, assignees and due dates.</p></div>
+      <select id="pTpl" onchange="renderPreview()"></select><label class="mute">Start <input id="pStart" type="date" onchange="renderPreview()"></label></div>
+    <div class="row"><input id="pProp" placeholder="Property / address" style="flex:1;min-width:200px"><input id="pClient" placeholder="Client / owner" style="flex:1;min-width:200px"></div>
+    <details id="pTeamBox"><summary class="mute" style="cursor:pointer">👥 Project team <span id="pTeamSum"></span></summary><div id="pTeam" class="team-grid"></div></details>
+    <div id="pPreview"></div>
+    <div class="row" style="justify-content:flex-end"><button class="b" onclick="newProject()">Create project</button></div></div>
   <div class="row" style="margin-bottom:12px">
     <label>Show <select id="pFilter" onchange="renderProjects()"><option value="all">All tasks</option><option value="mine">My tasks</option></select></label>
     <label><input type="checkbox" id="pHideDone" onchange="renderProjects()" checked> Hide finished projects</label>
@@ -114,6 +121,8 @@ textarea{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius
   <p class="mute">Add teammates by work email — their Blink account is found automatically, so you can assign them tasks before they ever sign in.</p></div>
   <div class="card"><table id="people"></table>
   <p class="mute"><b>Manager</b> = can create projects, assign/reassign tasks, edit templates, manage people. <b>Staff</b> = can see everything but only update their own tasks. Duplicate entry for the same person? Choose “Merge into …” on the extra row and click Remove — their tasks move over.</p></div>
+  <div class="card"><h2>👥 Project roles</h2><p class="mute" style="margin-top:0">Roles each project can have. Template items can be assigned to a role instead of a person — when a project starts, those tasks go to whoever holds that role on that project. The default person is pre-filled on new projects.</p>
+  <table id="roles"></table></div>
 </section>
 
 <section id="v-admin" class="hidden">
@@ -146,7 +155,7 @@ textarea{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius
 const $=s=>document.querySelector(s), api=(u,o={})=>fetch(u,{headers:{'Content-Type':'application/json'},...o,body:o.body&&JSON.stringify(o.body)}).then(async r=>{if(r.status===401){location.href='/login';throw 0}
   if(!r.ok){let t=await r.text();try{t=JSON.parse(t).detail||t}catch(e){}alert(`Couldn't do that: ${String(t).slice(0,200)}`);throw new Error(t)}return r.json()});
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-let USERS=[],TPLS=[],PROJECTS=[],TASKS=[],ME={};const LBL={todo:'To do',in_progress:'In progress',blocked:'Blocked',done:'Done'};
+let USERS=[],TPLS=[],PROJECTS=[],TASKS=[],ROLES=[],ME={};const LBL={todo:'To do',in_progress:'In progress',blocked:'Blocked',done:'Done'};
 const isMgr=()=>ME.role==='manager', canEdit=t=>isMgr()||t.assignee_id===ME.id;
 const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const today=()=>iso(new Date());
@@ -159,17 +168,17 @@ const userOpts=(sel,blank='Unassigned')=>`<option value="">${blank}</option>`+US
 const statusSel=(t)=>`<select class="pill ${t.status}" ${canEdit(t)?'':'disabled'} onchange="setStatus(${t.id},this.value)">${Object.keys(LBL).map(s=>`<option value="${s}" ${s===t.status?'selected':''}>${LBL[s]}</option>`).join('')}</select>`;
 
 async function refresh(){
-  [USERS,TPLS,PROJECTS]=await Promise.all([api('/api/users'),api('/api/templates'),api('/api/projects')]);
+  [USERS,TPLS,PROJECTS,ROLES]=await Promise.all([api('/api/users'),api('/api/templates'),api('/api/projects'),api('/api/roles')]);
   TASKS=PROJECTS.flatMap(p=>p.tasks.map(t=>({...t,project_name:p.name,project_status:p.status})));HANDLES=[];
   document.querySelectorAll('.mgr').forEach(el=>el.classList.toggle('hidden',!isMgr()));
   $('#roleNote').textContent=isMgr()?'':'You can view everything and update tasks assigned to you.';
   const tOpts='<option value="">Blank (no template)</option>'+TPLS.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
-  $('#pTpl').innerHTML=tOpts;$('#rTpl').innerHTML=TPLS.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  const keepTpl=$('#pTpl').value;$('#pTpl').innerHTML=tOpts;$('#pTpl').value=keepTpl;$('#rTpl').innerHTML=TPLS.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
   const w=$('#calWho').value, pj=$('#calProj').value;
   $('#calWho').innerHTML=`<option value="">Everyone</option><option value="me">Just me</option><option value="none">Unassigned</option>`+USERS.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('');$('#calWho').value=w;
   $('#calProj').innerHTML=`<option value="">All projects</option>`+PROJECTS.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');$('#calProj').value=pj;
   renderProjects();
-  if(isMgr()){renderPeople();renderTemplates();
+  if(isMgr()){renderPeople();renderTemplates();renderRoles();renderNewTeam();renderPreview();
     $('#cUser').innerHTML=USERS.filter(u=>u.blink_user_id).map(u=>`<option value="${esc(u.blink_user_id)}">${esc(u.name)}</option>`).join('');
     const rs=await api('/api/recurrences');
     $('#recurring').innerHTML='<tr><th>Name pattern</th><th>Template</th><th>Day</th><th>Last created</th><th></th></tr>'+rs.map(r=>`<tr><td>${esc(r.name_pattern)}</td><td>${esc(r.template_name)}</td><td>${r.day_of_month}</td><td>${r.last_period||'—'}</td><td><button class="b ghost" onclick="toggleRec(${r.id},${!r.active})">${r.active?'Pause':'Resume'}</button></td></tr>`).join('');}
@@ -192,15 +201,64 @@ function renderProjects(){
   const ps=PROJECTS.filter(p=>!(hideDone&&p.status==='done')).map(p=>({...p,shown:mine?p.tasks.filter(t=>t.assignee_id===ME.id):p.tasks})).filter(p=>!mine||p.shown.length);
   $('#projects').innerHTML=ps.map(p=>{const done=p.tasks.filter(t=>t.status==='done').length,pct=p.tasks.length?Math.round(100*done/p.tasks.length):0;
   return `<div class="card"><div class="row" style="justify-content:space-between"><h3>${esc(p.name)} <span class="pill ${p.status==='done'?'done':''}">${p.status}</span></h3>
-  <span class="mute">${done}/${p.tasks.length} done · started ${fmtDate(p.start_date)} ${isMgr()?`<button class="b ghost" onclick="saveAsTpl(${p.id},'${esc(p.name).replace(/'/g,"")}')">Save as template</button>`:''}</span></div>
+  <span class="mute">${done}/${p.tasks.length} done · started ${fmtDate(p.start_date)} <button class="b ghost" onclick="openProject(${p.id})">${isMgr()?'Details &amp; team':'Details'}</button> ${isMgr()?`<button class="b ghost" onclick="saveAsTpl(${p.id},'${esc(p.name).replace(/'/g,"")}')">Save as template</button>`:''}</span></div>
+  ${projSummary(p)}
   <div class="bar"><i style="width:${pct}%"></i></div>
   <table><tr><th>#</th><th>Task</th><th>Assignee</th><th>Due</th><th>Status</th></tr>
   ${orderTasks(p.shown).map(t=>`<tr class="${t.parent_id?'sub':''}"><td class="mute">${t.id}</td><td><label><input type="checkbox" ${t.status==='done'?'checked':''} ${canEdit(t)?'':'disabled'} onchange="setStatus(${t.id},this.checked?'done':'todo')"></label> ${t.parent_id?'<span class="mute">↳</span> ':''}<span class="tlink" onclick="openTask(${t.id})">${esc(t.title)}</span>${badges(t)}${t.last_note?`<div class="note">“${esc(t.last_note)}”</div>`:''}</td>
-   <td><select ${isMgr()?'':'disabled'} onchange="patch(${t.id},{assignee_id:+this.value||null})">${userOpts(t.assignee_id)}</select></td>
+   <td><select ${isMgr()?'':'disabled'} onchange="patch(${t.id},{assignee_id:+this.value||0})">${userOpts(t.assignee_id)}</select></td>
    <td>${isMgr()?`<input type="date" value="${t.due_date||''}" class="${isOver(t)?'over':''}" onchange="patch(${t.id},{due_date:this.value||null})">`:`<span class="${isOver(t)?'over':''}">${fmtDate(t.due_date)}</span>`}</td>
    <td>${statusSel(t)}</td></tr>`).join('')}
   ${isMgr()?`<tr><td></td><td><input id="nt${p.id}" placeholder="+ Add task" style="width:100%" onkeydown="if(event.key==='Enter')addTask(${p.id})"></td><td><select id="na${p.id}">${userOpts()}</select></td><td><input type="date" id="nd${p.id}"></td><td><button class="b ghost" onclick="addTask(${p.id})">Add</button></td></tr>`:''}</table></div>`}).join('')||`<p class="mute">${mine?'No tasks assigned to you.':'No projects yet.'}</p>`;
 }
+
+function projSummary(p){const team=(p.team||[]).filter(m=>m.user_name);const bits=[];
+  if(p.property)bits.push(`<span>📍 ${esc(p.property)}</span>`);if(p.client)bits.push(`<span><span class="k">Client</span> ${esc(p.client)}</span>`);
+  team.forEach(m=>bits.push(`<span><span class="k">${esc(m.role)}</span> ${esc(m.user_name)}</span>`));
+  return (bits.length||p.description)?`<div class="summary">${bits.join('')}</div>${p.description?`<div class="mute" style="font-size:13px">${esc(p.description)}</div>`:''}`:'';}
+const roleName=id=>(ROLES.find(r=>r.id===id)||{}).name||'role';
+function renderNewTeam(){const box=$('#pTeam');const cur={};box.querySelectorAll('select').forEach(x=>cur[x.dataset.role]=x.value);
+  box.innerHTML=ROLES.map(r=>`<label>${esc(r.name)}<select data-role="${r.id}" onchange="renderPreview();teamSum()">${userOpts(cur[r.id]!==undefined?cur[r.id]:r.default_user_id,'—')}</select></label>`).join('');teamSum();}
+function teamSum(){const n=[...$('#pTeam').querySelectorAll('select')].filter(x=>x.value).length;$('#pTeamSum').textContent=n?`· ${n} assigned`:'';}
+function newTeam(){const t={};$('#pTeam').querySelectorAll('select').forEach(x=>t[x.dataset.role]=+x.value||null);return t;}
+function tplItemWho(i,team){if(i.default_role_id){const u=USERS.find(u=>u.id===team[i.default_role_id]);return `${u?esc(u.name):'<span class="over">nobody yet</span>'} <span class="via">via ${esc(roleName(i.default_role_id))}</span>`;}
+  return esc((USERS.find(u=>u.id===i.default_assignee_id)||{}).name||'Unassigned');}
+function renderPreview(){const t=TPLS.find(t=>t.id==$('#pTpl').value);if(!t){$('#pPreview').innerHTML='';return;}
+  const start=$('#pStart').value?new Date($('#pStart').value+'T12:00'):new Date(),team=newTeam(),byId=Object.fromEntries(t.items.map(i=>[i.id,i]));
+  const due=n=>{const d=new Date(start);d.setDate(d.getDate()+(n||0));return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})};
+  const needs=[...new Set(t.items.map(i=>i.default_role_id).filter(Boolean))].filter(r=>!team[r]);
+  if(needs.length)$('#pTeamBox').open=true;
+  $('#pPreview').innerHTML=`<div class="preview"><div class="row" style="justify-content:space-between;margin:0"><b>Preview: ${esc(t.name)}</b><span class="mute">${t.items.length} tasks${t.description?' · '+esc(t.description):''}</span></div>
+   ${needs.length?`<p class="over" style="margin:4px 0">Pick someone for ${needs.map(r=>esc(roleName(r))).join(', ')} in 👥 Project team above, or those tasks start unassigned.</p>`:''}
+   <table>${t.items.map(i=>`<tr><td style="padding-left:${6+i.depth*22}px">${i.depth?'<span class="mute">↳</span> ':''}${esc(i.title)}
+     ${i.checklist.length?`<span class="pill">☑ ${i.checklist.length}</span>`:''}${i.waiting_on.map(w=>`<span class="pill lock">🔒 after ${esc((byId[w]||{}).title||'')}</span>`).join('')}</td>
+     <td>${tplItemWho(i,team)}</td><td class="mute" style="white-space:nowrap">${due(i.due_offset_days)}</td></tr>`).join('')}</table></div>`;}
+
+/* ---------- project details & team dialog ---------- */
+async function openProject(pid){const p=PROJECTS.find(x=>x.id===pid);if(!p)return;const mg=isMgr(),dis=mg?'':'disabled';
+  $('#taskDlgBody').innerHTML=`<h2>${mg?`<input value="${esc(p.name)}" style="font:inherit;font-weight:600;width:100%" onchange="projPatch(${p.id},{name:this.value})">`:esc(p.name)}</h2>
+   <div class="team-grid">
+    <label>Property / address<input ${dis} value="${esc(p.property||'')}" onchange="projPatch(${p.id},{property:this.value})"></label>
+    <label>Client / owner<input ${dis} value="${esc(p.client||'')}" onchange="projPatch(${p.id},{client:this.value})"></label>
+    <label>Start date<input ${dis} type="date" value="${p.start_date}" onchange="projPatch(${p.id},{start_date:this.value})"></label></div>
+   <label class="mute" style="font-size:12px">Summary / notes</label><textarea ${dis} rows="3" onchange="projPatch(${p.id},{description:this.value})">${esc(p.description||'')}</textarea>
+   <div class="sec"><h3>👥 Project team</h3><p class="mute" style="margin:0 0 6px;font-size:12px">Tasks assigned by role follow the person in that role — change someone here and their open tasks move over (they get a Blink message).</p>
+   <div class="team-grid">${p.team.map(m=>{const n=p.tasks.filter(t=>t.role_id===m.role_id&&t.status!=='done').length;
+     return `<label>${esc(m.role)} ${n?`<span class="via">· ${n} open task${n>1?'s':''}</span>`:''}<select ${dis} onchange="teamSet(${p.id},${m.role_id},this.value)">${userOpts(m.user_id,'—')}</select></label>`}).join('')}</div></div>`;
+  if(!taskDlg.open)taskDlg.showModal();}
+async function projPatch(pid,b){await api(`/api/projects/${pid}`,{method:'PATCH',body:b});await refresh();}
+async function teamSet(pid,rid,uid){const r=await api(`/api/projects/${pid}/team/${rid}`,{method:'PUT',body:{user_id:+uid||null}});await refresh();openProject(pid);
+  if(r.moved)toast(`${r.moved} open task${r.moved>1?'s':''} moved to the new person`);}
+
+/* ---------- project roles (People tab) ---------- */
+function renderRoles(){$('#roles').innerHTML='<tr><th>Role</th><th>Default person for new projects</th><th></th></tr>'+ROLES.map(r=>`<tr>
+  <td><input value="${esc(r.name)}" onchange="api('/api/roles/${r.id}',{method:'PATCH',body:{name:this.value}}).then(refresh)"></td>
+  <td><select onchange="api('/api/roles/${r.id}',{method:'PATCH',body:{default_user_id:+this.value||null}}).then(refresh)">${userOpts(r.default_user_id,'—')}</select></td>
+  <td><button class="b ghost" onclick="if(confirm('Delete role ${esc(r.name).replace(/'/g,'')}? Tasks keep their current assignee.'))api('/api/roles/${r.id}',{method:'DELETE'}).then(refresh)">Delete</button></td></tr>`).join('')
+  +`<tr><td><input id="roleNew" placeholder="+ New role (e.g. Construction Manager)"></td><td></td><td><button class="b ghost" onclick="roleAdd()">Add</button></td></tr>`;}
+async function roleAdd(){const v=$('#roleNew').value.trim();if(!v)return;await api('/api/roles',{method:'POST',body:{name:v}});refresh();}
+const whoOpts=i=>`<option value="">—</option><optgroup label="Project role (auto-assign)">${ROLES.map(r=>`<option value="r:${r.id}" ${i&&i.default_role_id===r.id?'selected':''}>👥 ${esc(r.name)}</option>`).join('')}</optgroup><optgroup label="Specific person">${USERS.map(u=>`<option value="u:${u.id}" ${i&&!i.default_role_id&&i.default_assignee_id===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}</optgroup>`;
+const whoVal=v=>v.startsWith('r:')?{default_role_id:+v.slice(2),default_assignee_id:null}:v.startsWith('u:')?{default_assignee_id:+v.slice(2),default_role_id:null}:{default_assignee_id:null,default_role_id:null};
 
 /* ---------- calendar ---------- */
 let CAL=(()=>{const d=new Date();return{y:d.getFullYear(),m:d.getMonth()}})();
@@ -235,7 +293,7 @@ async function openTask(id){OPEN_ID=id;const [d,h]=await Promise.all([api(`/api/
      <h2 style="margin:0">#${d.id} ${mg?`<input value="${esc(d.title)}" style="font:inherit;font-weight:600;width:420px;max-width:70vw" onchange="patch(${d.id},{title:this.value}).then(()=>openTask(${d.id}))">`:esc(d.title)}</h2>
      <div class="mute">${esc(d.project_name)}</div></div>
      ${mg?`<button class="b ghost" style="color:var(--bad);border-color:#f3c4c4" onclick="delTask(${d.id})">Delete</button>`:''}</div>
-   <table style="margin-top:8px"><tr><td style="width:110px">Assignee</td><td>${mg?`<select onchange="patch(${d.id},{assignee_id:+this.value||null}).then(()=>openTask(${d.id}))">${userOpts(d.assignee_id)}</select>`:esc(who)}</td></tr>
+   <table style="margin-top:8px"><tr><td style="width:110px">Assignee</td><td>${mg?`<select onchange="patch(${d.id},{assignee_id:+this.value||0}).then(()=>openTask(${d.id}))">${userOpts(d.assignee_id)}</select>`:esc(who)}</td></tr>
    <tr><td>Due</td><td>${mg?`<input type="date" value="${d.due_date||''}" onchange="patch(${d.id},{due_date:this.value||null}).then(()=>openTask(${d.id}))">`:`<span class="${isOver(d)?'over':''}">${fmtDate(d.due_date)||'—'}</span>`}</td></tr>
    <tr><td>Status</td><td>${statusSel({...d,assignee_id:ed?ME.id:d.assignee_id}).replace(/onchange="setStatus\((\d+),this.value\)"/,`onchange="setStatus($1,this.value).then(()=>openTask($1))"`)}</td></tr></table>
 
@@ -315,17 +373,17 @@ function renderPeople(){
 /* ---------- templates (managers) ---------- */
 function renderTemplates(){
   $('#templates').innerHTML=TPLS.map(t=>{const byId=Object.fromEntries(t.items.map(i=>[i.id,i]));
-   return `<div class="card"><div class="row" style="justify-content:space-between"><h3>${esc(t.name)} <span class="mute" style="font-weight:400">· ${t.items.length} items</span></h3>
-    <div class="row"><button class="b ghost" onclick="tiAdd(${t.id},null)">+ Item</button><button class="b ghost" style="color:var(--bad)" onclick="delTpl(${t.id})">Delete template</button></div></div>
-    ${t.description?`<p class="mute" style="margin-top:0">${esc(t.description)}</p>`:''}
-    <table><tr><th>Item</th><th style="width:170px">Default assignee</th><th style="width:120px">Due (days after start)</th><th style="width:150px"></th></tr>
+   return `<div class="card"><div class="row" style="justify-content:space-between"><input value="${esc(t.name)}" style="font:inherit;font-weight:600;font-size:15px;flex:1;border-color:transparent" onchange="api('/api/templates/${t.id}',{method:'PATCH',body:{name:this.value}}).then(refresh)">
+    <span class="mute">${t.items.length} items</span><button class="b ghost" onclick="tiAdd(${t.id},null)">+ Item</button><button class="b ghost" style="color:var(--bad)" onclick="delTpl(${t.id})">Delete template</button></div>
+    <input value="${esc(t.description||'')}" placeholder="Description (when to use this template)" style="width:100%;border-color:transparent;color:var(--mute)" onchange="api('/api/templates/${t.id}',{method:'PATCH',body:{description:this.value}})">
+    <table><tr><th>Item</th><th style="width:190px">Assign to</th><th style="width:120px">Due (days after start)</th><th style="width:230px"></th></tr>
     ${t.items.map(i=>`<tr><td style="padding-left:${8+i.depth*24}px">${i.depth?'<span class="mute">↳</span> ':''}<input value="${esc(i.title)}" style="width:calc(100% - 24px);border-color:transparent" onchange="tiPatch(${i.id},{title:this.value})">
       <div class="badges" style="margin:2px 0 0 ${i.depth?18:0}px;flex-wrap:wrap">
        ${i.checklist.map(k=>`<span class="pill">☑ ${esc(k.text)} <a style="cursor:pointer" onclick="tcDel(${k.id})">✕</a></span>`).join('')}
        ${i.waiting_on.map(w=>`<span class="pill lock">🔒 after “${esc((byId[w]||{}).title||'#'+w)}” <a style="cursor:pointer" onclick="tdDel(${i.id},${w})">✕</a></span>`).join('')}</div></td>
-     <td><select onchange="tiPatch(${i.id},{default_assignee_id:+this.value||null})">${userOpts(i.default_assignee_id,'—')}</select></td>
+     <td><select onchange="tiPatch(${i.id},whoVal(this.value))">${whoOpts(i)}</select></td>
      <td>+<input type="number" min="0" value="${i.due_offset_days||0}" style="width:64px" onchange="tiPatch(${i.id},{due_offset_days:+this.value||0})"></td>
-     <td style="white-space:nowrap"><select title="More" onchange="tiAction(this,${t.id},${i.id})"><option value="">More…</option><option value="check">+ Checklist item</option><option value="sub">+ Subtask</option>
+     <td style="white-space:nowrap"><button class="b ghost" title="Move up" style="padding:4px 7px" onclick="tiMove(${i.id},-1)">↑</button><button class="b ghost" title="Move down" style="padding:4px 7px" onclick="tiMove(${i.id},1)">↓</button> <select title="More" onchange="tiAction(this,${t.id},${i.id})"><option value="">More…</option><option value="check">+ Checklist item</option><option value="sub">+ Subtask</option>
        <optgroup label="Can't start until…">${t.items.filter(o=>o.id!==i.id&&!i.waiting_on.includes(o.id)).map(o=>`<option value="dep:${o.id}">🔒 ${esc(o.title)}</option>`).join('')}</optgroup>
        <option value="del">🗑 Delete item</option></select></td></tr>`).join('')||'<tr><td colspan="4" class="mute">No items yet.</td></tr>'}
     </table></div>`}).join('');
@@ -339,13 +397,17 @@ async function tiAction(sel,tid,iid){const v=sel.value;sel.value='';if(!v)return
   refresh();}
 async function tiAdd(tid,parent){const x=prompt(parent?'Subtask title':'Item title');if(!x)return;await api(`/api/templates/${tid}/items`,{method:'POST',body:{title:x,parent_item_id:parent}});refresh();}
 async function tiPatch(iid,b){await api(`/api/template-items/${iid}`,{method:'PATCH',body:b});const t=TPLS.flatMap(t=>t.items).find(i=>i.id===iid);if(t)Object.assign(t,b);}
+async function tiMove(iid,d){await api(`/api/template-items/${iid}/move?direction=${d}`,{method:'POST'});refresh();}
 async function tcDel(cid){await api(`/api/template-checklist/${cid}`,{method:'DELETE'});refresh();}
 async function tdDel(iid,dep){await api(`/api/template-items/${iid}/dependencies/${dep}`,{method:'DELETE'});refresh();}
-function addItemRow(){const d=document.createElement('div');d.className='row ti';d.innerHTML=`<input placeholder="Checklist item" style="flex:1"><select>${userOpts()}</select><label>Due +<input type="number" value="0" style="width:60px"> days</label>`;$('#tItems').append(d);}
-async function saveTemplate(){const items=[...document.querySelectorAll('.ti')].map(r=>{const [a,b,c]=r.querySelectorAll('input,select');return{title:a.value,default_assignee_id:+b.value||null,due_offset_days:+c.value||0}}).filter(i=>i.title);
-  await api('/api/templates',{method:'POST',body:{name:$('#tName').value||'Untitled',items}});$('#tItems').innerHTML='';$('#tName').value='';refresh();}
+function addItemRow(){const d=document.createElement('div');d.className='row ti';d.innerHTML=`<input placeholder="Checklist item" style="flex:1"><select>${whoOpts()}</select><label>Due +<input type="number" value="0" style="width:60px"> days</label>`;$('#tItems').append(d);}
+async function saveTemplate(){const items=[...document.querySelectorAll('.ti')].map(r=>{const [a,b,c]=r.querySelectorAll('input,select');return{title:a.value,...whoVal(b.value),due_offset_days:+c.value||0}}).filter(i=>i.title);
+  const tid=(await api('/api/templates',{method:'POST',body:{name:$('#tName').value||'Untitled',items:[]}})).id;
+  for(const it of items)await api(`/api/templates/${tid}/items`,{method:'POST',body:it});$('#tItems').innerHTML='';$('#tName').value='';refresh();}
 async function delTpl(id){if(confirm('Delete template?')){await api('/api/templates/'+id,{method:'DELETE'});refresh();}}
-async function newProject(){await api('/api/projects',{method:'POST',body:{name:$('#pName').value||'Untitled',template_id:+$('#pTpl').value||null,start_date:$('#pStart').value||null}});$('#pName').value='';refresh();}
+async function newProject(){const name=$('#pName').value.trim();if(!name){alert('Give the project a name.');return;}
+  await api('/api/projects',{method:'POST',body:{name,template_id:+$('#pTpl').value||null,start_date:$('#pStart').value||null,property:$('#pProp').value||null,client:$('#pClient').value||null,team:newTeam()}});
+  ['#pName','#pProp','#pClient'].forEach(x=>$(x).value='');$('#pTpl').value='';$('#pTeam').innerHTML='';await refresh();toast('Project created');}
 async function saveAsTpl(id,n){const name=prompt('Template name',n+' checklist');if(name){await api(`/api/projects/${id}/save-as-template`,{method:'POST',body:{name}});refresh();}}
 async function patch(id,b){try{await api('/api/tasks/'+id,{method:'PATCH',body:b})}finally{await refresh()}}
 const setStatus=(id,s)=>patch(id,{status:s});

@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, automations, blink, chat, collab, maintenance, services, tpl
+from . import auth, automations, blink, chat, collab, maintenance, services, team, tpl
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
 logging.basicConfig(level=logging.INFO)
@@ -96,6 +96,10 @@ class ProjectIn(BaseModel):
     name: str
     template_id: int | None = None
     start_date: date | None = None
+    property: str | None = None
+    client: str | None = None
+    description: str | None = None
+    team: dict[str, int | None] | None = None   # role_id -> user_id
 
 class TaskIn(BaseModel):
     project_id: int | None = None
@@ -250,11 +254,23 @@ class TemplateItemNew(BaseModel):
     title: str
     parent_item_id: int | None = None
     default_assignee_id: int | None = None
+    default_role_id: int | None = None
     due_offset_days: int = 0
 
 @app.post("/api/templates/{tid}/items")
 def add_template_item(tid: int, body: TemplateItemNew):
-    return {"id": tpl.add_item(tid, body.title, body.parent_item_id, body.default_assignee_id, body.due_offset_days)}
+    return {"id": tpl.add_item(tid, body.title, body.parent_item_id, body.default_assignee_id, body.due_offset_days,
+                               body.default_role_id)}
+
+@app.patch("/api/templates/{tid}")
+def patch_template(tid: int, body: dict):
+    tpl.update_template(tid, body)
+    return {"ok": True}
+
+@app.post("/api/template-items/{iid}/move")
+def move_template_item(iid: int, direction: int):
+    tpl.move_item(iid, direction)
+    return {"ok": True}
 
 @app.patch("/api/template-items/{iid}")
 def patch_template_item(iid: int, body: dict):
@@ -348,15 +364,69 @@ def list_projects():
                            WHERE d.task_id=t.id AND b.status!='done') AS waiting_on
                    FROM tasks t LEFT JOIN users u ON u.id=t.assignee_id
                    WHERE project_id=? ORDER BY position,id""", (p["id"],)))
-        return ps
+    for p in ps:
+        p["team"] = team.project_team(p["id"])
+    return ps
 
 @app.post("/api/projects")
 def create_project(p: ProjectIn):
     start = p.start_date or date.today()
+    details = {"property": p.property, "client": p.client, "description": p.description}
     if p.template_id:
-        return {"id": services.create_project_from_template(p.template_id, p.name, start)}
+        return {"id": services.create_project_from_template(p.template_id, p.name, start, team=p.team, details=details)}
     with tx() as c:
-        return {"id": c.execute("INSERT INTO projects(name,start_date) VALUES(?,?)", (p.name, start.isoformat())).lastrowid}
+        pid = c.execute("INSERT INTO projects(name,start_date,property,client,description) VALUES(?,?,?,?,?)",
+                        (p.name, start.isoformat(), p.property, p.client, p.description)).lastrowid
+    team.save_team(pid, team.resolve_team(p.team))
+    return {"id": pid}
+
+
+class ProjectPatch(BaseModel):
+    name: str | None = None
+    property: str | None = None
+    client: str | None = None
+    description: str | None = None
+    start_date: date | None = None
+
+@app.patch("/api/projects/{pid}")
+def patch_project(pid: int, p: ProjectPatch):
+    fields = {k: (v.isoformat() if isinstance(v, date) else v) for k, v in p.model_dump(exclude_unset=True).items()}
+    if fields:
+        with tx() as c:
+            c.execute(f"UPDATE projects SET {', '.join(k + '=?' for k in fields)} WHERE id=?", (*fields.values(), pid))
+    return {"ok": True}
+
+
+class TeamMemberIn(BaseModel):
+    user_id: int | None = None
+
+@app.put("/api/projects/{pid}/team/{role_id}")
+def set_team_member(pid: int, role_id: int, body: TeamMemberIn):
+    return {"moved": team.set_member(pid, role_id, body.user_id)}
+
+
+# ---------- project roles ----------
+class RoleIn(BaseModel):
+    name: str
+    default_user_id: int | None = None
+
+@app.get("/api/roles")
+def roles_list():
+    return team.list_roles()
+
+@app.post("/api/roles")
+def roles_add(body: RoleIn):
+    return {"id": team.add_role(body.name, body.default_user_id)}
+
+@app.patch("/api/roles/{rid}")
+def roles_patch(rid: int, body: dict):
+    team.update_role(rid, body)
+    return {"ok": True}
+
+@app.delete("/api/roles/{rid}")
+def roles_delete(rid: int):
+    team.delete_role(rid)
+    return {"ok": True}
 
 @app.post("/api/projects/{pid}/save-as-template")
 def save_as_template(pid: int, body: SaveAsTemplate):
@@ -413,8 +483,8 @@ def patch_task(tid: int, p: TaskPatch, request: Request):
             c.execute("UPDATE tasks SET title=? WHERE id=?", (p.title.strip(), tid))
         if p.description is not None:
             c.execute("UPDATE tasks SET description=? WHERE id=?", (p.description, tid))
-        if p.assignee_id is not None:
-            c.execute("UPDATE tasks SET assignee_id=? WHERE id=?", (p.assignee_id, tid))
+        if p.assignee_id is not None:  # assigning a person directly detaches the task from its project role
+            c.execute("UPDATE tasks SET assignee_id=?, role_id=NULL WHERE id=?", (p.assignee_id or None, tid))
         if p.due_date is not None:
             c.execute("UPDATE tasks SET due_date=? WHERE id=?", (p.due_date.isoformat(), tid))
     if p.due_date is not None:
