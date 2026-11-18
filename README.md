@@ -46,6 +46,16 @@ reminder/assignment ─► POST /oidc/token ─► POST /api/platform/chats (1:1
 user replies in Blink ─► webhook blink.chat.message-sent ─► GET message ─► update task ─► reply
 ```
 
+## Google sign-in (@foresitecre.com only)
+1. https://console.cloud.google.com → create a project (e.g. "Task Manager").
+2. **APIs & Services → OAuth consent screen** → User type **Internal** (only your Workspace can use it).
+3. **Credentials → Create credentials → OAuth client ID → Web application.**
+   Authorized redirect URI: `https://<your-railway-domain>/auth/callback`
+4. Put the client ID/secret in `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`, set `PUBLIC_URL` to the
+   Railway https address and `SESSION_SECRET` to a long random string.
+Anyone who signs in is added to People automatically; add their Blink user ID there for chat reminders.
+If `GOOGLE_CLIENT_ID` is blank, sign-in is disabled (local testing only — never deploy like that).
+
 ## Deploy (Railway – recommended)
 1. Push this repo to GitHub → Railway: **New Project → Deploy from GitHub repo**.
 2. Add a **Volume** mounted at `/data`; set variable `DB_PATH=/data/tasks.db` (keeps the database across deploys).

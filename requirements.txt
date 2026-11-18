@@ -4,3 +4,4 @@ httpx>=0.27
 anthropic>=2.0
 hook0-client>=2.0
 python-dotenv>=1.0
+itsdangerous>=2.1

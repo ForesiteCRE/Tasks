@@ -7,8 +7,10 @@ from datetime import date, datetime
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 
-from . import blink, services
+from . import auth, blink, services
 from .db import init_db, rows, tx
 
 logging.basicConfig(level=logging.INFO)
@@ -37,6 +39,18 @@ async def lifespan(_):
 
 
 app = FastAPI(title="Blink Task Manager", lifespan=lifespan)
+# Order matters: the session middleware must wrap (run before) the login check.
+app.add_middleware(BaseHTTPMiddleware, dispatch=auth.require_login)
+app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET") or os.urandom(32).hex(),
+                   https_only=bool(auth.PUBLIC_URL.startswith("https")), same_site="lax", max_age=30 * 86400)
+app.include_router(auth.router)
+# Chat simulator is for testing; on by default only when Blink isn't connected.
+SIMULATOR = os.getenv("ENABLE_SIMULATOR", "1" if blink.MOCK else "0") == "1"
+
+
+@app.get("/healthz")
+def healthz():
+    return {"ok": True}
 
 
 @app.get("/")
@@ -96,6 +110,24 @@ class InboundMessage(BaseModel):
 def list_users():
     with tx() as c:
         return rows(c.execute("SELECT * FROM users ORDER BY name"))
+
+class UserPatch(BaseModel):
+    name: str | None = None
+    blink_user_id: str | None = None
+
+@app.patch("/api/users/{uid}")
+def patch_user(uid: int, p: UserPatch):
+    with tx() as c:
+        if p.name:
+            c.execute("UPDATE users SET name=? WHERE id=?", (p.name, uid))
+        if p.blink_user_id is not None:  # changing the Blink id resets the cached 1:1 chat
+            c.execute("UPDATE users SET blink_user_id=?, blink_chat_id=NULL WHERE id=?",
+                      (p.blink_user_id.strip() or None, uid))
+    return {"ok": True}
+
+@app.get("/api/config")
+def config():
+    return {"simulator": SIMULATOR, "blink_mock": blink.MOCK}
 
 @app.post("/api/users")
 def create_user(u: UserIn):
@@ -187,7 +219,8 @@ def create_task(t: TaskIn):
     return {"id": tid}
 
 @app.patch("/api/tasks/{tid}")
-def patch_task(tid: int, p: TaskPatch):
+def patch_task(tid: int, p: TaskPatch, request: Request):
+    p.user_id = (auth.current_user(request) or {}).get("id")
     with tx() as c:
         if p.assignee_id is not None:
             c.execute("UPDATE tasks SET assignee_id=? WHERE id=?", (p.assignee_id, tid))
@@ -243,7 +276,9 @@ def _process_chat_message(chat_id: str, message_id: str):
 
 @app.post("/api/blink/simulate")
 def blink_simulate(msg: InboundMessage):
-    """Used by the web UI's chat simulator (no secret needed; disable in production)."""
+    """Used by the web UI's chat simulator. Disabled when connected to real Blink unless ENABLE_SIMULATOR=1."""
+    if not SIMULATOR:
+        raise HTTPException(404, "simulator disabled")
     return {"reply": services.handle_inbound(msg.blink_user_id, msg.text)}
 
 @app.get("/api/blink/messages")
