@@ -678,3 +678,71 @@ def test_creator_can_delete_own_project_only(mgr, staff):
     assert staff.delete(f"/api/projects/{theirs}", params={"confirm": "Boss project"}).status_code == 403
     ids(staff.delete(f"/api/projects/{mine}", params={"confirm": "Sam scratch project"}))
     ids(mgr.delete(f"/api/projects/{theirs}", params={"confirm": "Boss project"}))
+
+
+# ---------- properties & critical dates ----------
+
+def test_property_page_and_critical_dates(mgr, staff):
+    from datetime import date, timedelta
+    from app import properties
+    p1 = ids(mgr.post("/api/projects", json={"name": "Oak takeover", "property": "451 Bandera Rd, San Antonio, TX"}))["id"]
+    p2 = ids(mgr.post("/api/projects", json={"name": "Oak CAM recon", "property": "451 Bandera Road, San Antonio, Texas"}))["id"]
+    props = ids(mgr.get("/api/properties"))
+    oak = [p for p in props if p["name"].startswith("451 Bandera")]
+    assert len(oak) == 1 and oak[0]["projects"] == 2                       # both spellings → one property
+    pid = oak[0]["id"]
+    ids(mgr.post("/api/tasks", json={"title": "Walk the roof", "project_id": p1, "due_date": "2030-01-05"}))
+    soon = (date.today() + timedelta(days=20)).isoformat()
+    later = (date.today() + timedelta(days=300)).isoformat()
+    with tx() as c:
+        sam = c.execute("SELECT id FROM users WHERE blink_user_id='u-sam'").fetchone()["id"]
+    before = len(SENT)
+    r = ids(mgr.post(f"/api/properties/{pid}/dates", json={"dates": [
+        {"kind": "option_notice", "title": "Renewal option notice due", "date": soon, "tenant": "Suite 110 – Coastal Coffee",
+         "assignee_id": sam},
+        {"kind": "lease_expiration", "date": later, "tenant": "Suite 110"}]}))
+    assert len(r["ids"]) == 2
+    # the near one is inside its 30-day window → task created for Sam + one Blink reminder (not one per offset)
+    msgs = [t for b, t in SENT[before:] if b == "u-sam"]
+    assert len(msgs) == 1 and "Critical date in 20 days" in msgs[0]
+    page = ids(mgr.get(f"/api/properties/{pid}"))
+    near = [d for d in page["dates"] if d["kind"] == "option_notice"][0]
+    assert near["task_id"] and near["days_left"] == 20
+    assert {pr["id"] for pr in page["projects"]} == {p1, p2} and any(t["title"] == "Walk the roof" for t in page["tasks"])
+    assert properties.run_alerts() == 0                                    # idempotent
+    # staff can see it, mark their own date handled, but not edit someone else's/add dates
+    assert staff.get(f"/api/properties/{pid}").status_code == 200
+    assert staff.post(f"/api/properties/{pid}/dates", json={"dates": []}).status_code == 403
+    far = [d for d in page["dates"] if d["kind"] == "lease_expiration"][0]
+    assert staff.patch(f"/api/critical-dates/{far['id']}", json={"status": "handled"}).status_code == 403
+    ids(staff.patch(f"/api/critical-dates/{near['id']}", json={"status": "handled"}))
+    assert ids_task(near["task_id"])["status"] == "done"                 # handling the date finishes its task
+    # finishing the task also closes the date
+    ids(mgr.patch(f"/api/critical-dates/{near['id']}", json={"status": "open"}))
+    with tx() as c:
+        c.execute("UPDATE tasks SET status='done' WHERE id=?", (near["task_id"],))
+    properties.run_alerts()
+    assert [d for d in ids(mgr.get(f"/api/properties/{pid}"))["dates"] if d["id"] == near["id"]][0]["status"] == "handled"
+    # moving the date resets reminders and moves the task's due date
+    ids(mgr.patch(f"/api/critical-dates/{far['id']}", json={"date": soon}))
+    properties.run_alerts()
+    far2 = [d for d in ids(mgr.get(f"/api/properties/{pid}"))["dates"] if d["id"] == far["id"]][0]
+    assert far2["task_id"] and ids_task(far2["task_id"])["due_date"] == soon
+    # renaming a project's address moves it to another property
+    ids(mgr.patch(f"/api/projects/{p2}", json={"property": "99 Elm St, Austin, TX"}))
+    assert ids(mgr.get(f"/api/properties/{pid}"))["projects"][0]["id"] == p1
+    assert mgr.delete(f"/api/properties/{pid}").status_code == 400          # must type the name
+
+
+def test_read_lease_returns_dates_for_review(mgr):
+    pid = ids(mgr.post("/api/properties", json={"address": "1 Lease Test Way, Austin, TX"}))["id"]
+    CLAUDE.append({"summary": "Coastal Coffee, Suite 110, 5-year term.", "dates": [
+        {"kind": "option_notice", "title": "Renewal notice due", "date": "2031-06-30", "tenant": "Coastal Coffee",
+         "notes": "180 days before expiration", "quote": "no later than 180 days", "confidence": "medium"},
+        {"kind": "rent_increase", "title": "Rent bump", "date": "not a date", "tenant": "", "notes": "", "quote": "",
+         "confidence": "low"}]})
+    import base64
+    out = ids(mgr.post(f"/api/properties/{pid}/read-lease", json={
+        "filename": "lease.txt", "content_type": "text/plain", "data_b64": base64.b64encode(b"LEASE ...").decode()}))
+    assert [d["date"] for d in out["dates"]] == ["2031-06-30"]               # bad dates dropped
+    assert not ids(mgr.get(f"/api/properties/{pid}"))["dates"]               # nothing saved until reviewed

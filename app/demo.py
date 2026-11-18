@@ -128,6 +128,42 @@ def load(me_id: int) -> dict:
                             ("Quarterly review prep — 777 E Sonterra", date.today() + timedelta(days=3), "14:00")]:
             m["reminders"].append(dashboard.add_reminder(me_id, text, f"{d.isoformat()}T{hm}"))
 
+        # --- property pages + critical dates (777 E Sonterra gets a realistic set)
+        from . import properties
+        with tx() as c:
+            before = {r[0] for r in c.execute("SELECT id FROM properties")}
+        properties.link_all()
+        with tx() as c:
+            m["properties"] = [r[0] for r in c.execute("SELECT id FROM properties") if r[0] not in before]
+            hq = c.execute("SELECT property_id FROM projects WHERE id=?", (onb,)).fetchone() if onb else None
+        if hq and hq["property_id"]:
+            t0 = date.today()
+            may15 = date(t0.year + (t0 >= date(t0.year, 5, 15)), 5, 15)
+            for kind, title, days, tenant, who, notes in [
+                ("coi_expiry", "Tenant insurance certificate expires", 12, "Suite 110 – Coastal Coffee", "Alex Rivera",
+                 "Request an updated COI naming owner and Foresite as additional insured."),
+                ("option_notice", "Renewal option notice deadline", 25, "Suite 204 – Lone Star Dental", None,
+                 "Tenant must give written notice 180 days before expiration to exercise its 5-year option."),
+                ("rent_increase", "Scheduled rent increase (3%)", 75, "Suite 110 – Coastal Coffee", "Maria Garza",
+                 "Base rent $4,850 → $4,995.50/mo. Update rent roll and send tenant notice 30 days ahead."),
+                ("cam_recon", "CAM reconciliation due to tenants", 130, "All tenants", "Jordan Lee",
+                 "Lease requires the annual reconciliation within 120 days of year-end."),
+                ("tax_protest", "Property tax protest deadline (Bexar CAD)", (may15 - t0).days, "", None,
+                 "Review the appraisal notice; file protest or hire tax consultant."),
+                ("lease_expiration", "Lease expires", 400, "Suite 204 – Lone Star Dental", None, "")]:
+                did = properties.add_date(hq["property_id"], {
+                    "kind": kind, "title": title, "date": (t0 + timedelta(days=days)).isoformat(), "tenant": tenant,
+                    "notes": notes, "assignee_id": ids.get(who) if who else me_id,
+                    "quote": "…shall deliver written notice no later than one hundred eighty (180) days prior to the "
+                             "expiration of the Term…" if kind == "option_notice" else ""}, me_id,
+                    "lease" if kind in ("option_notice", "rent_increase", "lease_expiration") else "manual")
+                m.setdefault("dates", []).append(did)
+            properties.run_alerts()
+            with tx() as c:
+                m["tasks"] += [r[0] for r in c.execute(
+                    f"SELECT task_id FROM critical_dates WHERE task_id IS NOT NULL AND id IN ({','.join('?' * len(m['dates']))})",
+                    m["dates"])]
+
         # --- a monthly recurring setup (paused, so it doesn't create real projects)
         with tx() as c:
             tpl_id = c.execute("SELECT id FROM templates WHERE name='Month-End Close'").fetchone()
@@ -157,6 +193,14 @@ def remove() -> dict:
         starter_templates.delete_project(pid)
     for tid in m["tasks"]:
         collab.delete_task(tid)
+    from . import properties
+    for did in m.get("dates", []):
+        properties.delete_date(did)
+    with tx() as c:   # property pages that only existed because of the sample projects
+        for pid in m.get("properties", []):
+            if not c.execute("SELECT 1 FROM projects WHERE property_id=?", (pid,)).fetchone() and \
+               not c.execute("SELECT 1 FROM critical_dates WHERE property_id=?", (pid,)).fetchone():
+                c.execute("DELETE FROM properties WHERE id=?", (pid,))
     with tx() as c:
         for rid in m["reminders"]:
             c.execute("DELETE FROM reminders WHERE id=?", (rid,))

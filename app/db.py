@@ -163,7 +163,7 @@ def init_db():
 
 
 def _init_extras():
-    from . import chat, dashboard, extras, intake, photos, recur, timing, tpl  # tables kept next to their features
+    from . import chat, dashboard, extras, intake, photos, properties, recur, timing, tpl  # tables kept next to their features
     tpl.init()
     chat.init()
     intake.init()
@@ -172,6 +172,7 @@ def _init_extras():
     extras.init()
     photos.init()
     recur.init()
+    properties.init()   # after photos (uses projects.photo_path)
 
 
 def get_setting(key: str) -> str | None:

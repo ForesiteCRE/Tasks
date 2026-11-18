@@ -5,6 +5,7 @@ import re
 import urllib.parse
 from contextlib import asynccontextmanager
 from datetime import date, datetime
+from datetime import date as _date
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, Response
@@ -12,7 +13,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import (auth, automations, blink, chat, collab, dashboard, demo, extras, intake, maintenance, photos, recur, services,
+from . import (auth, automations, blink, chat, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
                starter_templates, team, timing, tpl)
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
@@ -33,7 +34,7 @@ async def scheduler_loop():
                 logging.exception("scheduler job %s failed", job.__name__)
         if datetime.now().hour >= REMINDER_HOUR:
             for job in (services.send_reminders, maintenance.send_weekly_summary, automations.overdue_escalation,
-                        extras.send_week_ahead):
+                        extras.send_week_ahead, properties.run_alerts):
                 try:
                     job()
                 except Exception:
@@ -544,6 +545,8 @@ def patch_project(pid: int, p: ProjectPatch):
     if fields:
         with tx() as c:
             c.execute(f"UPDATE projects SET {', '.join(k + '=?' for k in fields)} WHERE id=?", (*fields.values(), pid))
+        if "property" in fields:
+            properties.relink(pid)
     return {"ok": True}
 
 
@@ -801,6 +804,157 @@ def intake_extract(body: DocIn):
 @app.get("/api/insights/time")
 def time_insights(days: int = 180):
     return timing.insights(days)
+
+
+# ---------- properties & critical dates ----------
+
+class PropertyIn(BaseModel):
+    address: str
+    name: str | None = None
+    client: str | None = None
+    notes: str | None = None
+
+class PropertyPatch(BaseModel):
+    address: str | None = None
+    name: str | None = None
+    client: str | None = None
+    notes: str | None = None
+
+class DateIn(BaseModel):
+    kind: str = "other"
+    title: str = ""
+    date: _date
+    tenant: str | None = None
+    notes: str | None = None
+    quote: str | None = None
+    assignee_id: int | None = None
+    remind_days: str | None = None
+
+class DatesIn(BaseModel):
+    dates: list[DateIn]
+    source: str = "manual"
+
+class DatePatch(BaseModel):
+    kind: str | None = None
+    title: str | None = None
+    date: _date | None = None
+    tenant: str | None = None
+    notes: str | None = None
+    assignee_id: int | None = None
+    remind_days: str | None = None
+    status: str | None = None
+
+
+@app.get("/api/properties")
+def list_properties():
+    return properties.list_all()
+
+
+@app.post("/api/properties")
+def create_property(body: PropertyIn, request: Request):
+    _require_manager(request)
+    try:
+        return {"id": properties.create(body.address, body.name, body.client, body.notes)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/properties/upcoming-dates")
+def upcoming_dates(days: int = 120, mine: bool = False, request: Request = None):
+    return properties.upcoming(days, _me_id(request) if mine else None)
+
+
+@app.get("/api/properties/{pid}")
+def get_property(pid: int):
+    p = properties.get(pid)
+    if not p:
+        raise HTTPException(404, "Property not found")
+    return p
+
+
+@app.patch("/api/properties/{pid}")
+def patch_property(pid: int, body: PropertyPatch, request: Request):
+    _require_manager(request)
+    try:
+        properties.update(pid, body.model_dump(exclude_unset=True))
+    except (ValueError, Exception) as e:
+        if "UNIQUE" in str(e):
+            raise HTTPException(400, "Another property already has that address.")
+        if isinstance(e, ValueError):
+            raise HTTPException(400, str(e))
+        raise
+    return {"ok": True}
+
+
+@app.delete("/api/properties/{pid}")
+def delete_property(pid: int, request: Request, confirm: str = ""):
+    _require_manager(request)
+    p = properties.get(pid)
+    if not p:
+        raise HTTPException(404, "Property not found")
+    if confirm.strip().casefold() != p["name"].strip().casefold():
+        raise HTTPException(400, "To delete, type the property's exact name to confirm.")
+    logging.warning("Property %s “%s” deleted by %s", pid, p["name"], (auth.current_user(request) or {}).get("email"))
+    properties.delete(pid)
+    return {"ok": True}
+
+
+@app.get("/api/properties/{pid}/streetview")
+def property_streetview(pid: int):
+    p = properties.get(pid)
+    path = photos.streetview_file(p["address"]) if p else None
+    if not path:
+        raise HTTPException(404, "No Street View")
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.post("/api/properties/{pid}/dates")
+def add_dates(pid: int, body: DatesIn, request: Request):
+    _require_manager(request)
+    if not properties.get(pid):
+        raise HTTPException(404, "Property not found")
+    ids = [properties.add_date(pid, d.model_dump(), _me_id(request), "lease" if body.source == "lease" else "manual")
+           for d in body.dates]
+    properties.run_alerts()   # anything already inside its reminder window gets its task + Blink message now
+    return {"ids": ids}
+
+
+@app.patch("/api/critical-dates/{did}")
+def patch_date(did: int, body: DatePatch, request: Request):
+    me = auth.current_user(request) or {}
+    with tx() as c:
+        d = c.execute("SELECT assignee_id FROM critical_dates WHERE id=?", (did,)).fetchone()
+    if not d:
+        raise HTTPException(404, "Date not found")
+    fields = body.model_dump(exclude_unset=True)
+    if not auth.at_least(me, "manager") and not (d["assignee_id"] == me.get("id") and set(fields) <= {"status", "notes"}):
+        raise HTTPException(403, "Only managers (or the person responsible, to mark it handled) can change critical dates.")
+    try:
+        properties.update_date(did, fields)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+@app.delete("/api/critical-dates/{did}")
+def delete_date(did: int, request: Request):
+    _require_manager(request)
+    properties.delete_date(did)
+    return {"ok": True}
+
+
+@app.post("/api/properties/{pid}/read-lease")
+def read_lease(pid: int, body: DocIn, request: Request):
+    """Upload a lease (or amendment / COI / tax notice) → Claude lists its critical dates for review. Nothing is saved."""
+    _require_manager(request)
+    import base64
+    data = base64.b64decode(body.data_b64)
+    if len(data) > intake.MAX_DOC_BYTES:
+        raise HTTPException(413, "File too large (25 MB max).")
+    try:
+        return properties.extract_from_document(data, body.content_type, body.filename)
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))
 
 
 # ---------- dashboards, reminders, daily recap ----------

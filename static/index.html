@@ -159,6 +159,14 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 .kpi.clk .l::after{content:" ›";opacity:.5}
 @keyframes flash{0%{box-shadow:0 0 0 3px var(--acc)}100%{box-shadow:0 0 0 3px transparent}}.flash{animation:flash 1.6s ease-out;scroll-margin-top:80px}
 .xclose{display:none}
+.propgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+.nextd{margin-top:8px;font-size:12.5px;padding-top:8px;border-top:1px solid var(--line)}
+.dl{display:inline-block;font-size:11.5px;padding:1px 7px;border-radius:99px;background:#eef1f4;color:var(--mute);white-space:nowrap}.dl.red{background:#fde8e8;color:var(--bad)}.dl.amber{background:#fdf1e2;color:#b26a12}
+.cdrow{display:flex;gap:10px;padding:10px 2px;border-bottom:1px solid var(--line)}.cdrow .ico{font-size:18px}.cdrow.isdone{opacity:.55}.cdact{text-align:right;min-width:200px}.cdact .row{flex-wrap:nowrap}
+.b.sm{padding:3px 8px;font-size:12px}
+.cdform{background:#f7fafc;border:1px solid var(--line);border-radius:8px;padding:12px;margin:6px 0 10px}
+.lrow{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.conf{font-size:11.5px;padding:2px 8px;border-radius:99px}.conf.high{background:#eef6e4;color:var(--ok)}.conf.medium{background:#fdf1e2;color:#b26a12}.conf.low{background:#fde8e8;color:var(--bad)}
 .cal .dots{display:none}#calDay{display:none}
 .cal .day{cursor:pointer}.cal .day.sel{box-shadow:inset 0 0 0 2px var(--acc)}
 .crow{display:flex;gap:10px;align-items:flex-start;padding:10px 4px;border-bottom:1px solid var(--line);cursor:pointer}.crow .pill{flex:none;margin-top:2px}
@@ -209,6 +217,7 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
   .cal .dots i.in_progress{background:var(--acc)}.cal .dots i.blocked{background:#f59f00}.cal .dots i.done{background:#c3dca0}.cal .dots i.od{background:var(--bad)}.cal .dots b{font-size:9px;color:var(--mute);line-height:7px}
   #calDay{display:block;margin-top:14px}#calDay h3{margin:0 0 4px;font-size:16px}
   #v-calendar .card>.row.mute{display:none}
+  .cdrow{flex-wrap:wrap}.cdrow .grow{flex:1 1 calc(100% - 34px);min-width:0}.cdact{text-align:left;min-width:0;flex-basis:100%;padding-left:28px}.cdact .row{justify-content:flex-start!important}
   dialog{width:100vw!important;max-width:100vw!important;margin:0;max-height:100dvh;border-radius:0}
 }
 </style>
@@ -220,6 +229,7 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
   <div class="dd" data-g="tasks"><button class="ddb">Tasks <span class="car">▾</span></button><div class="ddm">
     <button data-v="tasks">✓ All tasks<small>with or without a project</small></button>
     <button data-v="projects">📁 Projects<small>start a new project, see progress</small></button>
+    <button data-v="properties">🏢 Properties<small>each building, its critical dates &amp; work</small></button>
     <button data-v="templates" class="mgr">📋 Templates<small>reusable checklists</small></button></div></div>
   <button data-v="calendar">Calendar</button>
   <button data-v="team" class="mgr">By person</button>
@@ -271,6 +281,17 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
     <h3>Repeating projects</h3><table id="recurring"></table>
     <h3>Repeating tasks</h3><table id="recurTasks"></table></details>
 </section>
+
+<section id="v-properties" class="hidden">
+  <div class="pagehead"><h2>Properties</h2>
+    <div class="row mgr" style="margin:0"><button class="b" onclick="addPropertyForm()">+ Add property</button></div></div>
+  <div id="propAdd"></div>
+  <div class="row" style="margin-bottom:12px"><input type="search" id="propSearch" placeholder="Search properties…" oninput="renderProperties()" style="flex:1;min-width:180px"></div>
+  <div class="propgrid" id="propList"></div>
+  <div class="panel" style="margin-top:18px"><header><h3>⚑ Critical dates — next 120 days</h3><span class="cnt" id="propUpN"></span></header><div class="body" id="propUpcoming"></div></div>
+</section>
+
+<section id="v-property" class="hidden"><div id="propPage"></div></section>
 
 <section id="v-calendar" class="hidden">
   <div class="card">
@@ -381,7 +402,7 @@ const fmtDate=d=>d?new Date(d+'T12:00').toLocaleDateString(undefined,{month:'sho
 function show(v){document.querySelectorAll('nav button[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   document.querySelectorAll('.dd').forEach(d=>{d.classList.remove('open');d.querySelector('.ddb').classList.toggle('on',!!d.querySelector(`[data-v="${v}"]`))});
   if(v==='tasks')renderTasks();document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-'+v));
-  if(v==='home')renderHome();if(v==='chat')loadChat();if(v==='admin')loadAdmin();if(v==='calendar')renderCalendar();if(v==='team')renderTeam();}
+  if(v==='home')renderHome();if(v==='chat')loadChat();if(v==='admin')loadAdmin();if(v==='calendar')renderCalendar();if(v==='team')renderTeam();if(v==='properties')renderProperties(true);}
 $('#nav').onclick=e=>{const b=e.target.closest('button');if(!b)return;
   if(b.classList.contains('ddb')){const d=b.parentElement,o=!d.classList.contains('open');document.querySelectorAll('.dd').forEach(x=>x.classList.remove('open'));d.classList.toggle('open',o);return;}
   if(b.dataset.v)show(b.dataset.v)};
@@ -497,6 +518,7 @@ async function openProject(pid){const p=PROJECTS.find(x=>x.id===pid);if(!p)retur
     <label>Client / owner<input ${dis} value="${esc(p.client||'')}" onchange="projPatch(${p.id},{client:this.value})"></label>
     <label>Start date<input ${dis} type="date" value="${p.start_date}" onchange="projPatch(${p.id},{start_date:this.value})"></label></div>
    <label class="mute" style="font-size:12px">Summary / notes</label><textarea ${dis} rows="3" onchange="projPatch(${p.id},{description:this.value})">${esc(p.description||'')}</textarea>
+   ${p.property_id?`<div class="row" style="margin:6px 0 0"><button class="b ghost" onclick="openProperty(${p.property_id})">🏢 Property page — critical dates &amp; everything at this address</button></div>`:''}
    ${projTaskPreview(p)}
    <div class="sec"><h3>👥 Project team</h3><p class="mute" style="margin:0 0 6px;font-size:12px">Tasks assigned by role follow the person in that role — change someone here and their open tasks move over (they get a Blink message).</p>
    <div class="team-grid">${p.team.map(m=>{const n=p.tasks.filter(t=>t.role_id===m.role_id&&t.status!=='done').length;
@@ -516,6 +538,100 @@ function projTaskPreview(p){const ts=orderTasks(p.tasks),done=p.tasks.filter(t=>
       <td class="mute" style="white-space:nowrap">${esc(t.assignee_name||'Unassigned')}</td>
       <td style="white-space:nowrap" class="${isOver(t)?'over':'mute'}">${fmtDate(t.due_date)||'—'}</td></tr>`).join('')}</table>`
       :'<p class="mute" style="margin:0">No tasks yet.</p>'}</div>`;}
+
+/* ---------- properties & critical dates ---------- */
+let PROPS=[],PROP=null,LEASE=null;
+const daysBadge=n=>n<0?`<span class="dl red">${-n} day${n===-1?'':'s'} late</span>`:n===0?'<span class="dl red">today</span>':`<span class="dl ${n<=30?'red':n<=90?'amber':''}">in ${n} day${n===1?'':'s'}</span>`;
+function propBanner(p,h){
+  const map=`<iframe loading="lazy" tabindex="-1" src="https://maps.google.com/maps?q=${encodeURIComponent(p.address)}&z=16&output=embed"></iframe>`;
+  const media=p.photo_path&&p.photo_project_id?`<img alt="" src="/api/projects/${p.photo_project_id}/photo?v=${encodeURIComponent(p.photo_path)}">`
+    :CFG.streetview?`<img alt="" src="/api/properties/${p.id}/streetview" onerror="this.outerHTML=${esc(JSON.stringify(map))}">`:map;
+  return `<div class="banner" style="height:${h}px">${media}<div class="ov"><div><div class="addr">📍 ${esc(p.address)}</div></div></div></div>`;}
+async function renderProperties(fetch){if(fetch||!PROPS.length)PROPS=await api('/api/properties');
+  const q=($('#propSearch').value||'').toLowerCase();
+  const ps=PROPS.filter(p=>!q||(p.name+' '+p.address+' '+(p.client||'')).toLowerCase().includes(q));
+  $('#propList').innerHTML=ps.map(p=>`<div class="pcard" style="padding:0;overflow:hidden" onclick="openProperty(${p.id})">${propBanner(p,110)}
+    <div style="padding:10px 12px"><h4>${esc(p.name)}</h4><div class="sub">${esc(p.client||' ')}</div>
+    <div class="row" style="margin:6px 0 0;gap:6px;font-size:12.5px"><span class="mute">${p.projects} project${p.projects===1?'':'s'} · ${p.open_tasks} open task${p.open_tasks===1?'':'s'}</span>${p.overdue?`<span class="risk hi">${p.overdue} overdue</span>`:''}</div>
+    ${p.next_date?`<div class="nextd">${p.next_date.icon} ${esc(p.next_date.title)} · ${fmtDate(p.next_date.date)} ${daysBadge(p.next_date.days_left)}</div>`:`<div class="nextd mute">No critical dates yet</div>`}</div></div>`).join('')
+    ||`<p class="mute">${PROPS.length?'No match.':'No properties yet. They appear automatically when a project has an address — or add one.'}</p>`;
+  const up=await api('/api/properties/upcoming-dates?days=120');$('#propUpN').textContent=up.length;
+  $('#propUpcoming').innerHTML=up.map(d=>`<div class="row2" style="cursor:pointer" onclick="openProperty(${d.property_id})"><span class="ico">${d.icon}</span><div class="grow">${esc(d.title)}<div class="sub">${esc(d.property_name)}${d.tenant?' · '+esc(d.tenant):''} · ${esc(d.assignee_name||'No one assigned')}</div></div><div style="text-align:right;white-space:nowrap">${fmtDate(d.date)}<br>${daysBadge(d.days_left)}</div></div>`).join('')||'<div class="empty">Nothing in the next 120 days.</div>';}
+function addPropertyForm(){$('#propAdd').innerHTML=`<div class="card"><h3 style="margin-top:0">Add a property</h3><div class="row">
+  <input id="npAddr" placeholder="Address (e.g. 777 E Sonterra Blvd, San Antonio, TX 78258)" style="flex:2;min-width:220px"><input id="npName" placeholder="Short name (optional)" style="flex:1;min-width:140px"><input id="npClient" placeholder="Owner / client" style="flex:1;min-width:140px">
+  <button class="b" onclick="addProperty()">Add</button><button class="b ghost" onclick="$('#propAdd').innerHTML=''">Cancel</button></div></div>`;$('#npAddr').focus();}
+async function addProperty(){const r=await api('/api/properties',{method:'POST',body:{address:$('#npAddr').value,name:$('#npName').value||null,client:$('#npClient').value||null}});
+  $('#propAdd').innerHTML='';PROPS=[];openProperty(r.id);}
+async function openProperty(id){PROP=await api('/api/properties/'+id);LEASE=null;
+  document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-property'));
+  document.querySelectorAll('.dd').forEach(d=>d.querySelector('.ddb').classList.toggle('on',d.dataset.g==='tasks'));
+  if(taskDlg.open)taskDlg.close();renderProperty();scrollTo(0,0);}
+function renderProperty(){const p=PROP,mg=isMgr(),dis=mg?'':'disabled',open=p.dates.filter(d=>d.status==='open'),done=p.dates.filter(d=>d.status!=='open');
+  $('#propPage').innerHTML=`<div class="row" style="margin:0 0 10px"><button class="b ghost" onclick="show('properties')">← All properties</button></div>
+  <div class="card" style="padding:0;overflow:hidden">${propBanner(p,190)}<div style="padding:14px 16px">
+    <h2 style="margin:0 0 8px">${mg?`<input value="${esc(p.name)}" style="font:inherit;font-weight:600;width:100%" onchange="propPatch({name:this.value})">`:esc(p.name)}</h2>
+    <div class="team-grid"><label>Address<input ${dis} value="${esc(p.address)}" onchange="propPatch({address:this.value})"></label>
+      <label>Owner / client<input ${dis} value="${esc(p.client||'')}" onchange="propPatch({client:this.value})"></label></div>
+    <label class="mute" style="font-size:12px">Notes (access codes, vendors, owner preferences…)</label><textarea ${dis} rows="2" onchange="propPatch({notes:this.value})">${esc(p.notes||'')}</textarea></div></div>
+  <div class="hgrid"><div>
+    <div class="panel"><header><h3>⚑ Critical dates</h3><span class="cnt">${open.length} open</span></header><div class="body">
+      ${mg?`<div class="row" style="margin:4px 0 8px"><button class="b" onclick="leasePick()">📄 Read a lease</button><button class="b ghost" onclick="dateForm()">+ Add a date</button></div><div id="cdForm"></div><div id="leaseBox"></div>`:''}
+      ${open.map(cdRow).join('')||'<div class="empty">No critical dates yet.'+(mg?' Upload a lease and Claude will find them, or add one by hand.':'')+'</div>'}
+      ${done.length?`<details style="margin-top:8px"><summary class="mute">Handled · ${done.length}</summary>${done.map(cdRow).join('')}</details>`:''}</div></div>
+    <div class="panel"><header><h3>✅ Open tasks</h3><span class="cnt">${p.tasks.length}</span></header><div class="body">
+      ${p.tasks.map(t=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><span class="pill ${t.status}">${LBL[t.status]}</span><div class="grow">${esc(t.title)}<div class="sub">${esc(t.assignee_name)} · ${esc(t.project_name)}</div></div><span class="${isOver(t)?'over':'mute'}" style="white-space:nowrap">${fmtDate(t.due_date)||'—'}</span></div>`).join('')||'<div class="empty">Nothing open.</div>'}</div></div>
+  </div><div>
+    <div class="panel"><header><h3>📁 Projects</h3><span class="cnt">${p.projects.length}</span></header><div class="body">
+      ${p.projects.map(x=>{const pct=x.total?Math.round(100*x.done/x.total):0;return `<div class="row2" style="cursor:pointer;display:block" onclick="openProject(${x.id})"><div class="row" style="justify-content:space-between;margin:0"><b>${esc(x.name)}</b><span class="mute" style="font-size:12px">${x.done}/${x.total}${x.status==='done'?' · finished':''}</span></div><div class="bar" style="margin:6px 0 0"><i style="width:${pct}%"></i></div>${x.overdue?`<span class="risk hi" style="margin-top:6px;display:inline-block">${x.overdue} overdue</span>`:''}</div>`}).join('')||'<div class="empty">No projects at this address yet. Projects whose address matches are linked automatically.</div>'}</div></div>
+    <div class="panel"><header><h3>👥 Team</h3><span class="cnt">${p.team.length}</span></header><div class="body">
+      ${p.team.map(m=>`<div class="row2"><span class="ico">👤</span><div class="grow">${esc(m.name)}<div class="sub">${m.roles.map(esc).join(', ')}</div></div></div>`).join('')||'<div class="empty">Set people in a project\'s team and they show here.</div>'}</div></div>
+  </div></div>
+  ${mg?`<details class="danger"><summary>Danger zone</summary><p>Deleting removes this property page and its critical dates. Projects and tasks are kept (just unlinked).</p>
+    <label>Type the property name <b>${esc(p.name)}</b> to confirm<input id="propDelConfirm" autocomplete="off"></label>
+    <button class="b" style="background:var(--bad);border-color:var(--bad);margin-top:8px" onclick="delProperty()">Delete property page</button></details>`:''}`;}
+function cdRow(d){const mg=isMgr(),mine=d.assignee_id===ME.id;
+  return `<div class="cdrow ${d.status!=='open'?'isdone':''}"><span class="ico">${d.icon}</span><div class="grow">
+    <div><b>${esc(d.title)}</b>${d.source==='lease'?' <span class="chip2" title="Found by reading a lease">from lease</span>':''}</div>
+    <div class="sub">${esc(d.kind_label)}${d.tenant?' · '+esc(d.tenant):''} · ${esc(d.assignee_name||'No one assigned')}${d.task_id?` · <span class="tlink" onclick="openTask(${d.task_id})">task #${d.task_id}</span>`:''}</div>
+    ${d.notes?`<div class="sub">${esc(d.notes)}</div>`:''}${d.quote?`<div class="note">“${esc(d.quote)}”</div>`:''}
+    <div class="sub">🔔 Reminders ${esc(d.remind_days.split(',').map(x=>x+'d').join(' / '))} before</div></div>
+    <div class="cdact"><div style="font-weight:600">${new Date(d.date+'T12:00').toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}</div>${d.status==='open'?daysBadge(d.days_left):'<span class="dl">handled</span>'}
+      <div class="row" style="margin:6px 0 0;gap:4px;justify-content:flex-end">${d.status==='open'&&(mg||mine)?`<button class="b ghost sm" onclick="cdPatch(${d.id},{status:'handled'})">✓ Handled</button>`:''}${d.status!=='open'&&mg?`<button class="b ghost sm" onclick="cdPatch(${d.id},{status:'open'})">Reopen</button>`:''}
+      ${mg?`<button class="b ghost sm" onclick="dateForm(${d.id})">Edit</button><button class="b ghost sm" style="color:var(--bad)" onclick="cdDel(${d.id})">✕</button>`:''}</div></div></div>`;}
+const kindOpts=sel=>Object.entries(PROP.kinds).map(([k,v])=>`<option value="${k}" ${k===sel?'selected':''}>${esc(v)}</option>`).join('');
+function dateForm(id){const d=id?PROP.dates.find(x=>x.id===id):{kind:'option_notice',remind_days:'90,30,7'};
+  $('#cdForm').innerHTML=`<div class="cdform"><div class="team-grid">
+    <label>Type<select id="cdKind">${kindOpts(d.kind)}</select></label><label>Date<input type="date" id="cdDate" value="${d.date||''}"></label>
+    <label>What is it?<input id="cdTitle" value="${esc(d.title||'')}" placeholder="e.g. Renewal option notice due"></label><label>Tenant / suite<input id="cdTenant" value="${esc(d.tenant||'')}"></label>
+    <label>Who's responsible<select id="cdWho">${userOpts(d.assignee_id,'— (managers get the reminder)')}</select></label><label>Remind (days before)<input id="cdRemind" value="${esc(d.remind_days)}" placeholder="90,30,7"></label></div>
+    <label class="mute" style="font-size:12px">Notes</label><textarea id="cdNotes" rows="2">${esc(d.notes||'')}</textarea>
+    <div class="row" style="justify-content:flex-end"><button class="b ghost" onclick="$('#cdForm').innerHTML=''">Cancel</button><button class="b" onclick="saveDate(${id||0})">${id?'Save':'Add date'}</button></div></div>`;
+  $('#cdForm').scrollIntoView({behavior:'smooth',block:'nearest'});}
+async function saveDate(id){const b={kind:$('#cdKind').value,date:$('#cdDate').value,title:$('#cdTitle').value,tenant:$('#cdTenant').value,assignee_id:+$('#cdWho').value||null,remind_days:$('#cdRemind').value,notes:$('#cdNotes').value};
+  if(!b.date){toast('Pick a date');return;}
+  if(id)await api('/api/critical-dates/'+id,{method:'PATCH',body:b});else await api(`/api/properties/${PROP.id}/dates`,{method:'POST',body:{dates:[b]}});
+  toast(id?'Saved':'Date added — reminders are set');openProperty(PROP.id);}
+async function cdPatch(id,b){await api('/api/critical-dates/'+id,{method:'PATCH',body:b});await refresh();openProperty(PROP.id);}
+async function cdDel(id){if(!confirm('Remove this critical date? (Its task, if any, stays.)'))return;await api('/api/critical-dates/'+id,{method:'DELETE'});openProperty(PROP.id);}
+async function propPatch(b){await api('/api/properties/'+PROP.id,{method:'PATCH',body:b});PROPS=[];await refresh();openProperty(PROP.id);toast('Saved');}
+async function delProperty(){await api(`/api/properties/${PROP.id}?confirm=${encodeURIComponent($('#propDelConfirm').value)}`,{method:'DELETE'});PROPS=[];toast('Property page deleted');show('properties');}
+function leasePick(){const i=document.createElement('input');i.type='file';i.accept='.pdf,.doc,.docx,.txt,image/*';i.onchange=()=>leaseRead(i.files[0]);i.click();}
+async function leaseRead(f){if(!f)return;$('#leaseBox').innerHTML=`<div class="cdform"><b>📄 Reading ${esc(f.name)}…</b><div class="mute">Claude is finding the critical dates. This takes about 20–60 seconds.</div></div>`;
+  const b64=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result.split(',')[1]);fr.readAsDataURL(f)});
+  try{LEASE=await api(`/api/properties/${PROP.id}/read-lease`,{method:'POST',body:{filename:f.name,content_type:f.type,data_b64:b64}});}
+  catch(e){$('#leaseBox').innerHTML=`<div class="cdform" style="color:var(--bad)">${esc(e.message||e)}</div>`;return;}
+  renderLease();}
+function renderLease(){const L=LEASE;
+  $('#leaseBox').innerHTML=`<div class="cdform"><h3 style="margin:0 0 4px">📄 Found ${L.dates.length} date${L.dates.length===1?'':'s'} — check them before adding</h3><p class="mute" style="margin:0 0 8px">${esc(L.summary)}</p>
+    ${L.dates.map((d,i)=>`<div class="lrow"><input type="checkbox" id="lx${i}" checked style="width:auto">
+      <div class="grow"><div class="row" style="margin:0;gap:6px"><select id="lk${i}" style="width:auto">${kindOpts(d.kind)}</select><input type="date" id="ld${i}" value="${d.date}" style="width:auto"><span class="conf ${d.confidence}">${d.confidence==='high'?'stated in lease':d.confidence==='medium'?'calculated — double-check':'unclear — check'}</span></div>
+      <input id="lt${i}" value="${esc(d.title)}" style="margin-top:6px"><div class="sub">${esc(d.tenant||'')}${d.notes?' · '+esc(d.notes):''}</div>${d.quote?`<div class="note">“${esc(d.quote)}”</div>`:''}</div></div>`).join('')||'<div class="empty">No dates found in that document.</div>'}
+    ${L.dates.length?`<div class="row" style="margin-top:10px"><label>Who's responsible <select id="lWho">${userOpts('','— (managers get the reminder)')}</select></label><label>Remind <input id="lRemind" value="90,30,7" style="width:110px"> days before</label></div>
+    <div class="row" style="justify-content:flex-end"><button class="b ghost" onclick="LEASE=null;$('#leaseBox').innerHTML=''">Discard</button><button class="b" onclick="leaseSave()">Add checked dates</button></div>`:''}</div>`;}
+async function leaseSave(){const who=+$('#lWho').value||null,rem=$('#lRemind').value;
+  const dates=LEASE.dates.map((d,i)=>$('#lx'+i).checked?{...d,kind:$('#lk'+i).value,date:$('#ld'+i).value,title:$('#lt'+i).value,assignee_id:who,remind_days:rem}:null).filter(Boolean);
+  if(!dates.length){toast('Tick at least one date');return;}
+  await api(`/api/properties/${PROP.id}/dates`,{method:'POST',body:{dates,source:'lease'}});toast(`Added ${dates.length} date${dates.length>1?'s':''} — reminders are set`);await refresh();openProperty(PROP.id);}
 async function delProject(pid){const typed=$('#delConfirm').value;
   await api(`/api/projects/${pid}?confirm=${encodeURIComponent(typed)}`,{method:'DELETE'});taskDlg.close();await refresh();toast('Project deleted');}
 async function removeSamples(){if(!confirm('Remove all sample projects and their tasks? Your real projects are not affected.'))return;
