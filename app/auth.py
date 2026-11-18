@@ -21,6 +21,8 @@ CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 DOMAIN = os.getenv("ALLOWED_EMAIL_DOMAIN", "foresitecre.com").lower()
 PUBLIC_URL = os.getenv("PUBLIC_URL", "").rstrip("/")  # e.g. https://tasks.up.railway.app
 ENABLED = bool(CLIENT_ID and CLIENT_SECRET)
+# On a hosted deploy (Railway sets RAILWAY_ENVIRONMENT) with sign-in not configured, lock everything.
+LOCKED = not ENABLED and bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("REQUIRE_LOGIN"))
 
 # Paths reachable without signing in
 PUBLIC_PATHS = {"/login", "/auth/callback", "/logout", "/blink/webhook", "/healthz"}
@@ -41,6 +43,10 @@ def current_user(request: Request) -> dict | None:
 
 async def require_login(request: Request, call_next):
     """Middleware: everything except PUBLIC_PATHS needs a signed-in user."""
+    if LOCKED and request.url.path not in ("/healthz", "/blink/webhook"):
+        return HTMLResponse("<p style='font:16px system-ui;text-align:center;margin-top:20vh'>"
+                            "Sign-in isn't configured yet — set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.</p>",
+                            status_code=503)
     if request.url.path in PUBLIC_PATHS or current_user(request):
         return await call_next(request)
     if request.url.path.startswith("/api/"):
