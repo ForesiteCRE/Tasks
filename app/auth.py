@@ -106,8 +106,18 @@ def _staff_allowed(request: Request) -> bool:
     return path.startswith(("/api/tasks", "/api/checklist/", "/api/reminders", "/api/me/"))
 
 
+_PUBLIC_HOST = PUBLIC_URL.split("://")[-1].split("/")[0].lower()
+
+
 async def require_login(request: Request, call_next):
     """Middleware: everything except PUBLIC_PATHS needs a signed-in user."""
+    # Moved to a custom domain? Send people on the old address to PUBLIC_URL (pages only — webhooks,
+    # calendar feeds and health checks keep answering on any address so nothing breaks mid-switch).
+    host = request.headers.get("host", "").lower()
+    if (_PUBLIC_HOST and host and host != _PUBLIC_HOST and request.method == "GET"
+            and not request.url.path.startswith(("/api/", "/blink/", "/calendar/", "/healthz"))):
+        query = f"?{request.url.query}" if request.url.query else ""
+        return RedirectResponse(f"{PUBLIC_URL}{request.url.path}{query}", status_code=301)
     if LOCKED and request.url.path not in ("/healthz", "/blink/webhook"):
         return HTMLResponse("<p style='font:16px system-ui;text-align:center;margin-top:20vh'>"
                             "Sign-in isn't configured yet — set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.</p>",
