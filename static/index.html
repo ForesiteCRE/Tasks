@@ -221,6 +221,9 @@ textarea{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius
 </section>
 
 <section id="v-admin" class="hidden">
+  <div class="card" style="background:linear-gradient(90deg,#fff8e6,#fff);border-color:#f5e3a3"><div class="row" style="justify-content:space-between;margin:0;gap:12px">
+    <div style="flex:1;min-width:260px"><h2 style="margin:0">🧪 Demo data</h2><div class="mute" id="demoInfo">Load a realistic sample week to try every feature: 4 demo teammates, starter templates, 9 sample projects (incl. onboarding 777 E Sonterra Blvd), blocked tasks, @mentions, logged time, reminders and more. No Blink messages are sent while loading.</div></div>
+    <div class="row" style="margin:0"><button class="b" id="demoLoad" onclick="demoLoad()">Load demo data</button><button class="b ghost hidden" id="demoRemove" style="color:var(--bad);border-color:#f3c4c4" onclick="demoRemove()">Remove demo data</button></div></div></div>
   <div class="card"><h2>📊 Weekly summary</h2>
     <p class="mute">Sent in Blink every Monday morning to anyone ticked “Weekly summary” on the People tab: overdue, blocked and due-this-week tasks across the team.</p>
     <div class="row"><button class="b ghost" onclick="previewSummary()">Preview</button><button class="b" onclick="sendSummary()">Send now</button><span id="sumInfo" class="mute"></span></div>
@@ -743,7 +746,14 @@ async function loadInsights(){const r=await api('/api/insights/time?days='+$('#t
      <td>${t.count}</td><td>${fmtMin(t.avg_estimate)||'—'}</td><td><b>${fmtMin(t.avg_actual)||'—'}</b></td><td class="mute">${t.min_actual?fmtMin(t.min_actual)+' – '+fmtMin(t.max_actual):'—'}</td><td>${v(t.variance_pct)}</td><td>${t.avg_turnaround_days!=null?t.avg_turnaround_days+' d':'—'}</td></tr>`).join('')}</table>
    <h3 style="margin-top:14px">By person</h3><table><tr><th>Person</th><th>Done</th><th>With time logged</th><th>Avg actual</th><th>vs. est.</th><th>Turnaround</th></tr>
    ${r.people.map(p=>`<tr><td>${esc(p.name)}</td><td>${p.count}</td><td>${p.with_actual}</td><td>${fmtMin(p.avg_actual)||'—'}</td><td>${v(p.variance_pct)}</td><td>${p.avg_turnaround_days!=null?p.avg_turnaround_days+' d':'—'}</td></tr>`).join('')}</table>`;}
-async function loadAdmin(){loadAutomations();loadInsights();const c=await api('/api/config');
+async function loadDemo(){const d=await api('/api/demo');$('#demoLoad').classList.toggle('hidden',d.loaded);$('#demoRemove').classList.toggle('hidden',!d.loaded);
+  if(d.loaded)$('#demoInfo').innerHTML=`Demo data loaded${d.loaded_at?' on '+fmtDate(d.loaded_at):''} — ${d.projects} sample projects with “(demo)” teammates. Remove it any time; your real data isn't touched.`;}
+async function demoLoad(){$('#demoLoad').disabled=true;$('#demoLoad').textContent='Loading…';
+  try{const r=await api('/api/demo/load',{method:'POST'});await refresh();toast(`Loaded ${r.projects} projects, ${r.people} demo teammates`);show('home');}
+  finally{$('#demoLoad').disabled=false;$('#demoLoad').textContent='Load demo data';}}
+async function demoRemove(){if(!confirm('Remove all demo data (sample projects, demo teammates, demo reminders and tasks)? Starter templates stay. Your real data is not touched.'))return;
+  await api('/api/demo',{method:'DELETE'});await refresh();loadDemo();toast('Demo data removed');}
+async function loadAdmin(){loadDemo();loadAutomations();loadInsights();const c=await api('/api/config');
   $('#sumInfo').textContent=c.last_summary_week?`Last automatic send: ${c.last_summary_week}`:'';
   $('#bkInfo').textContent=c.last_backup?`Last backup: ${c.last_backup}`:'No backup yet';
   $('#aiInfo').innerHTML=c.plain_english?'✅ On — people can reply like “finished the rent roll, still waiting on Joe for CAM” and Claude updates the right tasks.':'Off — add an <code>ANTHROPIC_API_KEY</code> variable in Railway to let people reply in plain English. Commands like <code>done 12</code> work either way.';

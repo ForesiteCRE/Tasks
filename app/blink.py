@@ -103,8 +103,23 @@ def dm_chat_id(blink_user_id: str) -> str:
     return chat["chat_id"]
 
 
+_QUIET = threading.local()
+
+
+class quiet:
+    """`with blink.quiet():` — log messages but don't send them (used when loading demo data)."""
+    def __enter__(self):
+        _QUIET.on = True
+
+    def __exit__(self, *exc):
+        _QUIET.on = False
+
+
 def send_dm(blink_user_id: str, text: str) -> bool:
     delivered = False
+    if getattr(_QUIET, "on", False):
+        log.info("[quiet] not sending to %s", blink_user_id)
+        return False
     if MOCK:
         log.info("[MOCK Blink DM -> %s]\n%s", blink_user_id, text)
     else:

@@ -33,7 +33,13 @@ CLAUDE_CALLS: list[dict] = []
 
 @pytest.fixture(autouse=True, scope="session")
 def fakes():
-    blink.send_dm = lambda buid, text: SENT.append((buid, text)) or True
+    blink._real_send_dm = blink.send_dm
+    def fake_send(buid, text):  # same quiet-mode behaviour as the real function
+        if getattr(blink._QUIET, "on", False):
+            return False
+        SENT.append((buid, text))
+        return True
+    blink.send_dm = fake_send
     auth.link_blink_account = lambda uid, email: None
 
     def create(**kw):

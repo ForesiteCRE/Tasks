@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import (auth, automations, blink, chat, collab, dashboard, extras, intake, maintenance, photos, services,
+from . import (auth, automations, blink, chat, collab, dashboard, demo, extras, intake, maintenance, photos, services,
                starter_templates, team, timing, tpl)
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
@@ -837,6 +837,22 @@ def digest_preview(request: Request):
     """Send my 6pm recap to me now (to see what it looks like)."""
     uid = _me_id(request)
     return {"sent": dashboard.send_daily_digests(force=True, only_user=uid), "text": dashboard.build_digest(uid)}
+
+
+@app.get("/api/demo")
+def demo_status():
+    return demo.status()
+
+@app.post("/api/demo/load")
+def demo_load(request: Request):
+    try:
+        return demo.load(_me_id(request))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+@app.delete("/api/demo")
+def demo_remove():
+    return demo.remove()
 
 
 @app.get("/api/automations")

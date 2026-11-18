@@ -491,3 +491,31 @@ def test_project_photos_and_streetview(mgr, staff):
         assert ids(mgr.get("/api/config"))["streetview"] is True
     finally:
         photos.httpx.get, photos.MAPS_KEY = real_get, ""
+
+
+def test_demo_data_load_and_remove(mgr, staff):
+    before_projects = {p["id"] for p in ids(mgr.get("/api/projects"))}
+    before_users = {u["id"] for u in ids(mgr.get("/api/users"))}
+    assert staff.post("/api/demo/load").status_code == 403
+    SENT.clear()
+    r = ids(mgr.post("/api/demo/load"))
+    assert r["projects"] >= 8 and r["people"] == 4
+    assert SENT == []                                                     # nothing sent to Blink while loading
+    from app import blink as real_blink
+    with real_blink.quiet():
+        assert real_blink._real_send_dm("u-x", "hi") is False                # the real sender stays quiet too
+    assert mgr.post("/api/demo/load").status_code == 400                   # can't double-load
+    projects = ids(mgr.get("/api/projects"))
+    sonterra = [p for p in projects if "777 E Sonterra Blvd (Onboarding)" in p["name"]][0]
+    assert sonterra["property"] == "777 E Sonterra Blvd, San Antonio, TX 78258"
+    assert any(m["role"] == "Property Manager" and m["user_id"] == mgr.me["id"] for m in sonterra["team"])
+    assert any(t["status"] == "blocked" for t in sonterra["tasks"])
+    home = ids(mgr.get("/api/dashboard"))
+    assert home["counts"]["open"] > 0 and home["projects"] and home["reminders"]
+    assert ids(mgr.get("/api/me/unread"))["mentions"] >= 1
+    assert ids(mgr.get("/api/insights/time"))["overall"]["count"] > 0
+    assert ids(mgr.get("/api/demo"))["loaded"]
+    ids(mgr.delete("/api/demo"))
+    assert {p["id"] for p in ids(mgr.get("/api/projects"))} == before_projects
+    assert {u["id"] for u in ids(mgr.get("/api/users"))} == before_users
+    assert not ids(mgr.get("/api/demo"))["loaded"]

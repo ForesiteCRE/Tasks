@@ -201,6 +201,25 @@ STARTERS = [
         ],
     },
     {
+        "key": "month_end",
+        "name": "Month-End Close",
+        "description": "Monthly accounting close and owner reporting. Start date = 1st of the month (pairs well with Monthly recurring).",
+        "items": [
+            {"title": "Post rent receipts & reconcile deposits", "role": AR, "days": 2, "est": 120},
+            {"title": "Late notices & delinquency follow-up", "role": AR, "days": 6, "est": 90},
+            {"title": "Enter & approve payables", "role": AP, "days": 5, "est": 180,
+             "checklist": ["Utilities", "Contracted services", "Repairs & maintenance", "Management fee"]},
+            {"title": "Bank reconciliation", "role": ACCT, "days": 8, "est": 120,
+             "after": ["Post rent receipts & reconcile deposits", "Enter & approve payables"]},
+            {"title": "Accruals & prepaid adjustments", "role": ACCT, "days": 9, "est": 90},
+            {"title": "Variance commentary (budget vs actual)", "role": PM, "days": 10, "est": 90,
+             "after": ["Bank reconciliation"]},
+            {"title": "Owner report package & distribution", "role": ACCT, "days": 12, "est": 180,
+             "after": ["Variance commentary (budget vs actual)", "Accruals & prepaid adjustments"],
+             "checklist": ["Income statement & balance sheet", "Rent roll & aging", "GL detail", "Variance commentary", "Owner distribution"]},
+        ],
+    },
+    {
         "key": "budget",
         "name": "Annual Budget",
         "description": "Next-year operating & capital budget. Start date = Sept 15.",
@@ -220,15 +239,20 @@ STARTERS = [
 
 
 SAMPLE_PROJECTS = {
-    "onboarding": ("Sample – 1200 Broadway (Onboarding)", "1200 Broadway, San Antonio, TX", "Broadway Retail Partners LLC", -12),
+    "onboarding": ("Sample – 777 E Sonterra Blvd (Onboarding)", "777 E Sonterra Blvd, San Antonio, TX 78258",
+                   "Sonterra Commons Owner LLC", -12),
+    "month_end": ("Sample – November Month-End Close (777 E Sonterra)", "777 E Sonterra Blvd, San Antonio, TX 78258",
+                  "Sonterra Commons Owner LLC", -17),
     "sale_handoff": ("Sample – 8800 Research Blvd (Sale, hand off)", "8800 Research Blvd, Austin, TX", "Research Plaza Owner LP", -20),
     "sale_retain": ("Sample – 4500 Fredericksburg Rd (Sale, retain mgmt)", "4500 Fredericksburg Rd, San Antonio, TX",
                     "Fredericksburg Center LLC → Alamo Retail Fund II", -8),
-    "move_in": ("Sample – Suite 110 Move-In (Coastal Coffee)", "1200 Broadway, San Antonio, TX", "Broadway Retail Partners LLC", -10),
+    "move_in": ("Sample – Suite 110 Move-In, 777 E Sonterra (Coastal Coffee)", "777 E Sonterra Blvd, San Antonio, TX 78258",
+                "Sonterra Commons Owner LLC", -10),
     "move_out": ("Sample – Suite 204 Move-Out", "8800 Research Blvd, Austin, TX", "Research Plaza Owner LP", -5),
     "renewal": ("Sample – Suite 300 Renewal (Lone Star Dental)", "4500 Fredericksburg Rd, San Antonio, TX",
                 "Fredericksburg Center LLC", -3),
-    "cam_rec": ("Sample – 2026 CAM Reconciliation (1200 Broadway)", "1200 Broadway, San Antonio, TX", "Broadway Retail Partners LLC", -15),
+    "cam_rec": ("Sample – 2026 CAM Reconciliation (777 E Sonterra)", "777 E Sonterra Blvd, San Antonio, TX 78258",
+                "Sonterra Commons Owner LLC", -15),
     "budget": ("Sample – 2027 Budget (8800 Research Blvd)", "8800 Research Blvd, Austin, TX", "Research Plaza Owner LP", -6),
 }
 
