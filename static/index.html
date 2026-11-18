@@ -189,7 +189,12 @@ textarea{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius
 
 <section id="v-recurring" class="hidden">
   <div class="card"><h2>New monthly recurring project</h2>
-    <div class="row"><select id="rTpl"></select><input id="rPattern" value="{month} {year} – Month-End Close" style="flex:1"><label>Day <input id="rDay" type="number" min="1" max="31" value="1" style="width:60px"></label><button class="b" onclick="saveRecurrence()">Add</button></div>
+    <div class="team-grid" style="grid-template-columns:minmax(200px,1fr) minmax(260px,2fr) 110px auto;align-items:end">
+      <label>1. Template to copy each month<select id="rTpl" onchange="rSuggest()"></select></label>
+      <label>2. Project name (each month)<input id="rPattern" placeholder="{month} {year} – Month-End Close" oninput="rPreview()"></label>
+      <label>3. Day of month<input id="rDay" type="number" min="1" max="31" value="1" oninput="rPreview()"></label>
+      <button class="b" onclick="saveRecurrence()">Add</button></div>
+    <p id="rExample" class="mute" style="margin:6px 0 0"></p>
     <p class="mute">Recurring projects copy everything in the template — subtasks, checklists and “waiting on” order. Use {month}, {year}, {mm} in the name. A project is created from the template on that day each month.</p></div>
   <div class="card"><table id="recurring"></table></div>
 </section>
@@ -262,7 +267,7 @@ async function refresh(){
   document.querySelectorAll('.adm').forEach(el=>el.classList.toggle('hidden',!isAdmin()));
   $('#roleNote').textContent=isMgr()?'':'You can view everything and update tasks assigned to you.';
   const tOpts='<option value="">Blank (no template)</option>'+TPLS.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
-  const keepTpl=$('#pTpl').value;$('#pTpl').innerHTML=tOpts;$('#pTpl').value=keepTpl;$('#rTpl').innerHTML=TPLS.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  const keepTpl=$('#pTpl').value;$('#pTpl').innerHTML=tOpts;$('#pTpl').value=keepTpl;const keepR=$('#rTpl').value;$('#rTpl').innerHTML='<option value="">Choose a template…</option>'+TPLS.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');$('#rTpl').value=keepR;
   const w=$('#calWho').value, pj=$('#calProj').value;
   $('#calWho').innerHTML=`<option value="">Everyone</option><option value="me">Just me</option><option value="none">Unassigned</option>`+USERS.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('');$('#calWho').value=w;
   const projOpts=PROJECTS.filter(p=>!p.is_general&&p.status!=='done').map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join(''),gen=PROJECTS.find(p=>p.is_general);
@@ -657,7 +662,12 @@ async function patch(id,b){try{await api('/api/tasks/'+id,{method:'PATCH',body:b
 const setStatus=async(id,s)=>{await patch(id,{status:s});const t=TASKS.find(x=>x.id===id);
   if(s==='done'&&t&&!t.actual_minutes&&canEdit(t)&&!taskDlg.open)toast('⏱ Done! How long did it take?',()=>openTask(id).then(()=>{$('#timeSec').scrollIntoView({block:'center'});$('#actIn').focus()}),'Log time');};
 async function addTask(p){const t=$('#nt'+p).value;if(!t)return;await api('/api/tasks',{method:'POST',body:{project_id:p,title:t,assignee_id:+$('#na'+p).value||null,due_date:$('#nd'+p).value||null}});refresh();}
-async function saveRecurrence(){await api('/api/recurrences',{method:'POST',body:{template_id:+$('#rTpl').value,name_pattern:$('#rPattern').value,day_of_month:+$('#rDay').value}});refresh();}
+function rSuggest(){const t=TPLS.find(t=>t.id==$('#rTpl').value);if(t&&!$('#rPattern').value)$('#rPattern').value=`{month} {year} – ${t.name}`;rPreview();}
+function rPreview(){const n=($('#rPattern').value||'').replace('{month}',new Date().toLocaleString(undefined,{month:'long'})).replace('{year}',new Date().getFullYear()).replace('{mm}',String(new Date().getMonth()+1).padStart(2,'0'));
+  $('#rExample').textContent=n?`Example: “${n}” is created on day ${$('#rDay').value||1} of every month.`:'';}
+async function saveRecurrence(){if(!$('#rTpl').value){alert('Choose which template to copy each month.');return;}if(!$('#rPattern').value.trim()){alert('Give the monthly project a name, e.g. {month} {year} – Month-End Close');return;}
+  await api('/api/recurrences',{method:'POST',body:{template_id:+$('#rTpl').value,name_pattern:$('#rPattern').value,day_of_month:+$('#rDay').value||1}});
+  $('#rTpl').value='';$('#rPattern').value='';rPreview();await refresh();toast('Monthly project scheduled');}
 async function toggleRec(id,a){await api(`/api/recurrences/${id}?active=${a}`,{method:'PATCH'});refresh();}
 async function addUser(){await api('/api/users',{method:'POST',body:{name:$('#uName').value,email:$('#uEmail').value,blink_user_id:$('#uBlink').value||null}});refresh();}
 async function removeUser(id){const u=USERS.find(x=>x.id===id),to=$('#mg'+id).value,t=USERS.find(x=>x.id==to);
