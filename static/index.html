@@ -155,6 +155,9 @@ details.danger summary{cursor:pointer;color:var(--mute)}details.danger[open] sum
 details.danger p{margin:8px 0}details.danger input{display:block;width:100%;margin-top:4px}
 #delBtn:disabled{opacity:.4;cursor:not-allowed}
 .tprev{width:100%;font-size:13px}.tprev td{padding:5px 6px;border-bottom:1px solid var(--line)}.tprev tr.isdone .tlink{color:var(--mute);text-decoration:line-through}
+.kpi.clk{cursor:pointer;transition:transform .12s,box-shadow .12s}.kpi.clk:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(58,71,80,.12)}
+.kpi.clk .l::after{content:" ›";opacity:.5}
+@keyframes flash{0%{box-shadow:0 0 0 3px var(--acc)}100%{box-shadow:0 0 0 3px transparent}}.flash{animation:flash 1.6s ease-out;scroll-margin-top:80px}
 </style>
 </head>
 <body>
@@ -494,8 +497,13 @@ let HSCOPE='me';
 function homeScope(s){HSCOPE=s;document.querySelectorAll('#hSeg button').forEach(b=>b.classList.toggle('on',b.dataset.s===s));renderHome();}
 const dayLabel=d=>{const t=today(),dd=new Date(d+'T12:00'),diff=Math.round((dd-new Date(t+'T12:00'))/864e5);return diff===0?'Today':diff===1?'Tomorrow':diff===-1?'Yesterday':dd.toLocaleDateString(undefined,{weekday:'short'})};
 const dateBox=d=>{if(!d)return'<div class="d">—</div>';const dd=new Date(d+'T12:00');return `<div class="d">${dd.toLocaleDateString(undefined,{month:'short'})}<b>${dd.getDate()}</b></div>`};
-const kpi=(cls,label,n,sub,click)=>`<div class="kpi ${cls} ${n?'':'zero'}" ${click?`style="cursor:pointer" onclick="${click}"`:''}><div class="l">${label}</div><div class="n">${n}</div>${sub?`<div class="s">${sub}</div>`:''}</div>`;
-const panel=(title,cnt,body,extra='')=>`<div class="panel"><header><h3>${title}</h3><span class="cnt">${extra||(cnt!=null?cnt:'')}</span></header><div class="body">${body}</div></div>`;
+const kpi=(cls,label,n,sub,click)=>`<div class="kpi ${cls} ${n?'':'zero'} ${click?'clk':''}" ${click?`role="button" tabindex="0" title="Show these" onclick="${click}" onkeydown="if(event.key==='Enter')this.click()"`:''}><div class="l">${label}</div><div class="n">${n}</div>${sub?`<div class="s">${sub}</div>`:''}</div>`;
+const slug=t=>t.replace(/<[^>]+>|&\w+;/g,'').replace(/[^A-Za-z0-9]+/g,'-').replace(/^-|-$/g,'').toLowerCase();
+function jumpTo(id){const el=document.getElementById(id);if(!el){toast('Nothing to show');return;}
+  el.scrollIntoView({behavior:'smooth',block:'start'});el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');}
+function taskList(who,status,group){show('tasks');$('#tSearch').value='';$('#tProj').value='';$('#tWho').value=who;$('#tStatus').value=status;renderTasks();
+  if(group)setTimeout(()=>{const g=[...document.querySelectorAll('#tTable .tgrp')].find(x=>x.textContent.startsWith(group));g?(g.scrollIntoView({behavior:'smooth',block:'center'}),g.classList.add('flash')):0},60);}
+const panel=(title,cnt,body,extra='')=>`<div class="panel" id="pn-${slug(title)}"><header><h3>${title}</h3><span class="cnt">${extra||(cnt!=null?cnt:'')}</span></header><div class="body">${body}</div></div>`;
 function hello(){const h=new Date().getHours();return h<12?'Good morning':h<17?'Good afternoon':'Good evening';}
 let HTOK=0;
 async function renderHome(){const tok=++HTOK;
@@ -509,11 +517,11 @@ async function renderHome(){const tok=++HTOK;
     ['This week',a=>a.date>d.today&&dayLabel(a.date)!=='Tomorrow'&&a.date<=isoAdd(d.today,7)],['Later',a=>a.date>isoAdd(d.today,7)]];
   const used=new Set();
   const agenda=groups.map(([name,f,cls])=>{const items=d.agenda.filter(a=>!used.has(a)&&f(a));items.forEach(a=>used.add(a));if(!items.length)return'';
-    return `<div class="grp ${cls||''}">${name}<span class="mute" style="font-weight:500">· ${items.length}</span></div>`+items.map(agendaRow).join('')}).join('');
+    return `<div class="grp ${cls||''}" id="ag-${slug(name)}">${name}<span class="mute" style="font-weight:500">· ${items.length}</span></div>`+items.map(agendaRow).join('')}).join('');
   const reminders=d.reminders.filter(r=>!r.sent||r.remind_at>=d.today);
   $('#home').innerHTML=`<div class="kpis">
-     ${kpi('red','Overdue',c.overdue,'',"show('projects')")}${kpi('blue','Due today',c.due_today)}${kpi('violet','Next 7 days',c.due_week)}
-     ${kpi('amber','Blocked for me',c.blocked)}${kpi('amber','Waiting on me',c.waiting_on_me,c.waiting_on_me?'teammates need these':'')}${kpi('green','Done this week',c.done_week,c.time_week?fmtMin(c.time_week)+' logged':'')}</div>
+     ${kpi('red','Overdue',c.overdue,'',"taskList('me','open','Overdue')")}${kpi('blue','Due today',c.due_today,'',"taskList('me','open','Today')")}${kpi('violet','Next 7 days',c.due_week,'',"taskList('me','open','Next 7 days')")}
+     ${kpi('amber','Blocked for me',c.blocked,'',"jumpTo('pn-blocked-for-me')")}${kpi('amber','Waiting on me',c.waiting_on_me,c.waiting_on_me?'teammates need these':'',"jumpTo('pn-waiting-on-me')")}${kpi('green','Done this week',c.done_week,c.time_week?fmtMin(c.time_week)+' logged':'',"jumpTo('pn-done-this-week')")}</div>
    <div class="hgrid"><div>
      ${panel('Agenda',null,agenda||'<div class="empty">Nothing scheduled in the next 3 weeks.</div>',`${d.agenda.length} items · tasks, reminders &amp; project starts`)}
      ${d.no_date.length?panel('Open tasks without a due date',d.no_date.length,d.no_date.map(t=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><span class="pill ${t.status}">${LBL[t.status]}</span><div class="grow">${esc(t.title)}<div class="sub">${esc(t.project_name)}</div></div></div>`).join('')):''}
@@ -558,7 +566,7 @@ function renderTeamHome(d){const c=d.counts;
   const max=Math.max(1,...d.workload.map(w=>w.open));
   const riskOf=p=>p.overdue>=3||p.blocked>=2?'hi':p.overdue||p.blocked?'md':'ok';
   const trow=(t,extra='')=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><div class="grow">${esc(t.title)}<div class="sub">${esc(t.assignee_name)} · ${esc(t.project_name)}${t.due_date?` · <span class="${isOver(t)?'over':''}">${fmtDate(t.due_date)}</span>`:''}${extra}</div></div><span class="pill ${t.status}">${LBL[t.status]}</span></div>`;
-  $('#home').innerHTML=`<div class="kpis">${kpi('red','Overdue',c.overdue)}${kpi('amber','Blocked',c.blocked)}${kpi('violet','Due next 7 days',c.due_week)}${kpi('blue','Open tasks',c.open)}${kpi('','Unassigned',c.unassigned)}${kpi('green','Done this week',c.done_week,c.time_week?fmtMin(c.time_week)+' logged':'')}</div>
+  $('#home').innerHTML=`<div class="kpis">${kpi('red','Overdue',c.overdue,'',"jumpTo('pn-overdue')")}${kpi('amber','Blocked',c.blocked,'',"jumpTo('pn-blocked')")}${kpi('violet','Due next 7 days',c.due_week,'',"taskList('','open','Next 7 days')")}${kpi('blue','Open tasks',c.open,'',"taskList('','open')")}${kpi('','Unassigned',c.unassigned,'',"jumpTo('pn-unassigned')")}${kpi('green','Done this week',c.done_week,c.time_week?fmtMin(c.time_week)+' logged':'',"jumpTo('pn-completed-this-week')")}</div>
    <div class="hgrid"><div>
     ${panel('Workload',null,`<div class="legend" style="margin:8px 0 4px"><span><i style="background:var(--bad)"></i>Overdue</span><span><i style="background:#f59f00"></i>Blocked</span><span><i style="background:#9fcce3"></i>Other open</span></div>`+
       d.workload.map(w=>{const other=Math.max(0,w.open-w.overdue-w.blocked);const pc=n=>100*n/max;return `<div class="wl"><span class="nm" onclick="$('#calWho').value='${w.id}';show('calendar')" title="Open ${esc(w.name)}'s calendar">${esc(w.name)}</span>
