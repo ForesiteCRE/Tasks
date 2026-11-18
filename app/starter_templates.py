@@ -1,0 +1,330 @@
+"""Starter checklist templates for a commercial property-management team.
+
+Each item: title, role (project role name) or none, days (due = project start + days), est (minutes),
+optional checklist lines, subtasks (same shape), and after (titles in the same template it waits on).
+Managers add these from Tasks → Templates → "Add starter templates"; they become normal, editable templates.
+"""
+from .db import tx
+
+PM, ACCT, AP, AR, LEASING, AM = "Property Manager", "Head of Accounting", "AP", "AR", "Leasing", "Asset Manager"
+
+STARTERS = [
+    {
+        "key": "onboarding",
+        "name": "Property Onboarding (Management Takeover)",
+        "description": "New management assignment. Start date = management commencement date (set it ~30 days before "
+                       "takeover so pre-takeover items land in time). Adjust days to your process.",
+        "items": [
+            {"title": "Fully executed management agreement on file", "role": AM, "days": 0, "est": 30,
+             "checklist": ["Signed by owner and us", "Fee schedule & leasing commissions noted", "Owner reporting requirements noted",
+                           "Approval/spending limits noted", "Insurance requirements noted"]},
+            {"title": "Collect property documents from owner / prior manager", "role": PM, "days": 3, "est": 180,
+             "after": ["Fully executed management agreement on file"],
+             "checklist": ["Current rent roll & aged receivables", "All leases, amendments & guaranties", "Security deposit ledger",
+                           "Service/vendor contracts", "Current-year budget & prior-year CAM reconciliation",
+                           "Property tax statements & protest history", "Insurance policies / COIs", "Warranties, plans & as-builts",
+                           "Keys, codes & access devices list", "Open work orders & capital projects"]},
+            {"title": "Site inspection & property condition walk", "role": PM, "days": 5, "est": 240,
+             "subtasks": [{"title": "Photo-document roof, parking lot, common areas & signage", "role": PM, "days": 5, "est": 120},
+                          {"title": "Inventory keys, locks & access systems", "role": PM, "days": 6, "est": 60}]},
+            {"title": "Set up property in accounting system", "role": ACCT, "days": 7, "est": 240,
+             "after": ["Collect property documents from owner / prior manager"],
+             "checklist": ["Property & owner entity created", "Chart of accounts / GL mapped", "Owner W-9 on file",
+                           "Management & leasing fees configured", "Reporting package template set up"]},
+            {"title": "Open operating & security deposit bank accounts", "role": ACCT, "days": 10, "est": 120,
+             "checklist": ["Operating account opened", "Security deposit (trust) account opened", "Signers & online access set",
+                           "Positive pay / fraud controls on"]},
+            {"title": "Load tenants, leases & recurring charges", "role": AR, "days": 12, "est": 300,
+             "after": ["Set up property in accounting system"],
+             "checklist": ["Tenants & contacts", "Base rent & escalations", "CAM / tax / insurance estimates",
+                           "Security deposits by tenant", "Opening receivable balances tie to prior manager"]},
+            {"title": "Lease abstracts for every tenant", "role": LEASING, "days": 14, "est": 480,
+             "after": ["Collect property documents from owner / prior manager"],
+             "checklist": ["Critical dates (expirations, options, ROFR)", "CAM caps & exclusions", "Co-tenancy / exclusives",
+                           "Insurance requirements", "Notice addresses"]},
+            {"title": "Send tenant notification letters (new manager & payment instructions)", "role": PM, "days": 20, "est": 120,
+             "after": ["Open operating & security deposit bank accounts", "Load tenants, leases & recurring charges"]},
+            {"title": "Transfer utilities to owner/management", "role": PM, "days": 20, "est": 120},
+            {"title": "Review, assign or rebid vendor contracts", "role": PM, "days": 21, "est": 240,
+             "checklist": ["Landscaping", "Janitorial / porter", "Parking lot sweeping", "HVAC PM", "Fire/life safety",
+                           "Pest control", "Trash", "Security / alarm monitoring"]},
+            {"title": "Set up vendors & recurring payables", "role": AP, "days": 22, "est": 180,
+             "after": ["Review, assign or rebid vendor contracts", "Set up property in accounting system"],
+             "checklist": ["Vendor W-9s & COIs collected", "Recurring invoices scheduled", "Utility accounts set to auto-pay"]},
+            {"title": "Insurance: management named as additional insured", "role": AM, "days": 25, "est": 60},
+            {"title": "Set up after-hours emergency line & vendor call list", "role": PM, "days": 25, "est": 60},
+            {"title": "Takeover day: confirm everything transferred", "role": PM, "days": 30, "est": 120,
+             "after": ["Send tenant notification letters (new manager & payment instructions)", "Transfer utilities to owner/management",
+                       "Set up vendors & recurring payables"]},
+            {"title": "Receive final accounting & deposits from prior manager", "role": ACCT, "days": 45, "est": 180,
+             "after": ["Takeover day: confirm everything transferred"],
+             "checklist": ["Final operating statement", "Security deposits transferred & reconciled", "Prepaid rents & AR detail",
+                           "Open payables list", "Bank statements through cut-off"]},
+            {"title": "First monthly owner report delivered", "role": ACCT, "days": 60, "est": 240,
+             "after": ["Receive final accounting & deposits from prior manager"]},
+            {"title": "90-day review with owner", "role": AM, "days": 90, "est": 90},
+        ],
+    },
+    {
+        "key": "sale_handoff",
+        "name": "Property Sale – Hand Off (management ends at closing)",
+        "description": "Owner is selling and the buyer is bringing their own manager. Start date = PSA effective date; "
+                       "closing assumed around day 45 — shift due dates to your actual closing.",
+        "items": [
+            {"title": "Kick-off: confirm closing date, buyer & buyer's manager contacts", "role": AM, "days": 0, "est": 45},
+            {"title": "Deliver due-diligence package to buyer", "role": PM, "days": 5, "est": 300,
+             "checklist": ["Rent roll & aging", "Leases & amendments", "Trailing 12 & YTD operating statements",
+                           "Service contracts", "CAM reconciliations (2 yrs)", "Property tax & insurance info", "Open capital projects / warranties"]},
+            {"title": "Tenant estoppel certificates", "role": LEASING, "days": 20, "est": 360,
+             "subtasks": [{"title": "Send estoppels to all tenants", "role": LEASING, "days": 10, "est": 120},
+                          {"title": "Chase & log returned estoppels; flag discrepancies", "role": LEASING, "days": 25, "est": 180}]},
+            {"title": "SNDAs if lender requires", "role": LEASING, "days": 25, "est": 120},
+            {"title": "Notify vendors: contracts terminating or assigning at closing", "role": PM, "days": 30, "est": 120,
+             "checklist": ["Check each contract's termination notice period", "Send notices", "Confirm which buyer is assuming"]},
+            {"title": "Prepare closing prorations support", "role": ACCT, "days": 38, "est": 300,
+             "checklist": ["Rents collected / delinquent by tenant", "CAM, tax & insurance estimates vs actual (YTD)",
+                           "Security deposits by tenant", "Prepaid rents", "Outstanding leasing commissions / TI obligations"]},
+            {"title": "Tenant notice letters: new owner & payment instructions", "role": PM, "days": 45, "est": 90,
+             "after": ["Kick-off: confirm closing date, buyer & buyer's manager contacts"]},
+            {"title": "Closing day: keys, codes & files to buyer's manager", "role": PM, "days": 45, "est": 180,
+             "after": ["Deliver due-diligence package to buyer"],
+             "checklist": ["Keys & access devices (signed receipt)", "Tenant files", "Vendor & utility contact list",
+                           "Warranties, plans & as-builts", "Open work orders"]},
+            {"title": "Transfer utilities to buyer", "role": PM, "days": 46, "est": 90},
+            {"title": "Forward post-closing rent receipts to buyer", "role": AR, "days": 60, "est": 120},
+            {"title": "Pay final vendor invoices through closing", "role": AP, "days": 60, "est": 180},
+            {"title": "Post-closing CAM reconciliation true-up with buyer", "role": ACCT, "days": 120, "est": 300},
+            {"title": "Final owner report & distribution", "role": ACCT, "days": 75, "est": 240,
+             "after": ["Pay final vendor invoices through closing", "Forward post-closing rent receipts to buyer"]},
+            {"title": "Close bank accounts & archive property in systems", "role": ACCT, "days": 90, "est": 120,
+             "after": ["Final owner report & distribution"],
+             "checklist": ["Operating account closed", "Security deposit account closed", "1099 responsibility confirmed",
+                           "Property set inactive in accounting system", "Files archived per retention policy"]},
+            {"title": "Cancel management's insurance coverage for the property", "role": AM, "days": 46, "est": 30},
+        ],
+    },
+    {
+        "key": "sale_retain",
+        "name": "Property Sale – Retain Management (new owner keeps us)",
+        "description": "Property is selling and we stay on as manager for the buyer. Start date = PSA effective date; "
+                       "closing assumed around day 45.",
+        "items": [
+            {"title": "Kick-off with seller and buyer: closing date & expectations", "role": AM, "days": 0, "est": 60},
+            {"title": "New management agreement executed with buyer", "role": AM, "days": 30, "est": 120,
+             "checklist": ["Fees & leasing commissions", "Reporting package & deadlines", "Approval limits",
+                           "Budget timing", "Insurance requirements"]},
+            {"title": "Deliver due-diligence package to buyer", "role": PM, "days": 5, "est": 300},
+            {"title": "Tenant estoppel certificates", "role": LEASING, "days": 20, "est": 360,
+             "subtasks": [{"title": "Send estoppels to all tenants", "role": LEASING, "days": 10, "est": 120},
+                          {"title": "Chase & log returned estoppels; flag discrepancies", "role": LEASING, "days": 25, "est": 180}]},
+            {"title": "Set up new owner entity in accounting system", "role": ACCT, "days": 35, "est": 180,
+             "after": ["New management agreement executed with buyer"],
+             "checklist": ["Owner entity & W-9", "New property ledger effective at closing", "Fee setup per new agreement",
+                           "Reporting template per buyer's requirements"]},
+            {"title": "Open new operating & security deposit accounts for buyer", "role": ACCT, "days": 38, "est": 120},
+            {"title": "Prepare closing prorations support", "role": ACCT, "days": 38, "est": 300},
+            {"title": "Tenant notice letters: new owner, same manager, new payment instructions", "role": PM, "days": 45, "est": 90,
+             "after": ["Open new operating & security deposit accounts for buyer"]},
+            {"title": "Transfer security deposits to buyer's trust account", "role": ACCT, "days": 47, "est": 90,
+             "after": ["Open new operating & security deposit accounts for buyer"]},
+            {"title": "Update insurance: buyer named insured, management additional insured", "role": AM, "days": 45, "est": 60},
+            {"title": "Update vendor contracts & utilities to new owner", "role": PM, "days": 50, "est": 180},
+            {"title": "Book opening balances from closing statement", "role": ACCT, "days": 55, "est": 180,
+             "after": ["Set up new owner entity in accounting system"]},
+            {"title": "Seller close-out: final report & distribution", "role": ACCT, "days": 75, "est": 240},
+            {"title": "Post-closing CAM reconciliation true-up between seller & buyer", "role": ACCT, "days": 120, "est": 300},
+            {"title": "Budget & business plan with new owner", "role": AM, "days": 75, "est": 360},
+            {"title": "First owner report to buyer", "role": ACCT, "days": 60, "est": 240,
+             "after": ["Book opening balances from closing statement"]},
+        ],
+    },
+    {
+        "key": "move_in",
+        "name": "Tenant Move-In",
+        "description": "New lease signed. Start date = lease execution date.",
+        "items": [
+            {"title": "Fully executed lease & guaranty on file", "role": LEASING, "days": 0, "est": 30},
+            {"title": "Lease abstract & critical dates entered", "role": LEASING, "days": 3, "est": 90},
+            {"title": "Set up tenant & recurring charges", "role": AR, "days": 5, "est": 60,
+             "after": ["Lease abstract & critical dates entered"], "checklist": ["Base rent & free-rent periods", "CAM/tax/ins estimates", "Security deposit received"]},
+            {"title": "Tenant COI received (meets lease requirements)", "role": PM, "days": 10, "est": 30},
+            {"title": "Coordinate TI / make-ready", "role": PM, "days": 20, "est": 240,
+             "checklist": ["Permits", "Contractor COIs", "Inspections", "Punch list"]},
+            {"title": "Utilities transferred to tenant", "role": PM, "days": 25, "est": 45},
+            {"title": "Move-in walk, keys & welcome packet", "role": PM, "days": 30, "est": 60,
+             "after": ["Tenant COI received (meets lease requirements)", "Coordinate TI / make-ready"]},
+            {"title": "Pay leasing commission(s)", "role": AP, "days": 35, "est": 45},
+        ],
+    },
+    {
+        "key": "move_out",
+        "name": "Tenant Move-Out",
+        "description": "Tenant vacating. Start date = notice received / lease expiration minus 30 days.",
+        "items": [
+            {"title": "Confirm move-out date & lease surrender obligations", "role": PM, "days": 0, "est": 45},
+            {"title": "Notify leasing team: space coming available", "role": LEASING, "days": 1, "est": 15},
+            {"title": "Move-out inspection & photos", "role": PM, "days": 30, "est": 90},
+            {"title": "Keys returned & locks changed", "role": PM, "days": 30, "est": 30},
+            {"title": "Utilities back to owner", "role": PM, "days": 31, "est": 30},
+            {"title": "Security deposit reconciliation & refund/charge letter", "role": AR, "days": 45, "est": 120,
+             "after": ["Move-out inspection & photos"]},
+            {"title": "Final CAM reconciliation for tenant", "role": ACCT, "days": 60, "est": 120},
+        ],
+    },
+    {
+        "key": "renewal",
+        "name": "Lease Renewal",
+        "description": "Renewal or extension. Start date = 180 days before lease expiration.",
+        "items": [
+            {"title": "Renewal outreach & tenant intentions", "role": LEASING, "days": 0, "est": 60},
+            {"title": "Market comps & renewal proposal", "role": LEASING, "days": 14, "est": 180},
+            {"title": "Owner approval of terms", "role": AM, "days": 30, "est": 30, "after": ["Market comps & renewal proposal"]},
+            {"title": "Renewal amendment drafted & executed", "role": LEASING, "days": 60, "est": 120,
+             "after": ["Owner approval of terms"]},
+            {"title": "Update rent schedule & recurring charges", "role": AR, "days": 65, "est": 45,
+             "after": ["Renewal amendment drafted & executed"]},
+        ],
+    },
+    {
+        "key": "cam_rec",
+        "name": "Annual CAM Reconciliation",
+        "description": "Year-end common area maintenance reconciliation. Start date = Jan 15.",
+        "items": [
+            {"title": "Close prior year books for the property", "role": ACCT, "days": 0, "est": 240},
+            {"title": "Pull pro-rata shares, caps & exclusions from abstracts", "role": LEASING, "days": 10, "est": 180},
+            {"title": "Prepare reconciliation by tenant", "role": ACCT, "days": 30, "est": 480,
+             "after": ["Close prior year books for the property", "Pull pro-rata shares, caps & exclusions from abstracts"]},
+            {"title": "Owner review & approval", "role": AM, "days": 40, "est": 60, "after": ["Prepare reconciliation by tenant"]},
+            {"title": "Send reconciliation statements to tenants", "role": AR, "days": 45, "est": 120, "after": ["Owner review & approval"]},
+            {"title": "Bill / credit tenants & update new-year estimates", "role": AR, "days": 60, "est": 120,
+             "after": ["Send reconciliation statements to tenants"]},
+        ],
+    },
+    {
+        "key": "budget",
+        "name": "Annual Budget",
+        "description": "Next-year operating & capital budget. Start date = Sept 15.",
+        "items": [
+            {"title": "Gather vendor pricing & contract renewals", "role": PM, "days": 0, "est": 240},
+            {"title": "Property tax & insurance projections", "role": AM, "days": 10, "est": 120},
+            {"title": "Leasing assumptions (renewals, vacancy, new deals)", "role": LEASING, "days": 10, "est": 180},
+            {"title": "Draft operating budget", "role": ACCT, "days": 25, "est": 480,
+             "after": ["Gather vendor pricing & contract renewals", "Property tax & insurance projections",
+                       "Leasing assumptions (renewals, vacancy, new deals)"]},
+            {"title": "Capital plan", "role": PM, "days": 25, "est": 240},
+            {"title": "Owner review & approval", "role": AM, "days": 45, "est": 90, "after": ["Draft operating budget", "Capital plan"]},
+            {"title": "Load budget & new CAM estimates", "role": ACCT, "days": 60, "est": 120, "after": ["Owner review & approval"]},
+        ],
+    },
+]
+
+
+SAMPLE_PROJECTS = {
+    "onboarding": ("Sample – 1200 Broadway (Onboarding)", "1200 Broadway, San Antonio, TX", "Broadway Retail Partners LLC", -12),
+    "sale_handoff": ("Sample – 8800 Research Blvd (Sale, hand off)", "8800 Research Blvd, Austin, TX", "Research Plaza Owner LP", -20),
+    "sale_retain": ("Sample – 4500 Fredericksburg Rd (Sale, retain mgmt)", "4500 Fredericksburg Rd, San Antonio, TX",
+                    "Fredericksburg Center LLC → Alamo Retail Fund II", -8),
+    "move_in": ("Sample – Suite 110 Move-In (Coastal Coffee)", "1200 Broadway, San Antonio, TX", "Broadway Retail Partners LLC", -10),
+    "move_out": ("Sample – Suite 204 Move-Out", "8800 Research Blvd, Austin, TX", "Research Plaza Owner LP", -5),
+    "renewal": ("Sample – Suite 300 Renewal (Lone Star Dental)", "4500 Fredericksburg Rd, San Antonio, TX",
+                "Fredericksburg Center LLC", -3),
+    "cam_rec": ("Sample – 2026 CAM Reconciliation (1200 Broadway)", "1200 Broadway, San Antonio, TX", "Broadway Retail Partners LLC", -15),
+    "budget": ("Sample – 2027 Budget (8800 Research Blvd)", "8800 Research Blvd, Austin, TX", "Research Plaza Owner LP", -6),
+}
+
+
+def catalog() -> list[dict]:
+    with tx() as c:
+        have = {r[0] for r in c.execute("SELECT name FROM templates")}
+    return [{"key": s["key"], "name": s["name"], "description": s["description"], "items": s["items"],
+             "already_added": s["name"] in have} for s in STARTERS]
+
+
+def install(keys: list[str], sample_projects: bool = False) -> dict:
+    """Create the chosen starter templates (skips any whose name already exists) and, optionally, one
+    sample project from each so people can see a realistic example. Returns what was added."""
+    added = _install_templates(keys)
+    samples = []
+    if sample_projects:
+        samples = create_samples(keys)
+    return {"templates": added, "samples": samples}
+
+
+def create_samples(keys: list[str]) -> list[str]:
+    from datetime import date, timedelta
+
+    from . import services
+    made = []
+    with tx() as c:
+        have = {r[0] for r in c.execute("SELECT name FROM projects")}
+        tpl_ids = {r["name"]: r["id"] for r in c.execute("SELECT id, name FROM templates")}
+    for s in STARTERS:
+        if s["key"] not in keys or s["key"] not in SAMPLE_PROJECTS:
+            continue
+        name, prop, client, start_offset = SAMPLE_PROJECTS[s["key"]]
+        if name in have or s["name"] not in tpl_ids:
+            continue
+        pid = services.create_project_from_template(
+            tpl_ids[s["name"]], name, date.today() + timedelta(days=start_offset),
+            details={"property": prop, "client": client,
+                     "description": "Sample project — safe to explore or delete (Projects → Details & team → Delete)."})
+        with tx() as c:
+            c.execute("UPDATE projects SET is_sample=1 WHERE id=?", (pid,))
+            # make it look lived-in: tasks that were due a while ago are done
+            c.execute("""UPDATE tasks SET status='done', completed_at=datetime('now'), actual_minutes=estimate_minutes
+                         WHERE project_id=? AND due_date < date('now','-3 days')""", (pid,))
+        made.append(name)
+    return made
+
+
+def remove_samples() -> int:
+    with tx() as c:
+        ids = [r[0] for r in c.execute("SELECT id FROM projects WHERE is_sample=1")]
+    for pid in ids:
+        delete_project(pid)
+    return len(ids)
+
+
+def delete_project(pid: int):
+    from . import collab
+    with tx() as c:
+        tids = [r[0] for r in c.execute("SELECT id FROM tasks WHERE project_id=? AND parent_id IS NULL", (pid,))]
+    for tid in tids:
+        collab.delete_task(tid)
+    with tx() as c:
+        c.execute("DELETE FROM tasks WHERE project_id=?", (pid,))
+        c.execute("DELETE FROM project_team WHERE project_id=?", (pid,))
+        c.execute("DELETE FROM projects WHERE id=?", (pid,))
+
+
+def _install_templates(keys: list[str]) -> list[str]:
+    from . import team, tpl
+    roles = {r["name"].lower(): r["id"] for r in team.list_roles()}
+    added = []
+    with tx() as c:
+        have = {r[0] for r in c.execute("SELECT name FROM templates")}
+    for s in STARTERS:
+        if s["key"] not in keys or s["name"] in have:
+            continue
+        with tx() as c:
+            tid = c.execute("INSERT INTO templates(name, description) VALUES(?,?)", (s["name"], s["description"])).lastrowid
+        ids = {}
+
+        def add(item, parent=None):
+            iid = tpl.add_item(tid, item["title"], parent_item_id=parent, due_offset_days=item.get("days", 0),
+                               default_role_id=roles.get((item.get("role") or "").lower()))
+            tpl.update_item(iid, {"estimate_minutes": item.get("est")})
+            for line in item.get("checklist", []):
+                tpl.add_checklist(iid, line)
+            ids[item["title"]] = iid
+            for sub in item.get("subtasks", []):
+                add(sub, iid)
+
+        for item in s["items"]:
+            add(item)
+        for item in s["items"]:
+            for dep in item.get("after", []):
+                if dep in ids:
+                    tpl.add_dependency(ids[item["title"]], ids[dep])
+        added.append(s["name"])
+    return added

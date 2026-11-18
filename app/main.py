@@ -12,7 +12,8 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, automations, blink, chat, collab, dashboard, extras, intake, maintenance, services, team, timing, tpl
+from . import (auth, automations, blink, chat, collab, dashboard, extras, intake, maintenance, services,
+               starter_templates, team, timing, tpl)
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
 logging.basicConfig(level=logging.INFO)
@@ -327,6 +328,20 @@ def create_template(t: TemplateIn):
             [(tid, i.title, i.default_assignee_id, i.due_offset_days, n) for n, i in enumerate(t.items)])
     return {"id": tid}
 
+@app.get("/api/templates/starters")
+def starters_catalog():
+    return starter_templates.catalog()
+
+
+class StarterIn(BaseModel):
+    keys: list[str]
+    sample_projects: bool = False
+
+@app.post("/api/templates/starters")
+def starters_install(body: StarterIn):
+    return starter_templates.install(body.keys, body.sample_projects)
+
+
 @app.delete("/api/templates/{tid}")
 def delete_template(tid: int):
     with tx() as c:
@@ -387,6 +402,27 @@ def create_project(p: ProjectIn):
                         (p.name, start.isoformat(), p.property, p.client, p.description)).lastrowid
     team.save_team(pid, team.resolve_team(p.team))
     return {"id": pid}
+
+
+@app.delete("/api/projects/samples")
+def delete_samples(request: Request):
+    if not auth.is_manager(request):
+        raise HTTPException(403, "Only managers can delete projects.")
+    return {"removed": starter_templates.remove_samples()}
+
+
+@app.delete("/api/projects/{pid}")
+def delete_project(pid: int, request: Request):
+    if not auth.is_manager(request):
+        raise HTTPException(403, "Only managers can delete projects.")
+    with tx() as c:
+        p = c.execute("SELECT is_general FROM projects WHERE id=?", (pid,)).fetchone()
+    if not p:
+        raise HTTPException(404, "Project not found")
+    if p["is_general"]:
+        raise HTTPException(400, "That's the built-in “No project” list — delete its tasks instead.")
+    starter_templates.delete_project(pid)
+    return {"ok": True}
 
 
 class TaskMove(BaseModel):

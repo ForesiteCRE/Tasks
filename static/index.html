@@ -151,6 +151,7 @@ textarea{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius
     <details id="pTeamBox"><summary class="mute" style="cursor:pointer">👥 Project team <span id="pTeamSum"></span></summary><div id="pTeam" class="team-grid"></div></details>
     <div id="pPreview"></div>
     <div class="row" style="justify-content:flex-end"><button class="b" onclick="newProject()">Create project</button></div></div>
+  <div id="sampleBar" class="card hidden" style="display:flex;justify-content:space-between;align-items:center;gap:10px;background:#fffbea;border-color:#f5e3a3"><span>🧪 <b id="sampleN"></b> sample project(s) are showing — great for exploring. Remove them when you're ready.</span><button class="b ghost" onclick="removeSamples()">Remove all sample projects</button></div>
   <div class="row" style="margin-bottom:12px">
     <label>Show <select id="pFilter" onchange="renderProjects()"><option value="all">All tasks</option><option value="mine">My tasks</option></select></label>
     <label><input type="checkbox" id="pHideDone" onchange="renderProjects()" checked> Hide finished projects</label>
@@ -179,6 +180,9 @@ textarea{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius
 </section>
 
 <section id="v-templates" class="hidden">
+  <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;background:linear-gradient(90deg,#f3f6ff,#fff)">
+    <div><h2 style="margin:0">📚 Starter templates</h2><div class="mute">Ready-made checklists for property onboarding, sales, move-ins/outs, renewals, CAM reconciliation and budgets — with roles, due dates, estimates and order already set.</div></div>
+    <button class="b" onclick="openStarters()">Browse starter templates</button></div>
   <div class="card"><h2>New checklist template</h2>
     <p class="mute" style="margin-top:0">Tip: the quickest way is to set up one real project the way you like it (subtasks, checklists, “waiting on”), then click <b>Save as template</b> on it. Everything is copied. Below, use <b>More…</b> on any item to add checklist items, subtasks or ordering.</p>
     <div class="row"><input id="tName" placeholder="Template name" style="flex:1"></div>
@@ -301,10 +305,11 @@ function badges(t){const subs=TASKS.filter(x=>x.parent_id===t.id),b=[];
   if(t.waiting_on&&t.status!=='done')b.push(`<span class="pill lock" title="Waiting on #${String(t.waiting_on).split(',').join(', #')}">🔒 waiting on #${String(t.waiting_on).split(',').join(', #')}</span>`);
   return b.length?`<span class="badges">${b.join('')}</span>`:'';}
 function renderProjects(){
+  const ns=PROJECTS.filter(p=>p.is_sample).length;$('#sampleBar').classList.toggle('hidden',!(ns&&isMgr()));$('#sampleN').textContent=ns;
   const mine=$('#pFilter').value==='mine', hideDone=$('#pHideDone').checked;
   const ps=PROJECTS.filter(p=>!p.is_general&&!(hideDone&&p.status==='done')).map(p=>({...p,shown:mine?p.tasks.filter(t=>t.assignee_id===ME.id):p.tasks})).filter(p=>!mine||p.shown.length);
   $('#projects').innerHTML=ps.map(p=>{const done=p.tasks.filter(t=>t.status==='done').length,pct=p.tasks.length?Math.round(100*done/p.tasks.length):0;
-  return `<div class="card"><div class="row" style="justify-content:space-between"><h3>${esc(p.name)} <span class="pill ${p.status==='done'?'done':''}">${p.status}</span></h3>
+  return `<div class="card"><div class="row" style="justify-content:space-between"><h3>${esc(p.name)} <span class="pill ${p.status==='done'?'done':''}">${p.status}</span>${p.is_sample?' <span class="pill" style="background:#fff3bf;color:#8a6d00">sample</span>':''}</h3>
   <span class="mute">${done}/${p.tasks.length} done${projTime(p)} · started ${fmtDate(p.start_date)} <button class="b ghost" onclick="openProject(${p.id})">${isMgr()?'Details &amp; team':'Details'}</button> ${isMgr()?`<button class="b ghost" onclick="saveAsTpl(${p.id},'${esc(p.name).replace(/'/g,"")}')">Save as template</button>`:''}</span></div>
   ${projSummary(p)}
   <div class="bar"><i style="width:${pct}%"></i></div>
@@ -348,10 +353,29 @@ async function openProject(pid){const p=PROJECTS.find(x=>x.id===pid);if(!p)retur
     <label>Client / owner<input ${dis} value="${esc(p.client||'')}" onchange="projPatch(${p.id},{client:this.value})"></label>
     <label>Start date<input ${dis} type="date" value="${p.start_date}" onchange="projPatch(${p.id},{start_date:this.value})"></label></div>
    <label class="mute" style="font-size:12px">Summary / notes</label><textarea ${dis} rows="3" onchange="projPatch(${p.id},{description:this.value})">${esc(p.description||'')}</textarea>
+   ${mg?`<div class="row" style="justify-content:flex-end;margin:6px 0 0"><button class="b ghost" style="color:var(--bad);border-color:#f3c4c4" onclick="delProject(${p.id})">Delete project</button></div>`:''}
    <div class="sec"><h3>👥 Project team</h3><p class="mute" style="margin:0 0 6px;font-size:12px">Tasks assigned by role follow the person in that role — change someone here and their open tasks move over (they get a Blink message).</p>
    <div class="team-grid">${p.team.map(m=>{const n=p.tasks.filter(t=>t.role_id===m.role_id&&t.status!=='done').length;
      return `<label>${esc(m.role)} ${n?`<span class="via">· ${n} open task${n>1?'s':''}</span>`:''}<select ${dis} onchange="teamSet(${p.id},${m.role_id},this.value)">${userOpts(m.user_id,'—')}</select></label>`}).join('')}</div></div>`;
   if(!taskDlg.open)taskDlg.showModal();}
+async function delProject(pid){const p=PROJECTS.find(x=>x.id===pid);if(!confirm(`Delete “${p.name}” and all ${p.tasks.length} of its tasks? This can't be undone.`))return;
+  await api('/api/projects/'+pid,{method:'DELETE'});taskDlg.close();await refresh();toast('Project deleted');}
+async function removeSamples(){if(!confirm('Remove all sample projects and their tasks? Your real projects are not affected.'))return;
+  const r=await api('/api/projects/samples',{method:'DELETE'});await refresh();toast(`Removed ${r.removed} sample project(s)`);}
+let STARTERS=[];
+async function openStarters(){STARTERS=await api('/api/templates/starters');
+  const who=i=>i.role?`<span class="via">👥 ${esc(i.role)}</span>`:'';
+  const tree=(items,depth=0)=>items.map(i=>`<div style="padding:3px 0 3px ${depth*20}px;display:flex;gap:8px;align-items:baseline"><span class="mute" style="width:52px;flex:none;font-size:12px">day ${i.days||0}</span><span>${depth?'↳ ':''}${esc(i.title)} ${who(i)}${i.est?` <span class="via">· ${fmtMin(i.est)}</span>`:''}${i.checklist?` <span class="pill">☑ ${i.checklist.length}</span>`:''}${(i.after||[]).length?' <span class="pill lock">🔒</span>':''}</span></div>`+tree(i.subtasks||[],depth+1)).join('');
+  $('#taskDlgBody').innerHTML=`<h2>📚 Starter templates</h2><p class="mute" style="margin-top:0">Tick the ones you want. They're added as normal templates — rename, reorder, change roles, due days or checklists afterwards on the Templates page.</p>
+   ${STARTERS.map(s=>`<div class="setrow"><input type="checkbox" class="stk" value="${s.key}" ${s.already_added?'disabled':'checked'}><div class="grow"><h4>${esc(s.name)} ${s.already_added?'<span class="pill done">added</span>':''}</h4><div class="mute">${esc(s.description)}</div>
+     <details style="margin-top:4px"><summary class="mute" style="cursor:pointer;font-size:12.5px">Preview ${s.items.length} items</summary><div style="font-size:13px;margin-top:6px">${tree(s.items)}</div></details></div></div>`).join('')}
+   <div class="setrow" style="background:#f6f8fc;border-radius:8px;padding:10px 12px"><input type="checkbox" id="stSample" checked><div class="grow"><h4>Also create a sample project from each</h4><div class="mute">Realistic examples (e.g. “Sample – 1200 Broadway (Onboarding)”) with some tasks already done, so the team can explore. Remove them anytime with one click on the Projects page.</div></div></div>
+   <div class="row" style="justify-content:flex-end"><button class="b" onclick="installStarters()">Add selected</button></div>`;
+  if(!taskDlg.open)taskDlg.showModal();}
+async function installStarters(){const keys=[...document.querySelectorAll('.stk:checked')].map(x=>x.value);
+  const sample=$('#stSample').checked;if(!keys.length&&!sample){taskDlg.close();return;}
+  const r=await api('/api/templates/starters',{method:'POST',body:{keys:keys.length?keys:STARTERS.map(s=>s.key),sample_projects:sample}});
+  taskDlg.close();await refresh();toast(`Added ${r.templates.length} template(s)${r.samples.length?` and ${r.samples.length} sample project(s)`:''}`);}
 async function projPatch(pid,b){await api(`/api/projects/${pid}`,{method:'PATCH',body:b});await refresh();}
 async function teamSet(pid,rid,uid){const r=await api(`/api/projects/${pid}/team/${rid}`,{method:'PUT',body:{user_id:+uid||null}});await refresh();openProject(pid);
   if(r.moved)toast(`${r.moved} open task${r.moved>1?'s':''} moved to the new person`);}
@@ -374,11 +398,13 @@ const dateBox=d=>{if(!d)return'<div class="d">—</div>';const dd=new Date(d+'T1
 const kpi=(cls,label,n,sub,click)=>`<div class="kpi ${cls} ${n?'':'zero'}" ${click?`style="cursor:pointer" onclick="${click}"`:''}><div class="l">${label}</div><div class="n">${n}</div>${sub?`<div class="s">${sub}</div>`:''}</div>`;
 const panel=(title,cnt,body,extra='')=>`<div class="panel"><header><h3>${title}</h3><span class="cnt">${extra||(cnt!=null?cnt:'')}</span></header><div class="body">${body}</div></div>`;
 function hello(){const h=new Date().getHours();return h<12?'Good morning':h<17?'Good afternoon':'Good evening';}
-async function renderHome(){
+let HTOK=0;
+async function renderHome(){const tok=++HTOK;
   $('#hDate').textContent=new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
   $('#hHello').textContent=`${hello()}, ${(ME.name||'').split(' ')[0]||'there'}`;
-  if(HSCOPE==='team'&&isMgr())return renderTeamHome(await api('/api/dashboard?scope=team'));
+  if(HSCOPE==='team'&&isMgr()){const t=await api('/api/dashboard?scope=team');if(tok===HTOK)renderTeamHome(t);return;}
   const [d,unread]=await Promise.all([api('/api/dashboard'),api('/api/me/unread')]),c=d.counts,newIds=new Set(unread.comment_ids);
+  if(tok!==HTOK)return;  // a newer render (e.g. switched to Team) already started
   $('#hSub').innerHTML=c.overdue?`You have <b style="color:var(--bad)">${c.overdue} overdue</b> and ${c.due_today} due today.`:c.due_today?`${c.due_today} task${c.due_today>1?'s':''} due today — you're on track.`:c.open?`Nothing overdue — ${c.open} open task${c.open>1?'s':''}.`:'All clear 🎉';
   const groups=[['Overdue',a=>a.kind==='task'&&a.overdue,'red'],['Today',a=>a.date===d.today&&!a.overdue],['Tomorrow',a=>dayLabel(a.date)==='Tomorrow'],
     ['This week',a=>a.date>d.today&&dayLabel(a.date)!=='Tomorrow'&&a.date<=isoAdd(d.today,7)],['Later',a=>a.date>isoAdd(d.today,7)]];

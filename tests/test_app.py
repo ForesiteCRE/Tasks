@@ -428,3 +428,30 @@ def test_calendar_feed(mgr, staff):
         assert anon.get("/calendar/not-a-real-token.ics").status_code == 404
         new = ids(staff.get("/api/me/calendar?regenerate=true"))["url"].split("testserver")[-1]
         assert anon.get(path).status_code == 404 and anon.get(new).status_code == 200   # old link revoked
+
+
+def test_starter_templates_and_samples(mgr, staff):
+    cat = ids(mgr.get("/api/templates/starters"))
+    keys = [c["key"] for c in cat]
+    assert {"onboarding", "sale_handoff", "sale_retain"} <= set(keys)
+    assert staff.post("/api/templates/starters", json={"keys": keys}).status_code == 403
+    r = ids(mgr.post("/api/templates/starters", json={"keys": keys, "sample_projects": True}))
+    assert len(r["templates"]) == len(keys) and len(r["samples"]) == len(keys)
+    again = ids(mgr.post("/api/templates/starters", json={"keys": keys, "sample_projects": True}))
+    assert again == {"templates": [], "samples": []}                                  # no duplicates
+    t = [t for t in ids(mgr.get("/api/templates")) if t["name"].startswith("Property Onboarding")][0]
+    assert all(i["default_role_id"] for i in t["items"])                              # every item routed by role
+    assert any(i["waiting_on"] for i in t["items"]) and any(i["depth"] == 1 for i in t["items"])
+    assert sum(len(i["checklist"]) for i in t["items"]) >= 20
+    projects = ids(mgr.get("/api/projects"))
+    samples = [p for p in projects if p["is_sample"]]
+    assert len(samples) == len(keys)
+    onb = [p for p in samples if "Onboarding" in p["name"]][0]
+    assert onb["property"] and any(t["status"] == "done" for t in onb["tasks"])        # looks lived-in
+    assert staff.delete(f"/api/projects/{onb['id']}").status_code == 403
+    ids(mgr.delete(f"/api/projects/{onb['id']}"))
+    gen = [p for p in projects if p["is_general"]][0]
+    assert mgr.delete(f"/api/projects/{gen['id']}").status_code == 400
+    assert ids(mgr.delete("/api/projects/samples"))["removed"] == len(keys) - 1
+    assert not [p for p in ids(mgr.get("/api/projects")) if p["is_sample"]]
+    assert ids(mgr.get(f"/api/tasks/{S['walk']}"))["id"] == S["walk"]                 # real projects untouched
