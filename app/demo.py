@@ -148,7 +148,7 @@ def load(me_id: int) -> dict:
                 ("loan", "Quarterly lender reporting (rent roll + operating statement)", t0 + timedelta(days=55), "quarterly", "Jordan Lee",
                  "Send to Frost Bank loan servicing within 45 days of quarter end."),
                 ("tax_protest", "Property tax protest deadline (Bexar CAD)", may15, "yearly", None,
-                 "Review the appraisal notice; file protest or send to the tax consultant."),
+                 "Review the appraisal notice; file protest or send to the tax protest company."),
                 ("budget_due", "Annual operating budget due to owner", t0 + timedelta(days=150), "yearly", "Maria Garza",
                  "Draft budget with CAM estimates; owner wants it 60 days before year start."),
                 ("cam_recon", "CAM reconciliation due to tenants", t0 + timedelta(days=130), "yearly", "Jordan Lee",
@@ -168,7 +168,10 @@ def load(me_id: int) -> dict:
             for ct in [("Owner contact", "Rebecca Torres", "Sonterra Commons Owner LLC", "rtorres@example.com", "(210) 555-0142"),
                        ("CPA", "Dana Cho", "Cho & Partners CPAs", "dana@example.com", "(210) 555-0188"),
                        ("Insurance agent", "Pat Lee", "Alamo Commercial Insurance", "pat@example.com", "(210) 555-0110"),
-                       ("Lender", "Loan servicing", "Frost Bank", "servicing@example.com", "")]:
+                       ("Lender", "Loan servicing", "Frost Bank", "servicing@example.com", ""),
+                       ("Asset manager", "Chris Nguyen", "Alamo Retail Fund II", "cnguyen@example.com", "(210) 555-0175"),
+                       ("Tax protest company", "Property tax team", "Texas Tax Protest Partners", "protests@example.com", "(210) 555-0133"),
+                       ("Lawyer", "Morgan Ellis", "Ellis & Ruiz PLLC", "mellis@example.com", "(210) 555-0160")]:
                 properties.add_contact(hq["property_id"], dict(zip(("role", "name", "company", "email", "phone"), ct)))
             properties.run_alerts()
             with tx() as c:

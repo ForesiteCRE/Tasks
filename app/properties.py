@@ -43,7 +43,7 @@ ICONS = {"tax_protest": "🏛", "tax_payment": "💵", "insurance_renewal": "☂
 REPEATS = {"monthly": 1, "quarterly": 3, "yearly": 12}
 DOC_KINDS = {"insurance": "Property insurance", "mgmt_agreement": "Management agreement", "tax_notice": "Tax notice / appraisal",
              "loan": "Loan document", "other": "Other"}
-CONTACT_ROLES = ["Owner contact", "CPA", "Insurance agent", "Lender", "Tax consultant", "Attorney", "Other"]
+CONTACT_ROLES = ["Owner contact", "Asset manager", "CPA", "Insurance agent", "Lender", "Tax protest company", "Lawyer", "Other"]
 DEFAULT_REMIND = "90,30,7"
 
 
@@ -74,6 +74,8 @@ def init():
             path TEXT NOT NULL, content_type TEXT, size INTEGER, summary TEXT, expires TEXT,
             insured_ok INTEGER, insured_note TEXT, verified_by INTEGER, verified_at TEXT,
             uploaded_by INTEGER, uploaded_at TEXT NOT NULL DEFAULT (datetime('now')))""")
+        c.execute("UPDATE property_contacts SET role='Lawyer' WHERE role='Attorney'")          # renamed roles
+        c.execute("UPDATE property_contacts SET role='Tax protest company' WHERE role='Tax consultant'")
         new_team_table = not c.execute("SELECT 1 FROM sqlite_master WHERE name='property_team'").fetchone()
         c.execute("""CREATE TABLE IF NOT EXISTS property_team(
             property_id INTEGER NOT NULL, role_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
@@ -543,7 +545,7 @@ Find:
 - Property-level critical dates: tax protest deadline, tax payment due, insurance renewal/expiration, owner report due dates (monthly/quarterly — give the next one and set repeat), annual budget due, CAM reconciliation due, lender reporting, management agreement term/renewal/termination notice, required inspections. Use exact dates; when the document gives a rule ("by the 15th of each month", "60 days after year end"), compute the next occurrence on or after today and say how in notes. Skip anything that would be a guess.
 - spend_limit: the most the manager may spend without the owner's prior approval (per item/repair/contract — say which in report_notes if it matters). 0 if not stated.
 - report_notes: what the owner wants in reports and how (format, contents, who receives them, when).
-- contacts: owner contact, CPA/accountant, insurance agent/broker, lender, tax consultant, attorney — only people/companies actually named.
+- contacts: owner contact, the owner's asset manager, CPA/accountant, insurance agent/broker, lender, tax protest company/property tax consultant, lawyer/attorney — only people/companies actually named.
 - insurance: for an insurance document, carrier, policy number, expiration, and whether Foresite is named as an ADDITIONAL INSURED (look at additional insured sections, endorsements, certificate holder boxes — being only the certificate holder is NOT additional insured). Otherwise use not_applicable and empty strings.
 - confidence: high when stated, medium when calculated, low when ambiguous."""
 
