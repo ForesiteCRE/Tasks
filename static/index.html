@@ -24,6 +24,8 @@ header h1{white-space:nowrap}#nav{display:flex;gap:2px;flex:1;min-width:0;flex-w
 .banner .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:700;letter-spacing:.04em;opacity:.9}
 .banner .pbtn{background:rgba(255,255,255,.92);color:var(--ink);border:0;border-radius:6px;padding:4px 9px;font:inherit;font-size:12px;cursor:pointer}
 .card.pc{padding:0;overflow:hidden}.card.pc>.inner{padding:14px 16px}
+.pagehead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:4px 0 14px;flex-wrap:wrap}.pagehead h2{margin:0;font-size:20px;font-weight:400;letter-spacing:.01em}
+dialog.wide{max-width:900px}
 .dd{position:relative}.ddb.on{background:#e6f2f8;color:var(--acc);font-weight:600}.car{font-size:10px;opacity:.7}
 .ddm{display:none;position:absolute;top:calc(100% + 6px);left:0;min-width:250px;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(20,30,60,.12);padding:6px;z-index:20}
 .dd.open .ddm{display:block}.ddm button{display:block;width:100%;text-align:left;padding:8px 10px;border-radius:7px;color:var(--ink)}.ddm button:hover{background:#f3f5fa}.ddm button.on{background:#e6f2f8;color:var(--acc)}
@@ -41,7 +43,7 @@ main{max-width:1200px;margin:0 auto;padding:20px 16px}.card{background:var(--car
 h2{font-size:15px;margin:0 0 10px}h3{font-size:14px;margin:0}.mute{color:var(--mute)}
 input,select,button.b{font:inherit;padding:6px 9px;border:1px solid var(--line);border-radius:6px;background:#fff}
 select:disabled,input:disabled{background:#f6f7f9;color:var(--ink);opacity:1}
-button.b,a.b{background:var(--acc);color:#fff;border:1px solid var(--acc);border-radius:6px;cursor:pointer;font:inherit;padding:6px 10px;display:inline-block;text-decoration:none}button.b.ghost,a.b.ghost{background:#fff;color:var(--acc)}
+button.b,a.b,label.b{background:var(--acc);color:#fff;border:1px solid var(--acc);border-radius:6px;cursor:pointer;font:inherit;padding:6px 10px;display:inline-block;text-decoration:none}button.b.ghost,a.b.ghost,label.b.ghost{background:#fff;color:var(--acc)}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0}
 table{width:100%;border-collapse:collapse}td,th{padding:6px 8px;border-top:1px solid var(--line);text-align:left;vertical-align:middle}th{font-size:12px;color:var(--mute);font-weight:500;border:0}
 .pill{font-size:11px;padding:2px 8px;border-radius:99px;background:#eef0f3;white-space:nowrap}.todo{background:#eef0f3}.in_progress{background:#e6f2f8;color:var(--acc)}.blocked{background:#fff0e6;color:var(--warn)}.done{background:#e6f6ea;color:var(--ok)}
@@ -195,16 +197,8 @@ input,select,textarea{border-color:#d5dce1;border-radius:3px}input:focus,select:
 </section>
 
 <section id="v-projects" class="hidden">
-  <div class="card mgr"><div class="row" style="justify-content:space-between;margin:0"><h2 style="margin:0">Start a project</h2>
-    <label class="b ghost" style="cursor:pointer;border:1px solid var(--acc);border-radius:6px;padding:6px 10px;color:var(--acc)">📄 From document<input type="file" id="pDoc" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg" class="hidden" onchange="fromDoc(this)"></label></div>
-    <p id="pDocInfo" class="mute" style="margin:6px 0"></p>
-    <div class="row"><input id="pName" placeholder="Project name (e.g. 123 Main St Listing)" style="flex:1;min-width:220px">
-      <select id="pTpl" onchange="renderPreview()"></select><label class="mute">Start <input id="pStart" type="date" onchange="renderPreview()"></label></div>
-    <div class="row"><input id="pProp" placeholder="Property / address" style="flex:1;min-width:200px"><input id="pClient" placeholder="Client / owner" style="flex:1;min-width:200px"></div>
-    <textarea id="pNotes" rows="2" placeholder="Summary / key terms (optional)"></textarea>
-    <details id="pTeamBox"><summary class="mute" style="cursor:pointer">👥 Project team <span id="pTeamSum"></span></summary><div id="pTeam" class="team-grid"></div></details>
-    <div id="pPreview"></div>
-    <div class="row" style="justify-content:flex-end"><button class="b" onclick="newProject()">Create project</button></div></div>
+  <div class="pagehead"><h2>Projects</h2>
+    <div class="row mgr" style="margin:0"><button class="b ghost" onclick="openNewProject(true)">📄 From document</button><button class="b" onclick="openNewProject()">+ New project</button></div></div>
   <div id="sampleBar" class="card hidden" style="display:flex;justify-content:space-between;align-items:center;gap:10px;background:#fffbea;border-color:#f5e3a3"><span>🧪 <b id="sampleN"></b> sample project(s) are showing — great for exploring. Remove them when you're ready.</span><button class="b ghost" onclick="removeSamples()">Remove all sample projects</button></div>
   <div class="row" style="margin-bottom:12px">
     <label>Show <select id="pFilter" onchange="renderProjects()"><option value="all">All tasks</option><option value="mine">My tasks</option></select></label>
@@ -297,6 +291,16 @@ input,select,textarea{border-color:#d5dce1;border-radius:3px}input:focus,select:
 </section>
 </main>
 
+<dialog id="newProjDlg" class="wide"><div class="row" style="justify-content:space-between;margin:0 0 6px"><h2 style="margin:0">New project</h2>
+  <label class="b ghost" style="cursor:pointer">📄 Fill from a document<input type="file" id="pDoc" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg" class="hidden" onchange="fromDoc(this)"></label></div>
+    <p id="pDocInfo" class="mute" style="margin:6px 0"></p>
+    <div class="row"><input id="pName" placeholder="Project name (e.g. 123 Main St Listing)" style="flex:1;min-width:220px">
+      <select id="pTpl" onchange="renderPreview()"></select><label class="mute">Start <input id="pStart" type="date" onchange="renderPreview()"></label></div>
+    <div class="row"><input id="pProp" placeholder="Property / address" style="flex:1;min-width:200px"><input id="pClient" placeholder="Client / owner" style="flex:1;min-width:200px"></div>
+    <textarea id="pNotes" rows="2" placeholder="Summary / key terms (optional)"></textarea>
+    <details id="pTeamBox"><summary class="mute" style="cursor:pointer">👥 Project team <span id="pTeamSum"></span></summary><div id="pTeam" class="team-grid"></div></details>
+    <div id="pPreview"></div>
+  <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="b ghost" onclick="newProjDlg.close()">Cancel</button><button class="b" onclick="newProject()">Create project</button></div></dialog>
 <dialog id="taskDlg"><div id="taskDlgBody"></div><div class="row" style="justify-content:flex-end;margin-top:12px"><button class="b ghost" onclick="taskDlg.close()">Close</button></div></dialog>
 
 <script>
@@ -763,9 +767,10 @@ async function saveTemplate(){const items=[...document.querySelectorAll('.ti')].
   const tid=(await api('/api/templates',{method:'POST',body:{name:$('#tName').value||'Untitled',items:[]}})).id;
   for(const it of items)await api(`/api/templates/${tid}/items`,{method:'POST',body:it});$('#tItems').innerHTML='';$('#tName').value='';refresh();}
 async function delTpl(id){if(confirm('Delete template?')){await api('/api/templates/'+id,{method:'DELETE'});refresh();}}
+function openNewProject(fromDoc){renderNewTeam();renderPreview();newProjDlg.showModal();setTimeout(()=>fromDoc?$('#pDoc').click():$('#pName').focus(),50);}
 async function newProject(){const name=$('#pName').value.trim();if(!name){alert('Give the project a name.');return;}
   await api('/api/projects',{method:'POST',body:{name,template_id:+$('#pTpl').value||null,start_date:$('#pStart').value||null,property:$('#pProp').value||null,client:$('#pClient').value||null,description:$('#pNotes').value||null,team:newTeam()}});
-  ['#pName','#pProp','#pClient','#pNotes'].forEach(x=>$(x).value='');$('#pDocInfo').textContent='';$('#pTpl').value='';$('#pTeam').innerHTML='';await refresh();toast('Project created');}
+  ['#pName','#pProp','#pClient','#pNotes'].forEach(x=>$(x).value='');$('#pDocInfo').textContent='';$('#pTpl').value='';$('#pTeam').innerHTML='';newProjDlg.close();await refresh();toast('Project created');show('projects');}
 async function fromDoc(inp){const f=inp.files[0];inp.value='';if(!f)return;
   if(f.size>25e6){alert('That file is over 25 MB.');return;}
   $('#pDocInfo').textContent=`⏳ Reading ${f.name}… (can take ~30 seconds)`;
