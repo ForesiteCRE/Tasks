@@ -7,6 +7,7 @@ claim matches) get in. If GOOGLE_CLIENT_ID is unset, auth is disabled (local dev
 import base64
 import json
 import os
+import re
 import secrets
 from urllib.parse import urlencode
 
@@ -103,6 +104,8 @@ def _staff_allowed(request: Request) -> bool:
     if method == "GET":
         return True
     # Task-level writes: each endpoint checks ownership / manager itself.
+    if method == "DELETE" and re.fullmatch(r"/api/projects/\d+", path):
+        return True   # delete_project itself only allows the project's creator (or a manager)
     return path.startswith(("/api/tasks", "/api/checklist/", "/api/reminders", "/api/me/"))
 
 

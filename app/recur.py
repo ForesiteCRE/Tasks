@@ -20,7 +20,8 @@ def init():
         for table, col, typ in [("tasks", "repeat", "TEXT"), ("tasks", "repeat_next_id", "INTEGER"),
                                 ("template_items", "repeat", "TEXT"), ("recurrences", "interval_months", "INTEGER NOT NULL DEFAULT 1"),
                                 ("recurrences", "anchor_month", "INTEGER"), ("recurrences", "team_json", "TEXT"),
-                                ("recurrences", "property", "TEXT"), ("recurrences", "client", "TEXT")]:
+                                ("recurrences", "property", "TEXT"), ("recurrences", "client", "TEXT"),
+                                ("projects", "created_by", "INTEGER")]:
             if col not in {r[1] for r in c.execute(f"PRAGMA table_info({table})")}:
                 c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
 

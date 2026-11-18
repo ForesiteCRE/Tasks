@@ -417,7 +417,15 @@ def list_projects():
     return ps
 
 @app.post("/api/projects")
-def create_project(p: ProjectIn):
+def create_project(p: ProjectIn, request: Request):
+    pid = _create_project(p)
+    me = auth.current_user(request) or {}
+    with tx() as c:
+        c.execute("UPDATE projects SET created_by=? WHERE id=?", (me.get("id"), pid))
+    return {"id": pid}
+
+
+def _create_project(p: ProjectIn) -> int:
     start = p.start_date or date.today()
     details = {"property": p.property, "client": p.client, "description": p.description}
     every = {"monthly": 1, "quarterly": 3, "yearly": 12}.get((p.repeat or "").lower())
@@ -432,12 +440,12 @@ def create_project(p: ProjectIn):
             rid = recur.create_project_recurrence(p.template_id, p.name, start, every, p.team, details)
             with tx() as c:
                 c.execute("UPDATE projects SET recurrence_id=? WHERE id=?", (rid, pid))
-        return {"id": pid}
+        return pid
     with tx() as c:
         pid = c.execute("INSERT INTO projects(name,start_date,property,client,description) VALUES(?,?,?,?,?)",
                         (p.name, start.isoformat(), p.property, p.client, p.description)).lastrowid
     team.save_team(pid, team.resolve_team(p.team))
-    return {"id": pid}
+    return pid
 
 
 @app.delete("/api/projects/samples")
@@ -448,15 +456,21 @@ def delete_samples(request: Request):
 
 
 @app.delete("/api/projects/{pid}")
-def delete_project(pid: int, request: Request):
-    if not auth.is_manager(request):
-        raise HTTPException(403, "Only managers can delete projects.")
+def delete_project(pid: int, request: Request, confirm: str = ""):
+    """Deleting is deliberately hard: only managers or the person who created the project, and the caller must
+    type the project's exact name (sent as ?confirm=...)."""
+    me = auth.current_user(request) or {}
     with tx() as c:
-        p = c.execute("SELECT is_general FROM projects WHERE id=?", (pid,)).fetchone()
+        p = c.execute("SELECT name, is_general, created_by FROM projects WHERE id=?", (pid,)).fetchone()
     if not p:
         raise HTTPException(404, "Project not found")
     if p["is_general"]:
         raise HTTPException(400, "That's the built-in “No project” list — delete its tasks instead.")
+    if not (auth.is_manager(request) or (p["created_by"] and p["created_by"] == me.get("id"))):
+        raise HTTPException(403, "Only managers or the person who created this project can delete it.")
+    if confirm.strip().casefold() != (p["name"] or "").strip().casefold():
+        raise HTTPException(400, "To delete, type the project's exact name to confirm.")
+    logging.warning("Project %s “%s” deleted by %s", pid, p["name"], me.get("email"))
     starter_templates.delete_project(pid)
     return {"ok": True}
 

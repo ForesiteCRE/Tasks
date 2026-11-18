@@ -300,6 +300,8 @@ def handle(user: dict, text: str, files: list[dict] | None = None) -> str:
         return out["reply"] or "OK, cancelled."
     if out["user_confirmed"] and state.get("asking_to_confirm"):
         pid = create_from_draft(state["draft"])
+        with tx() as c:
+            c.execute("UPDATE projects SET created_by=? WHERE id=?", (user["id"], pid))
         end_session(user["id"])
         with tx() as c:
             n = c.execute("SELECT COUNT(*) FROM tasks WHERE project_id=?", (pid,)).fetchone()[0]

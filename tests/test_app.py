@@ -449,7 +449,9 @@ def test_starter_templates_and_samples(mgr, staff):
     onb = [p for p in samples if "Onboarding" in p["name"]][0]
     assert onb["property"] and any(t["status"] == "done" for t in onb["tasks"])        # looks lived-in
     assert staff.delete(f"/api/projects/{onb['id']}").status_code == 403
-    ids(mgr.delete(f"/api/projects/{onb['id']}"))
+    assert mgr.delete(f"/api/projects/{onb['id']}").status_code == 400                # must type the name
+    assert mgr.delete(f"/api/projects/{onb['id']}", params={"confirm": "wrong"}).status_code == 400
+    ids(mgr.delete(f"/api/projects/{onb['id']}", params={"confirm": onb["name"].upper()}))
     gen = [p for p in projects if p["is_general"]][0]
     assert mgr.delete(f"/api/projects/{gen['id']}").status_code == 400
     assert ids(mgr.delete("/api/projects/samples"))["removed"] == len(keys) - 1
@@ -627,3 +629,14 @@ def test_page_script_has_no_syntax_errors(tmp_path):
     f.write_text(js, encoding="utf8")
     r = subprocess.run(["node", "--check", str(f)], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr[:500]
+
+
+def test_creator_can_delete_own_project_only(mgr, staff):
+    from app.db import tx
+    mine = ids(mgr.post("/api/projects", json={"name": "Sam scratch project"}))["id"]
+    theirs = ids(mgr.post("/api/projects", json={"name": "Boss project"}))["id"]
+    with tx() as c:   # staff can't create projects on the web today; simulate one they started
+        c.execute("UPDATE projects SET created_by=? WHERE id=?", (staff.me["id"], mine))
+    assert staff.delete(f"/api/projects/{theirs}", params={"confirm": "Boss project"}).status_code == 403
+    ids(staff.delete(f"/api/projects/{mine}", params={"confirm": "Sam scratch project"}))
+    ids(mgr.delete(f"/api/projects/{theirs}", params={"confirm": "Boss project"}))
