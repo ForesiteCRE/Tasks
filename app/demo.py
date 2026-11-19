@@ -327,6 +327,14 @@ def remove() -> dict:
             c.execute("DELETE FROM recurrences WHERE id=?", (rid,))
         for role_id, before in m.get("roles_before", {}).items():
             c.execute("UPDATE project_roles SET default_user_id=? WHERE id=?", (before, int(role_id)))
+        for kind, ids_ in (("task", m["tasks"]), ("project", m["projects"])):
+            c.executemany("DELETE FROM win_kudos WHERE win_id IN (SELECT id FROM wins WHERE kind=? AND ref_id=?)", [(kind, i) for i in ids_])
+            c.executemany("DELETE FROM wins WHERE kind=? AND ref_id=?", [(kind, i) for i in ids_])
+        for uid in m["users"]:
+            for t in ("win_kudos", "user_badges", "user_days"):
+                c.execute(f"DELETE FROM {t} WHERE user_id=?", (uid,))
+            c.execute("DELETE FROM win_kudos WHERE win_id IN (SELECT id FROM wins WHERE user_id=?)", (uid,))
+            c.execute("DELETE FROM wins WHERE user_id=?", (uid,))
         for uid in m["users"]:  # demo people: unassign anything left and remove them
             c.execute("UPDATE tasks SET assignee_id=NULL WHERE assignee_id=?", (uid,))
             c.execute("UPDATE template_items SET default_assignee_id=NULL WHERE default_assignee_id=?", (uid,))

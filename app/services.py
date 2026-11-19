@@ -85,6 +85,13 @@ def apply_update(task_id: int, user_id: int | None, source: str, status: str | N
         from . import audit
         audit.log(user_id, f"status → {STATUS_LABEL.get(status, status)}", "task", task_id, t["title"],
                   (f"from {STATUS_LABEL.get(old, old)}" + (f" · via Blink" if source == "blink" else "")) + (f" · “{note}”" if note else ""))
+    if status == "done" and old != "done":
+        from . import fun
+        try:
+            fun.on_done(task_id, user_id)
+        except Exception:
+            import logging
+            logging.getLogger("fun").exception("win failed")
     if status == "done" and old != "done" and t.get("repeat"):
         t["next_occurrence"] = recur.on_done(task_id)
     return t

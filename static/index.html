@@ -232,6 +232,22 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 .bkopt{display:grid;grid-template-columns:auto 1fr;gap:0 8px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:9px 10px;cursor:pointer}
 .bkopt input{grid-row:span 2;width:auto}.bkopt span{font-size:12.5px}.bkopt:has(input:checked){border-color:var(--acc);background:#f4f9fc}
 .bkpane select,.bkpane input,#bkReason{width:100%}.bkquick{display:flex;gap:4px;flex-wrap:wrap;margin:6px 0 2px}.bkquick .chip2,.blockbox+* .chip2{cursor:pointer}
+.hgrid>div{min-width:0}.ringtxt b{white-space:nowrap}.ringtxt{white-space:nowrap}
+.confetti{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:200}
+input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation:pop .35s ease}@keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.45)}100%{transform:scale(1)}}
+.funcard{display:flex;gap:16px;align-items:center;background:var(--card,#fff);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin:0 0 14px}
+.ringwrap{position:relative;flex:none}.ringtxt{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:20px;line-height:1}
+.ringtxt span{font-size:10.5px;color:var(--mute);margin-top:3px;text-transform:uppercase;letter-spacing:.06em}.ringwrap.sm .ringtxt{font-size:13px;font-weight:700;color:var(--ink)}
+.funh{font-size:17px;font-weight:700}.funrow{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:6px}
+.streak{background:#fff3e6;color:#b8560f;border-radius:99px;padding:3px 10px;font-weight:700;font-size:13px}.streak .mute{font-weight:400}
+.badgerow{display:inline-flex;align-items:center;gap:3px;cursor:pointer}.bdg{font-size:18px}.bdg.off{filter:grayscale(1);opacity:.28}
+.bgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:8px 0}.bcardx{border:1px solid var(--line);border-radius:10px;padding:12px;text-align:center}
+.bcardx .bi{font-size:34px}.bcardx.off{opacity:.45;filter:grayscale(.8)}.bcardx.fresh{border-color:#E9B949;box-shadow:0 0 0 3px #fbe7b0;animation:pop .6s ease}
+.teamstrip{display:flex;gap:10px;overflow-x:auto;padding:8px 2px 12px;border-bottom:1px solid var(--line);margin-bottom:4px}
+.tsp{text-align:center;min-width:60px}.tsn{font-size:12px;font-weight:700;margin-top:2px}.tss{font-size:11px;color:var(--mute)}
+.win{display:flex;gap:10px;align-items:flex-start;padding:9px 2px;border-bottom:1px solid var(--line)}.win:last-child{border-bottom:0}.wico{font-size:18px}
+.kudo{border:1px solid var(--line);background:#fff;border-radius:99px;padding:3px 10px;cursor:pointer;font:inherit;font-size:13px;white-space:nowrap}
+.kudo.on{background:#fff6dc;border-color:#f0d58a}.kudo.own{border:0;color:var(--mute);font-size:12px}.kudo.pop{animation:pop .45s ease}
 /* ---------- phones ---------- */
 @media (max-width:640px){
   html,body{overflow-x:hidden}
@@ -290,6 +306,7 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
   .pagehead h2{font-size:18px}
   .prow{grid-template-columns:1fr auto;gap:4px 10px}.prow .pp{grid-column:1/-1;order:3}.prow .pd{grid-column:1/-1;order:4;font-size:13px}.prow .pf{justify-content:flex-start;order:2}.prow.ph{display:none}
   .board{grid-template-columns:repeat(4,78vw);scroll-snap-type:x mandatory}.bcol{scroll-snap-align:start}
+  .funcard{padding:10px 12px;gap:12px}.funh{font-size:15px}
   dialog{width:100vw!important;max-width:100vw!important;margin:0;max-height:100dvh;border-radius:0}
 }
 </style>
@@ -1199,6 +1216,48 @@ async function blockDialog(id,editing){const t=TASKS.find(x=>x.id===id)||{},o=aw
       if(k==='task')block.task_id=+$('#bkTask').value||null;
       try{await api('/api/tasks/'+id,{method:'PATCH',body:editing?{block}:{status:'blocked',block}});}catch(e){return;}   // api() already shows the error
       blockDlg.close();await refresh();if(taskDlg.open&&OPEN_ID===id)openTask(id);toast(editing?'Updated':'⛔ Marked blocked');res(true);};});}
+
+/* ---------- fun: confetti, today ring, streaks, badges, team wins ---------- */
+let FUN=null,LASTPTR={x:innerWidth/2,y:innerHeight/2};
+document.addEventListener('pointerdown',e=>{LASTPTR={x:e.clientX,y:e.clientY}},true);
+function confetti(big,x,y){if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  const cv=document.createElement('canvas');cv.className='confetti';cv.width=innerWidth*devicePixelRatio;cv.height=innerHeight*devicePixelRatio;document.body.append(cv);
+  const g=cv.getContext('2d');g.scale(devicePixelRatio,devicePixelRatio);const cols=['#549FC5','#A5D172','#3A4750','#F2B33D','#E86A5C','#8FD3F4'];
+  const n=big?180:36,ps=[];x=x??LASTPTR.x;y=y??LASTPTR.y;
+  for(let i=0;i<n;i++){const a=big?Math.random()*Math.PI*2:(-Math.PI/2+(Math.random()-.5)*1.6),v=big?(4+Math.random()*9):(3+Math.random()*5);
+    ps.push({x:big?innerWidth/2+(Math.random()-.5)*innerWidth*.4:x,y:big?innerHeight*.35:y,vx:Math.cos(a)*v,vy:Math.sin(a)*v-(big?4:2),r:Math.random()*6,w:4+Math.random()*5,h:6+Math.random()*7,c:cols[i%cols.length],s:(Math.random()-.5)*.3});}
+  let f=0;(function tick(){g.clearRect(0,0,innerWidth,innerHeight);ps.forEach(p=>{p.vy+=.22;p.vx*=.99;p.x+=p.vx;p.y+=p.vy;p.r+=p.s;g.save();g.translate(p.x,p.y);g.rotate(p.r);g.fillStyle=p.c;g.globalAlpha=Math.max(0,1-f/(big?150:70));g.fillRect(-p.w/2,-p.h/2,p.w,p.h);g.restore();});
+    if(++f<(big?150:70))requestAnimationFrame(tick);else cv.remove();})();}
+function ringSvg(pct,size=86,gold=false){const r=size/2-8,c=2*Math.PI*r,off=c*(1-Math.min(100,pct)/100);
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" class="ring"><circle cx="${size/2}" cy="${size/2}" r="${r}" stroke="#e7ecf0" stroke-width="9" fill="none"/>
+    <circle cx="${size/2}" cy="${size/2}" r="${r}" stroke="${gold?'#E9B949':'#A5D172'}" stroke-width="9" fill="none" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${off}" transform="rotate(-90 ${size/2} ${size/2})" style="transition:stroke-dashoffset .8s ease"/></svg>`;}
+async function loadFunToday(){const el=$('#funToday');if(!el)return;const prev=FUN;FUN=await api('/api/fun/me');const T=FUN.today,earned=FUN.badges.filter(b=>b.earned_at);
+  el.innerHTML=`<div class="funcard"><div class="ringwrap">${ringSvg(T.pct,86,T.cleared)}<div class="ringtxt"><div>${T.total?`<b>${T.done}</b>/${T.total}`:`<b>${T.done_today}</b>`}</div><span>${T.total?'today':'done'}</span></div></div>
+    <div class="grow"><div class="funh">${T.cleared?'🎉 Today\'s list is clear!':T.total?`${T.open} to go today`:T.done_today?`${T.done_today} done today`:'Nothing due today'}</div>
+      <div class="mute" style="font-size:13px">${T.total?'Everything due today (or earlier) — tick them off and the ring fills.':'Tasks due today or earlier fill this ring.'}${T.done_today>T.done?` Plus ${T.done_today-T.done} more finished ahead of time.`:''}</div>
+      <div class="funrow">${FUN.streak?`<span class="streak">🔥 ${FUN.streak}-day streak <span class="mute">· nothing overdue</span></span>`:'<span class="mute" style="font-size:13px">🔥 Start a streak: a workday with nothing overdue</span>'}
+        <span class="badgerow" onclick="showBadges()" title="Your badges">${FUN.badges.map(b=>`<span class="bdg ${b.earned_at?'':'off'}" title="${esc(b.name)} — ${esc(b.how)}">${b.icon}</span>`).join('')}<span class="mute" style="font-size:12px;margin-left:4px">${earned.length}/${FUN.badges.length}</span></span></div></div></div>`;
+  if(prev){const pe=new Set(prev.badges.filter(b=>b.earned_at).map(b=>b.key)),nb=earned.filter(b=>!pe.has(b.key));
+    if(nb.length){confetti(true);showBadges(nb[0].key);}
+    else if(T.cleared&&!prev.today.cleared){confetti(true);toast('🎉 Today\'s list is clear — nice work!');}}}
+function showBadges(fresh){if(!FUN)return;
+  $('#taskDlgBody').innerHTML=`<h2 style="margin-top:0">${fresh?'🏅 New badge!':'🏅 Your badges'}</h2>
+    <div class="bgrid">${FUN.badges.map(b=>`<div class="bcardx ${b.earned_at?'':'off'} ${b.key===fresh?'fresh':''}"><div class="bi">${b.icon}</div><b>${esc(b.name)}</b><div class="sub">${esc(b.how)}</div>
+      <div class="sub">${b.earned_at?'Earned '+fmtDate(b.earned_at.slice(0,10)):'Not yet'}</div></div>`).join('')}</div>
+    <p class="mute" style="font-size:12.5px">🔥 Streak: ${FUN.streak} workday${FUN.streak===1?'':'s'} in a row with nothing overdue.</p>`;
+  if(!taskDlg.open)taskDlg.showModal();}
+const ago2=ts=>{const d=new Date(ts.replace(' ','T')+'Z'),m=Math.round((Date.now()-d)/6e4);return m<1?'just now':m<60?m+' min ago':m<1440?Math.round(m/60)+' h ago':Math.round(m/1440)+' d ago';};
+let WINS_ALL=false;
+async function loadFunTeam(){const el=$('#funTeam');if(!el)return;const r=await api('/api/fun/team');const more=r.wins.length>8&&!WINS_ALL;if(more)r.wins=r.wins.slice(0,8);
+  const strip=r.today.length?`<div class="teamstrip">${r.today.map(u=>`<div class="tsp" title="${esc(u.name)}: ${u.total?u.done+' of '+u.total+' due today done':u.done_today+' done today'}${u.streak?' · '+u.streak+'-day streak':''}">
+      <div class="ringwrap sm">${ringSvg(u.pct,52,u.cleared)}<div class="ringtxt">${esc((u.name.split(' ')[0]||'?').slice(0,1))}${esc((u.name.split(' ')[1]||'').slice(0,1))}</div></div>
+      <div class="tsn">${esc(u.name.split(' ')[0])}</div><div class="tss">${u.total?u.done+'/'+u.total:u.done_today+' ✓'}${u.streak?' · 🔥'+u.streak:''}</div></div>`).join('')}</div>`:'';
+  el.innerHTML=panel('🙌 Team wins',null,strip+(r.wins.map(w=>`<div class="win"><span class="wico">${w.icon}</span><div class="grow"><b>${esc(w.who.split(' (')[0])}</b> ${w.kind==='task'?'finished':w.kind==='project'?'completed':''} ${w.kind==='badge'?esc(w.title)+` <span class="mute">— ${esc(w.detail||'')}</span>`:w.kind==='streak'?`hit a <b>${esc(w.title)}</b>`:`<span class="tlink" onclick="${w.kind==='task'?`openTask(${w.ref_id})`:`openProject(${w.ref_id})`}">${esc(w.title)}</span>`}
+      <div class="sub">${w.detail&&w.kind!=='badge'?esc(w.detail)+' · ':''}${ago2(w.at)}${w.kudos_from?` · 👏 ${esc(w.kudos_from)}`:''}</div></div>
+      ${w.user_id===ME.id?(w.kudos?`<span class="kudo own">👏 ${w.kudos}</span>`:''):`<button class="kudo ${w.mine_kudo?'on':''}" ${w.mine_kudo?'disabled':''} onclick="giveKudo(${w.id},this)">👏${w.kudos?' '+w.kudos:''}</button>`}</div>`).join('')
+      ||'<div class="empty">No wins yet this week — the first ✅ shows up here.</div>')+(more?'<div style="text-align:center;margin-top:6px"><span class="tlink" onclick="WINS_ALL=true;loadFunTeam()">Show more wins</span></div>':''),'this week · tap 👏 to high-five');}
+async function giveKudo(id,btn){btn.disabled=true;const r=await api(`/api/wins/${id}/kudos`,{method:'POST'});btn.classList.add('on','pop');btn.textContent='👏 '+r.kudos;
+  const b=btn.getBoundingClientRect();confetti(false,b.left+b.width/2,b.top);}
 async function delProject(pid){const typed=$('#delConfirm').value;
   const r=await api(`/api/projects/${pid}?confirm=${encodeURIComponent(typed)}`,{method:'DELETE'});taskDlg.close();await refresh();toast('Project deleted',()=>restoreTrash(r.trash_id),'Undo');}
 async function removeSamples(){if(!confirm('Remove all sample projects and their tasks? Your real projects are not affected.'))return;
@@ -1258,7 +1317,7 @@ async function renderHome(){const tok=++HTOK;
   const agenda=groups.map(([name,f,cls])=>{const items=d.agenda.filter(a=>!used.has(a)&&f(a));items.forEach(a=>used.add(a));if(!items.length)return'';
     return `<div class="grp ${cls||''}" id="ag-${slug(name)}">${name}<span class="mute" style="font-weight:500">· ${items.length}</span></div>`+items.map(agendaRow).join('')}).join('');
   const reminders=d.reminders.filter(r=>!r.sent||r.remind_at>=d.today);
-  $('#home').innerHTML=`<div class="kpis">
+  $('#home').innerHTML=`<div id="funToday"></div><div class="kpis">
      ${kpi('red','Overdue',c.overdue,'',"taskList('me','open','Overdue')")}${kpi('blue','Due today',c.due_today,'',"taskList('me','open','Today')")}${kpi('violet','Next 7 days',c.due_week,'',"taskList('me','open','Next 7 days')")}
      ${kpi('amber','Blocked for me',c.blocked,'',"jumpTo('pn-blocked-for-me')")}${kpi('amber','Waiting on me',c.waiting_on_me,c.waiting_on_me?'teammates need these':'',"jumpTo('pn-waiting-on-me')")}${kpi('green','Done this week',c.done_week,c.time_week?fmtMin(c.time_week)+' logged':'',"jumpTo('pn-done-this-week')")}</div>
    <div class="hgrid"><div>
@@ -1270,7 +1329,7 @@ async function renderHome(){const tok=++HTOK;
         <div class="bar"><i style="width:${pct}%"></i></div>
         <div class="row" style="justify-content:space-between;margin:0;font-size:12px"><span class="mute">${p.done}/${p.total} done</span><span>${p.my_open?`<b>${p.my_open}</b> mine`:'<span class="mute">nothing on you</span>'}${p.my_next_due?` · next ${fmtDate(p.my_next_due)}`:''}</span></div>
         <div class="chips">${p.roles.map(r=>`<span class="chip2">${esc(r)}</span>`).join('')}${p.overdue?`<span class="risk hi">${p.overdue} overdue</span>`:''}</div></div></div>`}).join('')||'<div class="empty">You\'re not on any active projects.</div>'}</div>
-   </div><div>
+   </div><div><div id="funTeam"></div>
      ${panel('⏳ Waiting on me',d.waiting_on_me.length,d.waiting_on_me.map(w=>`<div class="row2" style="cursor:pointer" onclick="openTask(${w.my_task_id})"><span class="ico">▶️</span><div class="grow"><b>#${w.my_task_id} ${esc(w.my_task_title)}</b><div class="sub">${esc(w.assignee_name)} can't start <i>${esc(w.title)}</i> until this is done${w.my_due?` · due ${fmtDate(w.my_due)}`:''}</div></div></div>`).join('')||'<div class="empty">Nobody is waiting on you.</div>')}
      ${panel('⛔ Blocked for me',d.blocked.length,d.blocked.map(b=>`<div class="row2" style="cursor:pointer" onclick="openTask(${b.id})"><span class="ico">🔒</span><div class="grow">${esc(b.title)}<div class="sub">${blockText(b)?esc(blockText(b)):b.blockers.length?'Waiting on '+b.blockers.map(x=>`#${x.id} ${esc(x.title)} (${esc(x.assignee_name)})`).join(', '):b.last_note?`“${esc(b.last_note)}”`:''}${b.blocked_follow_up?` · follow up ${fmtDate(b.blocked_follow_up)}`:''}</div></div></div>`).join('')||'<div class="empty">Nothing blocked. 👍</div>')}
      <div id="homeEmails"></div>
@@ -1280,6 +1339,7 @@ async function renderHome(){const tok=++HTOK;
      ${panel('✅ Done this week',d.done_week.length,d.done_week.map(t=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><span class="ico">✓</span><div class="grow">${esc(t.title)}<div class="sub">${esc(t.project_name)}${t.actual_minutes?' · '+fmtMin(t.actual_minutes):' · <span class="over">log time</span>'}</div></div></div>`).join('')||'<div class="empty">Nothing yet this week.</div>')}
    </div></div>`;
   if(unread.mentions)api('/api/me/mentions-seen',{method:'POST'}).then(()=>setBadge(0));
+  loadFunToday();loadFunTeam();
   api('/api/emails').then(r=>{const el=$('#homeEmails');if(!el||!r.drafts.length)return;
     el.innerHTML=panel('✉️ Emails ready to send',r.drafts.length,r.drafts.slice(0,5).map(d=>`<div class="row2" style="cursor:pointer" onclick="show('emails')"><span class="ico">✉️</span><div class="grow">${esc(d.subject)}<div class="sub">To ${esc(d.to_name||d.to_email||'?')}${d.gmail_draft_id?' · in your Gmail drafts':''}</div></div></div>`).join(''));});
 }
@@ -1303,7 +1363,7 @@ function agendaRow(a){
   if(a.kind==='reminder')return `<div class="it"><div class="d">${a.time||''}<b>⏰</b></div><div class="t"><div>${esc(a.title)}</div><div class="sub">Reminder · ${dayLabel(a.date)}</div></div><span class="pill">reminder</span></div>`;
   if(a.kind==='project_start')return `<div class="it" onclick="openProject(${a.id})">${dateBox(a.date)}<div class="t"><div>🚀 ${esc(a.title)} starts</div><div class="sub">Project start</div></div><span class="pill in_progress">project</span></div>`;
   return `<div class="it ${a.overdue?'od':''}" onclick="openTask(${a.id})">${dateBox(a.date)}<div class="t"><div>${a.waiting_on?'🔒 ':''}${esc(a.title)}</div><div class="sub">${esc(a.project_name)}${a.overdue?` · <span class="over">${Math.round((new Date(today()+'T12:00')-new Date(a.date+'T12:00'))/864e5)}d late</span>`:''}${a.estimate_minutes?' · est '+fmtMin(a.estimate_minutes):''}</div></div><span class="pill ${a.status}">${LBL[a.status]}</span></div>`;}
-function renderTeamHome(d){const c=d.counts;
+function renderTeamHome(d){const c=d.counts;setTimeout(loadFunTeam,0);
   $('#hSub').innerHTML=`${c.projects} active projects · ${c.open} open tasks${c.overdue?` · <b style="color:var(--bad)">${c.overdue} overdue</b>`:''}`;
   const max=Math.max(1,...d.workload.map(w=>w.open));
   const riskOf=p=>p.overdue>=3||p.blocked>=2?'hi':p.overdue||p.blocked?'md':'ok';
@@ -1318,7 +1378,7 @@ function renderTeamHome(d){const c=d.counts;
       return `<tr style="cursor:pointer" onclick="openProject(${p.id})"><td><b>${esc(p.name)}</b>${p.property?`<div class="mute">${esc(p.property)}</div>`:''}</td><td><div class="bar" style="margin:0"><i style="width:${pct}%"></i></div><span class="mute">${p.done}/${p.total}</span></td>
        <td><span class="risk ${riskOf(p)}">${p.overdue||p.blocked?[p.overdue?p.overdue+' overdue':'',p.blocked?p.blocked+' blocked':''].filter(Boolean).join(' · '):'on track'}</span></td><td>${fmtDate(p.next_due)||'—'}</td></tr>`}).join('')}</table>`)}
     ${panel('⚠️ Overdue',d.overdue.length,d.overdue.map(t=>trow(t)).join('')||'<div class="empty">Nothing overdue. 🎉</div>')}
-   </div><div>
+   </div><div><div id="funTeam"></div>
     ${panel('⛔ Blocked',d.blocked.length,d.blocked.map(t=>trow(t,`${blockText(t)?`<br>⛔ ${esc(blockText(t))}`:t.last_note?`<br>“${esc(t.last_note)}”`:''}${!blockText(t)&&t.blockers.length?'<br>Waiting on '+t.blockers.map(x=>'#'+x.id+' '+esc(x.title)).join(', '):''}${t.blocked_follow_up?` · follow up ${fmtDate(t.blocked_follow_up)}`:''}`)).join('')||'<div class="empty">Nothing blocked.</div>')}
     ${panel('👤 Unassigned',d.unassigned.length,d.unassigned.map(t=>trow(t)).join('')||'<div class="empty">Everything has an owner.</div>')}
     ${panel('✅ Completed this week',d.done_week.length,d.done_week.map(t=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><span class="ico">✓</span><div class="grow">${esc(t.title)}<div class="sub">${esc(t.assignee_name)} · ${esc(t.project_name)}${t.actual_minutes?' · '+fmtMin(t.actual_minutes):''}</div></div></div>`).join('')||'<div class="empty">Nothing yet this week.</div>',null,d.missing_time.length?`<span class="over">${d.missing_time.length} without time logged</span>`:'')}
@@ -1592,7 +1652,12 @@ async function fromDoc(inp){const f=inp.files[0];inp.value='';if(!f)return;
 async function saveAsTpl(id,n){const name=prompt('Template name',n+' checklist');if(name){await api(`/api/projects/${id}/save-as-template`,{method:'POST',body:{name}});refresh();}}
 async function patch(id,b){try{await api('/api/tasks/'+id,{method:'PATCH',body:b})}finally{await refresh()}}
 const setStatus=async(id,s)=>{if(s==='blocked'){const ok=await blockDialog(id);if(!ok){await refresh();if(taskDlg.open&&OPEN_ID===id)openTask(id);}return;}
+  const pBefore=(()=>{const t0=TASKS.find(x=>x.id===id);const p=t0&&PROJECTS.find(x=>x.id===t0.project_id);return p&&p.status;})();
   await patch(id,{status:s});const t=TASKS.find(x=>x.id===id);
+  if(s==='done'){confetti(false);setTimeout(async()=>{const p=t&&PROJECTS.find(x=>x.id===t.project_id);
+    if(p&&!p.is_general&&p.status==='done'&&pBefore!=='done'){confetti(true);toast(`🎉 Project complete: ${p.name}`);}
+    if($('#funToday'))loadFunToday();else{const prev=FUN;FUN=await api('/api/fun/me');if(prev&&FUN.today.cleared&&!prev.today.cleared){confetti(true);toast('🎉 Today\'s list is clear — nice work!');}
+      const pe=new Set((prev||FUN).badges.filter(b=>b.earned_at).map(b=>b.key)),nb=FUN.badges.filter(b=>b.earned_at&&!pe.has(b.key));if(prev&&nb.length){confetti(true);showBadges(nb[0].key);}}},700);}
   if(s==='done'&&t&&t.repeat)toast('🔁 Done — next one scheduled');
   else if(s==='done'&&t&&!t.actual_minutes&&canEdit(t)&&!taskDlg.open)toast('⏱ Done! How long did it take?',()=>openTask(id).then(()=>{$('#timeSec').scrollIntoView({block:'center'});$('#actIn').focus()}),'Log time');};
 async function addTask(p){const t=$('#nt'+p).value;if(!t)return;await api('/api/tasks',{method:'POST',body:{project_id:p,title:t,assignee_id:+$('#na'+p).value||null,due_date:$('#nd'+p).value||null}});refresh();}

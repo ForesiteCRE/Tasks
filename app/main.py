@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import (audit, auth, automations, bids, blink, blockers, chat, closeboard, departments, emails, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
+from . import (audit, auth, automations, bids, blink, blockers, fun, chat, closeboard, departments, emails, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
                starter_templates, team, timing, tpl)
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
@@ -27,7 +27,7 @@ async def scheduler_loop():
     reminders (once/day/task) and, on the summary weekday, the weekly summary (once/week)."""
     while True:
         for job in (maintenance.daily_backup, services.run_recurrences, dashboard.send_due_reminders,
-                    dashboard.send_daily_digests):
+                    dashboard.send_daily_digests, fun.run_daily):
             try:
                 job()
             except Exception:
@@ -1778,6 +1778,26 @@ def approval_bid_file(token: str, bid_id: int):
     if not got:
         raise HTTPException(404, "No file")
     return FileResponse(got[1], media_type=got[0]["content_type"] or "application/octet-stream", filename=got[0]["filename"])
+
+
+# ---------- fun: today ring, streaks, badges, team wins, high-fives ----------
+
+@app.get("/api/fun/me")
+def fun_me(request: Request):
+    return fun.me(_me_id(request))
+
+
+@app.get("/api/fun/team")
+def fun_team(request: Request):
+    return {"today": fun.team_today(), "wins": fun.feed(30, _me_id(request))}
+
+
+@app.post("/api/wins/{wid}/kudos")
+def give_kudos(wid: int, request: Request):
+    try:
+        return fun.kudo(wid, _me_id(request))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 # ---------- month-end close board ----------

@@ -112,7 +112,7 @@ def _staff_allowed(request: Request) -> bool:
             re.fullmatch(r"/api/properties/\d+/vendors/\d+/coi", path):
         return True   # vendor endpoints check property/project team membership themselves
     return path.startswith(("/api/tasks", "/api/checklist/", "/api/reminders", "/api/me/", "/api/critical-dates/",
-                             "/api/vendors", "/api/vendor-reviews/", "/api/property-vendors/", "/api/project-vendors/", "/api/emails",
+                             "/api/vendors", "/api/vendor-reviews/", "/api/property-vendors/", "/api/project-vendors/", "/api/emails", "/api/wins/",
                              "/api/vendor-cois/"))
 
 

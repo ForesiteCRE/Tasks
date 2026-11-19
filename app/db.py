@@ -184,6 +184,8 @@ def _init_extras():
     bids.init()
     from . import blockers
     blockers.init()
+    from . import fun
+    fun.init()
 
 
 def get_setting(key: str) -> str | None:

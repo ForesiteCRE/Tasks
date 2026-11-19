@@ -1241,3 +1241,55 @@ def test_blocked_requires_what_its_waiting_on(mgr, staff):
                                 "time_note": ""}], "comments": [], "reply": ""})
     services.handle_inbound("u-sam", "the tenant needs to pick colors")
     assert ids_task(t)["blocked_reason"] == "Waiting on the tenant to pick colors"
+
+
+def test_wins_kudos_streaks_and_badges(mgr, staff):
+    from datetime import date, timedelta
+    from app import fun
+    with tx() as c:
+        sam = c.execute("SELECT id FROM users WHERE blink_user_id='u-sam'").fetchone()["id"]
+    pj = ids(mgr.post("/api/projects", json={"name": "Fun project"}))["id"]
+    t1 = ids(mgr.post("/api/tasks", json={"title": "Fun one", "project_id": pj, "assignee_id": sam, "due_date": date.today().isoformat()}))["id"]
+    t2 = ids(mgr.post("/api/tasks", json={"title": "Fun two", "project_id": pj, "assignee_id": sam,
+                                          "due_date": (date.today() + timedelta(days=3)).isoformat()}))["id"]
+    me = ids(staff.get("/api/fun/me"))
+    assert me["today"]["total"] >= 1 and len(me["badges"]) == 6
+    ids(staff.patch(f"/api/tasks/{t1}", json={"status": "done"}))
+    ids(staff.patch(f"/api/tasks/{t2}", json={"status": "done"}))       # finishes the project
+    team = ids(mgr.get("/api/fun/team"))
+    mine = [w for w in team["wins"] if w["user_id"] == sam]
+    assert any(w["kind"] == "task" and w["title"] == "Fun one" for w in mine)
+    assert any(w["kind"] == "project" and w["title"] == "Fun project" for w in mine)
+    # re-ticking doesn't duplicate
+    ids(staff.patch(f"/api/tasks/{t1}", json={"status": "todo"}))
+    ids(staff.patch(f"/api/tasks/{t1}", json={"status": "done"}))
+    assert sum(1 for w in ids(mgr.get("/api/fun/team"))["wins"] if w["kind"] == "task" and w["ref_id"] == t1) == 1
+    # high-five → Blink to Sam; can't high-five yourself
+    wid = next(w["id"] for w in mine if w["kind"] == "task")
+    before = len(SENT)
+    assert ids(mgr.post(f"/api/wins/{wid}/kudos"))["kudos"] == 1
+    assert any(b == "u-sam" and "high-five" in t for b, t in SENT[before:])
+    assert ids(mgr.post(f"/api/wins/{wid}/kudos"))["kudos"] == 1                   # once per person
+    assert staff.post(f"/api/wins/{wid}/kudos").status_code == 400
+    # early bird badge after 10 tasks finished before their due date
+    with tx() as c:
+        for i in range(10):
+            c.execute("""INSERT INTO tasks(project_id, title, assignee_id, status, due_date, completed_at)
+                         VALUES(?,?,?,'done',?,?)""", (pj, f"early {i}", sam, (date.today() + timedelta(days=5)).isoformat(),
+                                                       datetime.now().isoformat(timespec="seconds")))
+    before = len(SENT)
+    assert "early_bird" in fun.check_badges(sam)
+    assert any(b == "u-sam" and "Early Bird" in t for b, t in SENT[before:])
+    assert "early_bird" not in fun.check_badges(sam)                                # once
+    # streak: workdays with nothing overdue
+    with tx() as c:
+        c.execute("UPDATE tasks SET status='done' WHERE assignee_id=? AND status!='done'", (sam,))
+        d = date.today()
+        for i in range(1, 15):
+            day = d - timedelta(days=i)
+            c.execute("INSERT OR REPLACE INTO user_days(user_id, day, overdue) VALUES(?,?,0)", (sam, day.isoformat()))
+    assert fun.streak(sam) >= 5
+    with tx() as c:   # an overdue day breaks it
+        c.execute("UPDATE user_days SET overdue=2 WHERE user_id=? AND day=?", (sam, (d - timedelta(days=3)).isoformat()))
+    assert fun.streak(sam) < 5
+    assert any(x["id"] == sam for x in ids(mgr.get("/api/fun/team"))["today"])
