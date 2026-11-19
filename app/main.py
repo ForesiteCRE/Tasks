@@ -1058,6 +1058,29 @@ def delete_property(pid: int, request: Request, confirm: str = ""):
     return {"ok": True, "trash_id": trash_id}
 
 
+@app.post("/api/properties/{pid}/photo")
+def property_photo_upload(pid: int, body: PhotoIn, request: Request):
+    _require_manager(request)
+    if not properties.get(pid):
+        raise HTTPException(404, "Property not found")
+    try:
+        return {"photo_file": photos.save_property_photo(pid, body.data_b64)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+@app.delete("/api/properties/{pid}/photo")
+def property_photo_delete(pid: int, request: Request):
+    _require_manager(request)
+    photos.remove_property_photo(pid)
+    return {"ok": True}
+
+@app.get("/api/properties/{pid}/photo")
+def property_photo(pid: int):
+    path = photos.property_photo_file(pid)
+    if not path:
+        raise HTTPException(404, "No photo")
+    return FileResponse(path, headers={"Cache-Control": "private, max-age=86400"})
+
 @app.get("/api/properties/{pid}/streetview")
 def property_streetview(pid: int):
     p = properties.get(pid)

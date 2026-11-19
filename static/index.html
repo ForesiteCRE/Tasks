@@ -808,11 +808,22 @@ function projTaskPreview(p){const ts=orderTasks(p.tasks),done=p.tasks.filter(t=>
 let PROPS=[],PROP=null,LEASE=null,PROP_ALL=false;const PROP_TASKS_N=20;
 function propTasksToggle(){PROP_ALL=!PROP_ALL;renderProperty();$('#propTasks').scrollIntoView({block:'nearest'});}
 const daysBadge=n=>n<0?`<span class="dl red">${-n} day${n===-1?'':'s'} late</span>`:n===0?'<span class="dl red">today</span>':`<span class="dl ${n<=30?'red':n<=90?'amber':''}">in ${n} day${n===1?'':'s'}</span>`;
-function propBanner(p,h){
+function propBanner(p,h,edit){
   const map=`<iframe loading="lazy" tabindex="-1" src="https://maps.google.com/maps?q=${encodeURIComponent(p.address)}&z=16&output=embed"></iframe>`;
-  const media=p.photo_path&&p.photo_project_id?`<img alt="" src="/api/projects/${p.photo_project_id}/photo?v=${encodeURIComponent(p.photo_path)}">`
+  const media=p.photo_file?`<img alt="" src="/api/properties/${p.id}/photo?v=${encodeURIComponent(p.photo_file)}">`
+    :p.photo_path&&p.photo_project_id?`<img alt="" src="/api/projects/${p.photo_project_id}/photo?v=${encodeURIComponent(p.photo_path)}">`
     :CFG.streetview?`<img alt="" src="/api/properties/${p.id}/streetview" onerror="this.outerHTML=${esc(JSON.stringify(map))}">`:map;
-  return `<div class="banner" style="height:${h}px">${media}<div class="ov"><div><div class="addr">📍 ${esc(p.address)}</div></div></div></div>`;}
+  const btns=edit&&isMgr()?`<span style="display:flex;gap:6px"><button class="pbtn" onclick="event.stopPropagation();propPickPhoto()">📷 ${p.photo_file?'Change photo':'Add property photo'}</button>${p.photo_file?`<button class="pbtn" onclick="event.stopPropagation();propRemovePhoto()">Remove</button>`:''}</span>`:'';
+  return `<div class="banner" style="height:${h}px">${media}<div class="ov"><div><div class="addr">📍 ${esc(p.address)}</div></div>${btns}</div></div>`;}
+function propPickPhoto(){const i=document.createElement('input');i.type='file';i.accept='image/*';i.onchange=()=>propUploadPhoto(i.files[0]);i.click();}
+async function propUploadPhoto(f){if(!f)return;toast('Uploading photo…');
+  const img=await new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=rej;im.src=URL.createObjectURL(f)});
+  const sc=Math.min(1,1600/img.width),cv=document.createElement('canvas');cv.width=Math.round(img.width*sc);cv.height=Math.round(img.height*sc);
+  cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+  await api(`/api/properties/${PROP.id}/photo`,{method:'POST',body:{data_b64:cv.toDataURL('image/jpeg',.85)}});
+  PROPS=[];await openProperty(PROP.id);toast('Property photo updated');}
+async function propRemovePhoto(){if(!confirm('Remove this property photo? The header will show Street View or a map instead.'))return;
+  await api(`/api/properties/${PROP.id}/photo`,{method:'DELETE'});PROPS=[];await openProperty(PROP.id);}
 async function renderProperties(fetch){if(fetch||!PROPS.length)PROPS=await api('/api/properties');
   const q=($('#propSearch').value||'').toLowerCase();
   const ps=PROPS.filter(p=>!q||(p.name+' '+p.address+' '+(p.client||'')).toLowerCase().includes(q));
@@ -838,7 +849,7 @@ function insChip(ins){const m={ok:['ok','🛡 '],not_named:['bad','⚠️ '],unv
 const money=n=>'$'+Number(n).toLocaleString(undefined,{maximumFractionDigits:0});
 function renderProperty(){const p=PROP,mg=isMgr(),dis=mg?'':'disabled',open=p.dates.filter(d=>d.status==='open'),done=p.dates.filter(d=>d.status!=='open');
   $('#propPage').innerHTML=`<div class="row" style="margin:0 0 10px"><button class="b ghost" onclick="show('properties')">← All properties</button></div>
-  <div class="card" style="padding:0;overflow:hidden">${propBanner(p,190)}<div style="padding:14px 16px">
+  <div class="card" style="padding:0;overflow:hidden">${propBanner(p,190,true)}<div style="padding:14px 16px">
     <h2 style="margin:0 0 8px">${mg?`<input value="${esc(p.name)}" style="font:inherit;font-weight:600;width:100%" onchange="propPatch({name:this.value})">`:esc(p.name)}</h2>
     <div class="row" style="margin:0 0 10px;gap:6px">${p.spend_limit?`<span class="pchip" title="Applies to capital expenditures and non-emergency repairs — not normal operating expenses">💲 CapEx / non-emergency repairs over <b>${money(p.spend_limit)}</b> → owner approval</span>`:`<span class="pchip">💲 Owner approval threshold not set</span>`}${insChip(p.insurance)}${p.our_coi.status.state!=='ok'?ourChip(p.our_coi.status):''}</div>
     <div class="team-grid"><label>Address<input ${dis} value="${esc(p.address)}" onchange="propPatch({address:this.value})"></label>

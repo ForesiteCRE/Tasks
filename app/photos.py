@@ -66,6 +66,48 @@ def remove_upload(pid: int):
             pass
 
 
+def _decode(data_b64: str) -> tuple[bytes, str]:
+    data = base64.b64decode(data_b64.split(",")[-1])
+    if len(data) > MAX_BYTES:
+        raise ValueError("Photo is too large (8 MB max).")
+    ext = _kind(data)
+    if not ext:
+        raise ValueError("Please upload a JPG, PNG or WebP image.")
+    return data, ext
+
+
+def save_property_photo(prop_id: int, data_b64: str) -> str:
+    data, ext = _decode(data_b64)
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    name = f"property-{prop_id}-{secrets.token_hex(4)}.{ext}"
+    with open(os.path.join(UPLOAD_DIR, name), "wb") as f:
+        f.write(data)
+    remove_property_photo(prop_id)
+    with tx() as c:
+        c.execute("UPDATE properties SET photo_file=? WHERE id=?", (name, prop_id))
+    return name
+
+
+def remove_property_photo(prop_id: int):
+    with tx() as c:
+        r = c.execute("SELECT photo_file FROM properties WHERE id=?", (prop_id,)).fetchone()
+        c.execute("UPDATE properties SET photo_file=NULL WHERE id=?", (prop_id,))
+    if r and r["photo_file"]:
+        try:
+            os.remove(os.path.join(UPLOAD_DIR, os.path.basename(r["photo_file"])))
+        except FileNotFoundError:
+            pass
+
+
+def property_photo_file(prop_id: int) -> str | None:
+    with tx() as c:
+        r = c.execute("SELECT photo_file FROM properties WHERE id=?", (prop_id,)).fetchone()
+    if r and r["photo_file"]:
+        path = os.path.join(UPLOAD_DIR, os.path.basename(r["photo_file"]))
+        return path if os.path.exists(path) else None
+    return None
+
+
 def upload_file(pid: int) -> str | None:
     with tx() as c:
         r = c.execute("SELECT photo_path FROM projects WHERE id=?", (pid,)).fetchone()

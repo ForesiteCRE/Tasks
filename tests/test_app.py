@@ -1467,3 +1467,17 @@ def test_add_task_from_blink(mgr, staff):
     t = ids_task(tid)
     assert t["assignee_id"] == staff.me["id"] and t["property_id"] == prop["id"] and "Only managers" in r
     assert "property & project are optional" in services.handle_inbound("u-sam", "help")
+
+
+def test_property_photo(mgr, staff):
+    import base64
+    prop = ids(mgr.post("/api/properties", json={"address": "77 Photo Ave, San Antonio, TX"}))["id"]
+    png = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"0" * 64).decode()
+    assert staff.post(f"/api/properties/{prop}/photo", json={"data_b64": png}).status_code == 403
+    assert mgr.post(f"/api/properties/{prop}/photo", json={"data_b64": base64.b64encode(b"nope").decode()}).status_code == 400
+    name = ids(mgr.post(f"/api/properties/{prop}/photo", json={"data_b64": "data:image/png;base64," + png}))["photo_file"]
+    assert ids(mgr.get(f"/api/properties/{prop}"))["photo_file"] == name
+    assert mgr.get(f"/api/properties/{prop}/photo").status_code == 200
+    ids(mgr.delete(f"/api/properties/{prop}/photo"))
+    assert ids(mgr.get(f"/api/properties/{prop}"))["photo_file"] is None
+    assert mgr.get(f"/api/properties/{prop}/photo").status_code == 404

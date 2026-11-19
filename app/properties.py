@@ -83,6 +83,8 @@ def init():
         c.execute("""CREATE TABLE IF NOT EXISTS property_team(
             property_id INTEGER NOT NULL, role_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
             PRIMARY KEY(property_id, role_id))""")
+        if "photo_file" not in {r[1] for r in c.execute("PRAGMA table_info(properties)")}:
+            c.execute("ALTER TABLE properties ADD COLUMN photo_file TEXT")   # the property's own header photo
         if "property_id" not in {r[1] for r in c.execute("PRAGMA table_info(tasks)")}:
             # tasks without a project can still belong to a property (critical-date tasks, one-off work)
             c.execute("ALTER TABLE tasks ADD COLUMN property_id INTEGER")
