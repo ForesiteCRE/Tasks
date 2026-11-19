@@ -1133,7 +1133,9 @@ async function coiDel(id){if(!confirm('Delete this certificate?'))return;await a
 
 /* ---------- insurance follow-up emails ---------- */
 let EMAILS=[],GMAIL=false;
-function deepLink(){if(!location.hash.startsWith('#emails'))return;const g=(location.hash.match(/gmail=([a-z-]+)/)||[])[1];show('emails');
+function deepLink(){const m=location.hash.match(/^#(task|project|property|vendor|view)-([\w-]+)$/);
+  if(m){history.replaceState(null,'',location.pathname);lisaGo('#'+m[1]+'-'+m[2]);return;}
+  if(!location.hash.startsWith('#emails'))return;const g=(location.hash.match(/gmail=([a-z-]+)/)||[])[1];show('emails');
   if(g)toast({connected:'✅ Gmail connected — drafts will go to your Gmail Drafts','wrong-account':'Please connect your own @foresitecre.com Gmail',failed:'Gmail connection failed — try again',cancelled:'Gmail connection cancelled'}[g]||'');
   history.replaceState(null,'',location.pathname);}
 async function renderEmails(){const r=await api('/api/emails'+($('#emAll')&&$('#emAll').checked?'?all=1':''));EMAILS=r.drafts;GMAIL=r.gmail_connected;

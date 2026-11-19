@@ -197,6 +197,19 @@ def handle_inbound(blink_user_id: str, text: str, files: list[dict] | None = Non
         blink.send_dm(blink_user_id, reply)
         return reply
 
+    # Questions about the app or the data → L.I.S.A. (updates like "done 12" keep going to the task parser)
+    if rule is None and helpbot_wanted(text or "") and chat.ai_enabled():
+        from . import helpbot
+        hist = []
+        for h in chat.recent(u["id"]):
+            if h["user_text"]:
+                hist += [{"role": "user", "content": h["user_text"]}, {"role": "assistant", "content": h["reply"] or ""}]
+        ans = helpbot.ask(hist + [{"role": "user", "content": text}], dict(u), "blink")["reply"]
+        reply = "🙋 **L.I.S.A.:** " + blink_links(ans)
+        chat.remember(u["id"], text, reply)
+        blink.send_dm(blink_user_id, reply)
+        return reply
+
     mine = open_tasks_for(u["id"])
     history = chat.recent(u["id"])
     parsed = rule or chat.parse_with_claude(text, mine, history, _referenced_tasks(text, history))
@@ -280,6 +293,36 @@ def handle_inbound(blink_user_id: str, text: str, files: list[dict] | None = Non
     chat.remember(u["id"], text, reply)
     blink.send_dm(blink_user_id, reply)
     return reply
+
+
+_Q_START = re.compile(r"^\s*(how|what|what's|whats|where|who|who's|whos|when|which|why|can|could|does|do|is|are|should|tell me|show me|"
+                      r"find|list|explain|help)\b", re.I)
+_UPDATE_WORDS = re.compile(r"\b(done|finished|completed|complete|blocked|started|starting|working on|sent|submitted|waiting on|"
+                           r"took|spent|reopen)\b", re.I)
+
+
+def helpbot_wanted(text: str) -> bool:
+    """Is this a question for L.I.S.A. rather than a task update?"""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if re.match(r"^\s*@?lisa\b|^\s*l\.i\.s\.a\b", t, re.I):
+        return True                                   # "Lisa, how do I…" always goes to her
+    if re.search(r"#\d+|^\s*\d+\b", t) and not t.endswith("?"):
+        return False                                  # mentions a task number → an update
+    if _UPDATE_WORDS.search(t) and not t.endswith("?"):
+        return False
+    if len(t.split()) < 2 and not t.endswith("?"):
+        return False                                  # "list", "help" etc. are Blink commands
+    return t.endswith("?") or bool(_Q_START.match(t))
+
+
+def blink_links(text: str) -> str:
+    """L.I.S.A.'s in-app links (#task-12) → web links people can tap in Blink."""
+    url = os.getenv("PUBLIC_URL", "").rstrip("/")
+    def sub(m):
+        return f"{m.group(1)} ({url}/{m.group(2)})" if url else m.group(1)
+    return re.sub(r"\[([^\]]+)\]\((#(?:task|project|property|vendor|view)-[\w-]+)\)", sub, text)
 
 
 def _referenced_tasks(text: str, history: list[dict]) -> list[dict]:
