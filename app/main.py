@@ -1678,7 +1678,7 @@ input[name=name],textarea{{width:100%;font:inherit;padding:10px;border:1px solid
 <h1>{h(pj['name'])}</h1><div class="sub">{h(pj.get('address') or pj.get('property') or '')}{' · ' + h(pj['client']) if pj.get('client') else ''}</div>
 {f'<div class="err">{h(msg)}</div>' if msg else ''}
 <form method="post"><div class="card"><b>Bids received</b>{rows_html}
-{f'<div class="warn">The recommended bid is over the {m(pj["spend_limit"])} amount that needs your approval.</div>' if over else ''}</div>
+{f'<div class="warn">This is above the {m(pj["spend_limit"])} threshold for capital expenditures and non-emergency repairs that you asked us to bring to you for approval.</div>' if over else ''}</div>
 <div class="card"><b>Property manager's recommendation</b><div class="rec-text">{h(a['recommendation'] or '')}</div></div>
 <div class="card">{result}{form}</div></form>
 <div class="sub" style="text-align:center">Questions? Contact {h(a['requested_by_name'])} · <a href="mailto:{h(a['requested_by_email'])}">{h(a['requested_by_email'])}</a></div>

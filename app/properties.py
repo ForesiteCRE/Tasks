@@ -566,7 +566,7 @@ EXTRACT_SCHEMA = {
                 "quote": {"type": "string", "description": "the short wording this comes from"},
                 "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
             }}},
-        "spend_limit": {"type": "number", "description": "max the manager may spend on one item/repair without owner approval, in dollars; 0 if not stated"},
+        "spend_limit": {"type": "number", "description": "dollar threshold above which capital expenditures / non-emergency repairs need the owner's prior approval (operating expenses are excluded); 0 if not stated"},
         "report_notes": {"type": "string", "description": "how/when the owner wants reports: contents, format, recipients, deadlines. Empty if none."},
         "bank_name": {"type": "string", "description": "bank holding the property's operating/trust account, if named; else empty"},
         "contacts": {"type": "array", "items": {
@@ -589,7 +589,7 @@ EXTRACT_SYSTEM = """You help Foresite Real Estate (a commercial property manager
 
 Find:
 - Property-level critical dates: tax protest deadline, tax payment due, insurance renewal/expiration, owner report due dates (monthly/quarterly — give the next one and set repeat), annual budget due, CAM reconciliation due, lender reporting, management agreement term/renewal/termination notice, required inspections. Use exact dates; when the document gives a rule ("by the 15th of each month", "60 days after year end"), compute the next occurrence on or after today and say how in notes. Skip anything that would be a guess.
-- spend_limit: the most the manager may spend without the owner's prior approval (per item/repair/contract — say which in report_notes if it matters). 0 if not stated.
+- spend_limit: the dollar threshold above which capital expenditures and non-emergency repairs need the owner's prior approval. It normally excludes routine operating expenses; note in report_notes exactly what it covers (per item / per contract, emergency exceptions). 0 if not stated.
 - report_notes: what the owner wants in reports and how (format, contents, who receives them, when).
 - bank_name: the bank where the property's operating / trust / security deposit accounts are held. Never copy account numbers.
 - contacts: owner contact, the owner's asset manager, CPA/accountant, banker at the property's bank (role Bank), insurance agent/broker, lender, tax protest company/property tax consultant, lawyer/attorney — only people/companies actually named.

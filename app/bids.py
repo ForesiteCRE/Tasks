@@ -260,7 +260,8 @@ def draft_recommendation(project_id: int) -> str:
                 system=("You are a commercial property manager at Foresite Real Estate writing a short recommendation to the property "
                         "owner on which bid to accept. Plain, professional, 4–7 sentences, no headings or bullet points. Compare price, "
                         "scope differences/exclusions, timeline, warranty and the vendor's track record with our team. Recommend one bid "
-                        "(the one marked as recommended, if any) and say why; mention anything the owner should know. Don't invent facts."),
+                        "(the one marked as recommended, if any) and say why; mention anything the owner should know. Don't invent facts. "
+                        "If an owner-approval threshold is given, it applies to capital expenditures and non-emergency repairs only."),
                 messages=[{"role": "user", "content": f"Project: {pj['name']} at {pj.get('property') or 'the property'} "
                                                       f"(owner: {pj.get('client') or 'unknown'}).\nBids:\n" + "\n".join(lines)}])
             text = next((b.text for b in resp.content if b.type == "text"), "").strip()
