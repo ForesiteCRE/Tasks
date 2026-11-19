@@ -1345,7 +1345,7 @@ const ago2=ts=>{const d=new Date(ts.replace(' ','T')+'Z'),m=Math.round((Date.now
 let WINS_ALL=false;
 async function loadFunTeam(){const el=$('#funTeam');if(!el)return;const r=await api('/api/fun/team');
   r.wins=[...r.wins.filter(w=>w.kind!=='task'),...r.wins.filter(w=>w.kind==='task')];   // highlights (🏆 🎉 badges 🔥) before routine task check-offs
-  const more=r.wins.length>8&&!WINS_ALL;if(more)r.wins=r.wins.slice(0,8);
+  const more=r.wins.length>5&&!WINS_ALL;if(more)r.wins=r.wins.slice(0,5);
   const strip=r.today.length?`<div class="teamstrip">${r.today.map(u=>`<div class="tsp" title="${esc(u.name)}: ${u.total?u.done+' of '+u.total+' due today done':u.done_today+' done today'}${u.streak?' · '+u.streak+'-day streak':''}">
       <div class="ringwrap sm">${ringSvg(u.pct,52,u.cleared)}<div class="ringtxt">${esc((u.name.split(' ')[0]||'?').slice(0,1))}${esc((u.name.split(' ')[1]||'').slice(0,1))}</div></div>
       <div class="tsn">${esc(u.name.replace(' (demo)','').split(' ')[0])} ${esc((u.name.replace(' (demo)','').split(' ')[1]||'').slice(0,1))}</div><div class="tss">${u.total?u.done+'/'+u.total:u.done_today+' ✓'}${u.streak?' · 🔥'+u.streak:''}</div></div>`).join('')}</div>`:'';
