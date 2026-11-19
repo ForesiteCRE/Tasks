@@ -188,6 +188,15 @@ def handle_inbound(blink_user_id: str, text: str, files: list[dict] | None = Non
         blink.send_dm(blink_user_id, reply)
         return reply
 
+    # "add task …" — property and project optional; managers can assign anyone
+    from . import newtask
+    desc = None if chat.parse_rules(text or "") else newtask.wanted(text or "")
+    if desc is not None:
+        reply = newtask.handle(dict(u), desc)
+        chat.remember(u["id"], text, reply)
+        blink.send_dm(blink_user_id, reply)
+        return reply
+
     # Managers can start a project by chatting (document, pasted terms, or "new project for ...").
     # Task commands like "done 12" still work in the middle of that conversation.
     rule = chat.parse_rules(text or "")

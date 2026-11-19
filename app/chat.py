@@ -24,7 +24,8 @@ STATUS_WORDS = {
 HELP = (
     "Reply with an update, e.g.\n"
     "• `done 12`\n• `12 in progress`\n• `blocked 7 waiting on lender`\n"
-    "• `note 5 called the tenant`\n• `comment 5 @sam can you send the photos?`\n• `list` – show your open tasks"
+    "• `note 5 called the tenant`\n• `comment 5 @sam can you send the photos?`\n• `list` – show your open tasks\n"
+    "• `add task call the city about the sign permit at 777 Sonterra for Taylor by Friday` – property & project are optional"
 )
 
 

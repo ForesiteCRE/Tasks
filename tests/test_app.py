@@ -1429,3 +1429,33 @@ def test_task_on_a_property_without_a_project(mgr):
     ids(mgr.patch(f"/api/tasks/{tid}", json={"property_id": 0}))
     assert tid not in [x["id"] for x in ids(mgr.get(f"/api/properties/{prop}"))["tasks"]]
     assert mgr.post("/api/tasks", json={"title": "x", "property_id": 999999}).status_code == 400
+
+
+def test_add_task_from_blink(mgr, staff):
+    import re
+    from app.db import tx
+    with tx() as c:
+        c.execute("UPDATE users SET blink_user_id='u-boss' WHERE id=?", (mgr.me["id"],))
+    prop = ids(mgr.post("/api/properties", json={"address": "66 Blink Add Way, Austin, TX"}))
+    proj = ids(mgr.post("/api/projects", json={"name": "Blink add proj", "property": "66 Blink Add Way, Austin, TX"}))["id"]
+    SENT.clear()
+    CLAUDE.append({"title": "Call the city about the sign permit", "property_id": prop["id"], "project_id": 0,
+                   "assignee_id": staff.me["id"], "due_date": "2031-01-10", "estimate": "30m"})
+    r = services.handle_inbound("u-boss", "add task call the city about the sign permit at 66 Blink Add for Sam by Jan 10")
+    tid = int(re.search(r"#(\d+)", r)[1])
+    assert "🏢 66 Blink Add Way" in r and "Sam Patel" in r and "1 open project" in r
+    t = ids_task(tid)
+    assert t["assignee_id"] == staff.me["id"] and t["property_id"] == prop["id"] and t["due_date"] == "2031-01-10"
+    assert any(b == "u-sam" and f"#{tid}" in m for b, m in SENT)                       # assignee told in Blink
+    # no property or project → still fine, and the reply says so
+    CLAUDE.append({"title": "Order toner", "property_id": 0, "project_id": 0, "assignee_id": 0, "due_date": "", "estimate": ""})
+    r = services.handle_inbound("u-sam", "add task order toner")
+    assert "Added #" in r and "optional" in r and "👤 you" in r
+    # staff can't put tasks in projects or assign others
+    CLAUDE.append({"title": "Fix gate", "property_id": prop["id"], "project_id": proj, "assignee_id": mgr.me["id"],
+                   "due_date": "", "estimate": ""})
+    r = services.handle_inbound("u-sam", "task: fix gate on Blink add proj for Bethany")
+    tid = int(re.search(r"#(\d+)", r)[1])
+    t = ids_task(tid)
+    assert t["assignee_id"] == staff.me["id"] and t["property_id"] == prop["id"] and "Only managers" in r
+    assert "property & project are optional" in services.handle_inbound("u-sam", "help")
