@@ -338,7 +338,8 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 </section>
 
 <section id="v-vendors" class="hidden">
-  <div class="pagehead"><h2>Vendors</h2><button class="b" onclick="vendorForm()">+ Add vendor</button></div>
+  <div class="pagehead"><h2>Vendors</h2><div class="row" style="margin:0"><button class="b ghost mgr" id="venSampleBtn" onclick="venSamples(true)">🧪 Load sample vendors</button><button class="b" onclick="vendorForm()">+ Add vendor</button></div></div>
+  <div id="venSampleBar" class="card hidden" style="display:flex;justify-content:space-between;align-items:center;gap:10px;background:#fffbea;border-color:#f5e3a3"><span>🧪 <b id="venSampleN"></b> sample vendors are showing (made-up companies with sample reviews) — great for trying ratings, warnings and property slots.</span><button class="b ghost" onclick="venSamples(false)">Remove sample vendors</button></div>
   <div class="row" style="margin-bottom:12px"><input type="search" id="venSearch" placeholder="Search vendors…" oninput="renderVendors()" style="flex:1;min-width:180px">
     <select id="venTrade" onchange="renderVendors(true)"><option value="">All trades</option></select></div>
   <div id="venList" class="vengrid"></div>
@@ -831,11 +832,15 @@ const priceTag=(v,long)=>v.price?`<span class="price" title="${esc(v.price_label
 const coiChip=k=>{const m={ok:['ok','🛡'],expiring:['warn','⏳'],unverified:['warn','🛡'],missing:['bad','⚠️'],expired:['bad','⚠️'],not_named:['bad','⚠️']}[k.state]||['warn',''];
   return `<span class="pchip sm ${m[0]}" title="${esc(k.note||'')}">${m[1]} ${esc(k.label)}</span>`;};
 const vbadge=v=>v.badge?`<span class="vbadge ${v.badge}" title="${esc(v.warning||'')}">${esc(v.badge_label)}</span>`:'';
-async function loadVendors(){const r=await api('/api/vendors');VENDORS=r.vendors;TRADES=r.trades;return VENDORS;}
+let VEN_SAMPLES=0;
+async function loadVendors(){const r=await api('/api/vendors');VENDORS=r.vendors;TRADES=r.trades;VEN_SAMPLES=r.samples||0;return VENDORS;}
+async function venSamples(load){if(!load&&!confirm('Remove all sample vendors (and their sample reviews, and any property/project slots they fill)? Vendors you added are not affected.'))return;
+  const r=await api('/api/vendors/samples',{method:load?'POST':'DELETE'});toast(load?`Added ${r.added} sample vendors`:`Removed ${r.removed} sample vendors`);renderVendors(true);}
 async function renderVendors(fetch){if(fetch||!VENDORS.length)await loadVendors();
+  $('#venSampleBar').classList.toggle('hidden',!(VEN_SAMPLES&&isMgr()));$('#venSampleN').textContent=VEN_SAMPLES;$('#venSampleBtn').classList.toggle('hidden',!!VEN_SAMPLES||!isMgr());
   const tsel=$('#venTrade'),tv=tsel.value;tsel.innerHTML='<option value="">All trades</option>'+TRADES.map(t=>`<option ${t===tv?'selected':''}>${esc(t)}</option>`).join('');
   const q=($('#venSearch').value||'').toLowerCase(),list=VENDORS.filter(v=>(!tv||v.trades.includes(tv))&&(!q||(v.name+' '+v.trades.join(' ')+' '+(v.contact_name||'')).toLowerCase().includes(q)));
-  $('#venList').innerHTML=list.map(v=>`<div class="pcard vcard" onclick="openVendor(${v.id})"><div class="row" style="justify-content:space-between;margin:0;align-items:flex-start"><h4 style="margin:0">${esc(v.name)}</h4>${vbadge(v)}</div>
+  $('#venList').innerHTML=list.map(v=>`<div class="pcard vcard" onclick="openVendor(${v.id})"><div class="row" style="justify-content:space-between;margin:0;align-items:flex-start"><h4 style="margin:0">${esc(v.name)}${v.is_sample?' <span class="pill" style="background:#fff3bf;color:#8a6d00">sample</span>':''}</h4>${vbadge(v)}</div>
     <div class="vtr">${v.trades.map(t=>`<span class="chip2">${esc(t)}</span>`).join('')||'<span class="mute">No trade set</span>'}</div>
     <div style="margin:6px 0">${rating(v)} ${priceTag(v)}</div>
     <div class="sub">${v.current_properties.length?'Used at '+v.current_properties.map(p=>esc(p.name)).filter((x,i,a)=>a.indexOf(x)===i).join(', '):'Not used at any property right now'}${v.past_count?` · ${v.past_count} past`:''}</div>

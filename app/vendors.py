@@ -29,6 +29,8 @@ def init():
         c.execute("""CREATE TABLE IF NOT EXISTS vendor_reviews(
             id INTEGER PRIMARY KEY, vendor_id INTEGER NOT NULL, user_id INTEGER, property_id INTEGER, project_id INTEGER,
             stars INTEGER NOT NULL, note TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')))""")
+        if "is_sample" not in {r[1] for r in c.execute("PRAGMA table_info(vendors)")}:
+            c.execute("ALTER TABLE vendors ADD COLUMN is_sample INTEGER NOT NULL DEFAULT 0")
         if "price" not in {r[1] for r in c.execute("PRAGMA table_info(vendor_reviews)")}:
             c.execute("ALTER TABLE vendor_reviews ADD COLUMN price INTEGER")   # 1 ($, budget) … 5 ($$$$$, premium)
         c.execute("""CREATE TABLE IF NOT EXISTS property_vendors(
@@ -472,3 +474,89 @@ def delete_coi(coi_id: int):
         properties._remove_file(d["path"])
         if d["date_id"]:
             properties.delete_date(d["date_id"])
+
+
+# ---------- sample vendors (made-up companies, so no real business gets invented reviews) ----------
+
+SAMPLES = [
+    # name, trades, contact, phone, notes, [(stars, price, note), ...]
+    ("Green Leaf Landscaping", ["Landscaping"], "Marco Ruiz", "(210) 555-0301", "Weekly service; irrigation checks included.",
+     [(5, 4, "Fixed an irrigation leak same day; beds look great."), (5, 4, "Reliable every week, sends photos after each visit."), (4, 5, "Pricier, but worth it.")]),
+    ("Lone Star Lawn Care", ["Landscaping"], "Dale Pruitt", "(210) 555-0302", "",
+     [(2, 2, "Missed two mowing visits in July and slow to call back."), (3, 1, "Cheap, but crews are inconsistent.")]),
+    ("Hill Country Grounds", ["Landscaping", "Parking lot / paving"], "Ana Delgado", "(830) 555-0303", "Also does seasonal color and sweeping.",
+     [(4, 3, "Good value; sweeping crew is early and thorough.")]),
+    ("Alamo City Waste & Recycling", ["Trash / recycling"], "Kim Tran", "(210) 555-0305", "2x weekly pickup, 8-yard containers.",
+     [(4, 3, "Billing errors twice this year, service itself is fine.")]),
+    ("Alamo Power Wash", ["Power washing"], "Jess Ortega", "(210) 555-0306", "Quarterly storefronts + sidewalks; works after hours.",
+     [(5, 3, "Storefronts spotless, worked after closing as asked."), (5, 3, "")]),
+    ("Spotless Exteriors", ["Power washing", "Painting"], "Ray Kim", "(512) 555-0311", "",
+     [(3, 2, "Fine for sidewalks; left overspray on a storefront once.")]),
+    ("Hill Country Roofing", ["Roofing"], "Brian Cole", "(210) 555-0307", "Leak calls within 24 hrs; photo reports.",
+     [(4, 4, "Good leak repair with photo report."), (4, 4, "Thorough inspection before the takeover.")]),
+    ("Summit Roof Systems", ["Roofing"], "Teresa Lunn", "(512) 555-0312", "",
+     [(2, 5, "Quoted a full replacement when a patch was enough.")]),
+    ("Alamo Air Mechanical", ["HVAC"], "Rita Shah", "(210) 555-0309", "Preventive maintenance contracts; 24/7 line.",
+     [(5, 4, "PM visits on schedule, clear quotes."), (5, 4, "Came out on a Sunday for a rooftop unit.")]),
+    ("Cool Breeze HVAC", ["HVAC"], "Tony Vega", "(512) 555-0308", "",
+     [(1, 4, "Billed for a compressor replacement that wasn't done. Disputed."), (3, 3, "Fine for small service calls.")]),
+    ("River City Plumbing", ["Plumbing"], "Joe Medina", "(210) 555-0313", "Jetting and backflow testing too.",
+     [(5, 3, "Cleared a main line at 9pm, fair price."), (4, 3, "Backflow certs on time.")]),
+    ("Bexar Pest Pros", ["Pest control"], "Luis Garza", "(210) 555-0310", "Monthly service; termite inspections.",
+     [(4, 2, "Responsive to the restaurant tenant's calls.")]),
+    ("Volt Electric Services", ["Electrical", "Signage"], "Dana Pierce", "(210) 555-0314", "Parking lot lighting, sign repairs.",
+     [(4, 3, "Relamped the whole lot in one night."), (3, 4, "Good work, slow to send invoices.")]),
+    ("Spark & Wire Electric", ["Electrical"], "Omar Haddad", "(512) 555-0315", "",
+     [(2, 2, "Didn't pull a permit for a panel change — had to redo.")]),
+    ("Sunrise Janitorial", ["Janitorial"], "Lupe Flores", "(210) 555-0316", "Nightly common areas; day porter available.",
+     [(4, 2, "Consistent; restrooms always stocked.")]),
+    ("Guardian Fire & Safety", ["Fire & life safety"], "Ken Morris", "(210) 555-0317", "Sprinkler, alarm and extinguisher inspections.",
+     [(5, 3, "Never miss an annual inspection; reports go straight to the city.")]),
+    ("Texas Paving & Striping", ["Parking lot / paving"], "Cody Wells", "(210) 555-0318", "",
+     [(4, 4, "Crack seal and restripe done over a weekend.")]),
+    ("SecureWatch Patrol", ["Security"], "Andre Little", "(210) 555-0319", "Nightly patrols; camera monitoring add-on.",
+     [(3, 3, "Patrol logs are spotty.")]),
+    ("Lift Pro Elevator", ["Elevator"], "Sara Novak", "(512) 555-0320", "Monthly maintenance; state inspection coordination.",
+     [(4, 5, "Expensive but responsive; entrapment call in 40 min.")]),
+    ("Keys on Call Locksmith", ["Locksmith"], "Hector Ruiz", "(210) 555-0321", "Rekeys and master key systems.",
+     [(5, 2, "Rekeyed a suite in an hour on move-out day.")]),
+    ("Brazos General Contractors", ["General contractor"], "Megan Hart", "(210) 555-0322", "Tenant finish-outs, small CapEx.",
+     [(4, 4, "On budget for the Suite 110 finish-out."), (3, 4, "Punch list took three weeks.")]),
+    ("CPS Energy", ["Utilities – Electric", "Utilities – Gas"], "Commercial accounts", "(210) 353-2222", "Utility (no ratings).", []),
+    ("SAWS", ["Utilities – Water"], "Commercial service", "(210) 704-7297", "Utility (no ratings).", []),
+]
+
+
+def load_samples(user_id=None) -> dict:
+    """Add the sample vendors (skips any already on the list) with sample reviews."""
+    added = 0
+    for name, trades, contact, phone, notes, reviews in SAMPLES:
+        with tx() as c:
+            if c.execute("SELECT 1 FROM vendors WHERE lower(name)=lower(?)", (name,)).fetchone():
+                continue
+            vid = c.execute("""INSERT INTO vendors(name, trades, contact_name, phone, notes, created_by, is_sample)
+                               VALUES(?,?,?,?,?,?,1)""", (name, _clean_trades(trades), contact, phone, notes or None, user_id)).lastrowid
+        for stars, price, note in reviews:
+            add_review(vid, user_id, stars, (note + " (sample review)") if note else "(sample review)", price=price)
+        added += 1
+    return {"added": added}
+
+
+def remove_samples() -> dict:
+    from . import properties
+    with tx() as c:
+        ids = [r[0] for r in c.execute("SELECT id FROM vendors WHERE is_sample=1")]
+        for vid in ids:
+            for k in c.execute("SELECT path, date_id FROM vendor_cois WHERE vendor_id=?", (vid,)).fetchall():
+                properties._remove_file(k["path"])
+                if k["date_id"]:
+                    c.execute("DELETE FROM critical_dates WHERE id=?", (k["date_id"],))
+            for t in ("vendor_reviews", "property_vendors", "project_vendors", "vendor_cois"):
+                c.execute(f"DELETE FROM {t} WHERE vendor_id=?", (vid,))
+            c.execute("DELETE FROM vendors WHERE id=?", (vid,))
+    return {"removed": len(ids)}
+
+
+def sample_count() -> int:
+    with tx() as c:
+        return c.execute("SELECT COUNT(*) FROM vendors WHERE is_sample=1").fetchone()[0]

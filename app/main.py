@@ -1211,7 +1211,23 @@ class ProjVendorIn(BaseModel):
 
 @app.get("/api/vendors")
 def list_vendors(trade: str | None = None, q: str | None = None, archived: bool = False):
-    return {"vendors": vendors.list_all(trade, q, archived), "trades": vendors.TRADES}
+    return {"vendors": vendors.list_all(trade, q, archived), "trades": vendors.TRADES, "samples": vendors.sample_count()}
+
+
+@app.post("/api/vendors/samples")
+def load_sample_vendors(request: Request):
+    _require_manager(request)
+    out = vendors.load_samples(_me_id(request))
+    audit.log(_me_id(request), "loaded sample vendors", "vendor", None, f"{out['added']} vendors")
+    return out
+
+
+@app.delete("/api/vendors/samples")
+def remove_sample_vendors(request: Request):
+    _require_manager(request)
+    out = vendors.remove_samples()
+    audit.log(_me_id(request), "removed sample vendors", "vendor", None, f"{out['removed']} vendors")
+    return out
 
 
 @app.post("/api/vendors")

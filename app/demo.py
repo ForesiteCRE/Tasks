@@ -228,7 +228,7 @@ def load(me_id: int) -> dict:
             lone = vend("Lone Star Lawn Care", ["Landscaping"], "Dale Pruitt", "(210) 555-0302")
             cps = vend("CPS Energy", ["Utilities – Electric", "Utilities – Gas"], "Commercial accounts", "(210) 353-2222")
             saws = vend("SAWS", ["Utilities – Water"], "Commercial service", "(210) 704-7297")
-            wm = vend("Waste Management", ["Trash / recycling"], "Kim Tran", "(210) 555-0305", "2x weekly pickup, 8yd containers.")
+            wm = vend("Alamo City Waste & Recycling", ["Trash / recycling"], "Kim Tran", "(210) 555-0305", "2x weekly pickup, 8yd containers.")
             wash = vend("Alamo Power Wash", ["Power washing"], "Jess Ortega", "(210) 555-0306", "Quarterly storefronts + sidewalks.")
             roof = vend("Hill Country Roofing", ["Roofing"], "Brian Cole", "(210) 555-0307")
             hvac = vend("Cool Breeze HVAC", ["HVAC"], "Tony Vega", "(512) 555-0308")

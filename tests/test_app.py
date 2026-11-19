@@ -1041,3 +1041,16 @@ def test_department_heads_get_escalations(mgr, staff):
     s = ids(mgr.get("/api/automations"))
     assert s["dept_overdue_days"] == "3" and ids(mgr.put("/api/automations", json={"dept_overdue_days": 5}))["dept_overdue_days"] == "5"
     ids(mgr.put("/api/automations", json={"dept_overdue_days": 3}))
+
+
+def test_sample_vendors_load_and_remove(mgr, staff):
+    assert staff.post("/api/vendors/samples").status_code == 403
+    r = ids(mgr.post("/api/vendors/samples"))
+    assert r["added"] >= 15
+    assert ids(mgr.post("/api/vendors/samples"))["added"] == 0                       # no duplicates
+    vs = ids(mgr.get("/api/vendors"))
+    names = {v["name"]: v for v in vs["vendors"]}
+    assert vs["samples"] >= 15 and names["River City Plumbing"]["avg"] and names["Spark & Wire Electric"]["badge"] == "bad"
+    assert {t for v in vs["vendors"] for t in v["trades"]} >= {"Plumbing", "Electrical", "Janitorial", "Elevator", "Security"}
+    assert ids(mgr.delete("/api/vendors/samples"))["removed"] == vs["samples"]
+    assert ids(mgr.get("/api/vendors"))["samples"] == 0
