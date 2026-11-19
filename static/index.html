@@ -220,7 +220,12 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 .ptool{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 10px}.ptool input[type=search]{flex:1;min-width:180px}.ptool select{width:auto}
 .pchips{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px}.pchipf{border:1px solid var(--line);background:#fff;border-radius:99px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer;color:var(--ink)}
 .pchipf span{color:var(--mute);font-size:12px;margin-left:2px}.pchipf.on{background:var(--acc);border-color:var(--acc);color:#fff}.pchipf.on span{color:#e6f2f8}
-.pgroup{background:var(--card,#fff);border:1px solid var(--line);border-radius:10px;margin:0 0 12px;overflow:hidden}
+.pgroup{background:var(--card,#fff);border:1px solid var(--line);border-left:5px solid var(--pc,#9aa5b1);border-radius:10px;margin:0 0 12px;overflow:hidden}
+.pgroup .pghead{background:var(--pt,#fafbfc)!important}.pgroup .bar i,.bcard .bar i{background:var(--pc,#8bc34a)}
+.pav{width:30px;height:30px;border-radius:8px;background:var(--pc,#9aa5b1);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;letter-spacing:.02em;flex:none}
+.pdot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--pc,#9aa5b1);margin-right:5px;vertical-align:1px}
+.ptype{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--tt);color:var(--tc);white-space:nowrap;margin-right:6px;vertical-align:2px}
+.bcard{border-left:4px solid var(--pc,var(--line))!important}.bcard .bprop{display:inline-block;font-size:12px;font-weight:600;color:var(--pc);background:var(--pt);padding:1px 8px;border-radius:99px;margin-top:4px}
 .pghead{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 14px;cursor:pointer;background:#fafbfc}.pgroup.open .pghead{border-bottom:1px solid var(--line)}
 .prow{display:grid;grid-template-columns:minmax(200px,2.2fr) minmax(120px,1fr) minmax(150px,1.2fr) minmax(120px,1fr);gap:12px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);cursor:pointer}
 .prow:last-child{border-bottom:0}.prow:hover{background:#f6f9fb}.prow.ph{cursor:default;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);padding:6px 14px}.prow.ph:hover{background:none}
@@ -663,9 +668,19 @@ function projMatches(p,S){const q=($('#pSearch').value||'').toLowerCase();
   const live=p.status!=='done'||(PV==='board'&&S.recentDone);   // the board's Done column shows the last 30 days
   return {active:live,mine:live&&S.mine,attention:p.status!=='done'&&(S.over||S.blocked),waiting:p.approval==='pending',
     recurring:!!p.recurrence_id,finished:p.status==='done',all:true}[PF];}
+const PCOL=[['#2f7ed8','#eaf2fc'],['#e8590c','#fff1e6'],['#2b8a3e','#e9f6ec'],['#9c36b5','#f6ebfa'],['#c2255c','#fdebf1'],['#0c8599','#e3f6f8'],['#b08900','#fdf6dd'],['#5f3dc4','#efebfc'],['#d6336c','#fdeef4'],['#37b24d','#ecf8ee'],['#1864ab','#e6f0fa'],['#a61e4d','#fbe9ef']];
+function propColor(p){const k=p.property_id?+p.property_id:[...(p.property||p.address||'')].reduce((h,c)=>(h*31+c.charCodeAt(0))>>>0,7);
+  if(!p.property_id&&!(p.property||p.address))return ['#9aa5b1','#f3f5f7'];return PCOL[(k-1+PCOL.length)%PCOL.length];}
+const propAbbr=l=>{const w=(l||'').split(/[\s,–-]+/).find(x=>/^[A-Za-z]{2,}/.test(x)&&!/^(N|S|E|W|NE|NW|SE|SW)$/i.test(x))||l||'?';return w.slice(0,2).replace(/^./,c=>c.toUpperCase());};
+const pcVars=c=>`--pc:${c[0]};--pt:${c[1]}`;
+const PTYPES=[[/close|month-end/i,'📊','Close','#1864ab','#e7f0fb'],[/onboard|takeover/i,'🤝','Onboarding','#2b8a3e','#e9f6ec'],[/sale|hand ?off/i,'🏷','Sale','#c2255c','#fdebf1'],
+  [/move-in/i,'🔑','Move-in','#0c8599','#e3f6f8'],[/move-out/i,'📦','Move-out','#e8590c','#fff1e6'],[/renewal/i,'✍️','Renewal','#5f3dc4','#efebfc'],[/cam/i,'🧮','CAM','#9c36b5','#f6ebfa'],
+  [/budget/i,'💰','Budget','#b08900','#fdf6dd'],[/tax/i,'🏛','Tax','#495057','#eef0f2'],[/inspection/i,'🔍','Inspection','#0b7285','#e3f4f6'],[/year-end|1099/i,'📅','Year-end','#1864ab','#e7f0fb'],
+  [/listing|leasing|lease/i,'📣','Leasing','#d6336c','#fdeef4'],[/roof|hvac|repair|replace|parking|paint|capex/i,'🛠','CapEx','#7048e8','#f0ecfd']];
+function projType(p){const t=PTYPES.find(x=>x[0].test(p.name));return t?`<span class="ptype" style="--tc:${t[3]};--tt:${t[4]}">${t[1]} ${t[2]}</span>`:'';}
 function projRow(p,S){const who=S.nxt?(USERS.find(u=>u.id===S.nxt.assignee_id)||{}).name:'';
   return `<div class="prow" id="pc${p.id}" onclick="openProject(${p.id})">
-    <div class="pn"><b>${esc(p.name)}</b>${p.is_sample?' <span class="pill" style="background:#fff3bf;color:#8a6d00">sample</span>':''}${p.recurrence_id?' <span title="Repeats">🔁</span>':''}</div>
+    <div class="pn">${projType(p)}<b>${esc(p.name)}</b>${p.is_sample?' <span class="pill" style="background:#fff3bf;color:#8a6d00">sample</span>':''}${p.recurrence_id?' <span title="Repeats">🔁</span>':''}</div>
     <div class="pp"><div class="bar"><i style="width:${S.pct}%"></i></div><span class="mute">${S.done}/${S.total}</span></div>
     <div class="pd">${p.status==='done'?'<span class="mute">finished</span>':S.nxt?`<span class="${S.nxt.due_date<today()?'over':''}">${fmtDate(S.nxt.due_date)}</span> <span class="mute">· ${esc((who||'Unassigned').split(' ')[0])}</span><div class="sub">${esc(S.nxt.title)}</div>`:'<span class="mute">no due dates</span>'}</div>
     <div class="pf">${S.over?`<span class="risk hi">${S.over} overdue</span>`:''}${S.blocked?`<span class="risk md">${S.blocked} blocked</span>`:''}${p.approval==='pending'?'<span class="chip2">⏳ owner approval</span>':p.approval==='approved'?'<span class="chip2">✅ approved</span>':p.approval==='changes_requested'?'<span class="chip2">✏️ changes requested</span>':''}${p.status==='done'?'<span class="vbadge good">✅ done</span>':''}</div></div>`;}
@@ -683,18 +698,18 @@ async function renderProjects(){
   if(PV==='board'){
     const cols=[['not_started','Not started'],['in_progress','In progress'],['waiting','⏳ Waiting on owner'],['done','✅ Done']];
     $('#projects').innerHTML=`<div class="board">${cols.map(([k,l])=>{const items=list.filter(x=>x.S.stage===k);
-      return `<div class="bcol"><div class="bhead">${l} <span>${items.length}</span></div>${items.map(({p,S})=>`<div class="bcard" onclick="openProject(${p.id})">
-        <b>${esc(p.name)}</b>${p.recurrence_id?' 🔁':''}<div class="sub">${esc(p.property_name||p.property||'No property')}</div>
+      return `<div class="bcol"><div class="bhead">${l} <span>${items.length}</span></div>${items.map(({p,S})=>`<div class="bcard" style="${pcVars(propColor(p))}" onclick="openProject(${p.id})">
+        ${projType(p)}<div><b>${esc(p.name)}</b>${p.recurrence_id?' 🔁':''}</div><span class="bprop">${esc(p.property_name||p.property||'No property')}</span>
         <div class="bar" style="margin:6px 0 4px"><i style="width:${S.pct}%"></i></div>
         <div class="row" style="margin:0;gap:4px;justify-content:space-between"><span class="mute" style="font-size:12px">${S.done}/${S.total}${S.nxt&&k!=='done'?' · next '+fmtDate(S.nxt.due_date):''}</span>
         <span>${S.over?`<span class="risk hi">${S.over} late</span>`:''}${S.blocked?`<span class="risk md">${S.blocked} blocked</span>`:''}</span></div></div>`).join('')||'<div class="mute" style="font-size:12.5px;padding:6px">—</div>'}</div>`;}).join('')}</div>`;
     return;}
   // grouped by property
   const groups=new Map();for(const x of list){const k=x.p.property_id?'p'+x.p.property_id:(x.p.property?'a:'+x.p.property:'none');
-    if(!groups.has(k))groups.set(k,{label:x.p.property_name||x.p.property||'No property',pid:x.p.property_id,items:[]});groups.get(k).items.push(x);}
+    if(!groups.has(k))groups.set(k,{label:x.p.property_name||x.p.property||'No property',pid:x.p.property_id,col:propColor(x.p),items:[]});groups.get(k).items.push(x);}
   const gs=[...groups.entries()].sort((a,b)=>a[0]==='none'?1:b[0]==='none'?-1:a[1].label.localeCompare(b[1].label));
   $('#projects').innerHTML=gs.map(([k,g])=>{const over=g.items.reduce((n,x)=>n+x.S.over,0),wait=g.items.filter(x=>x.p.approval==='pending').length,open=pgIsOpen(k);
-    return `<div class="pgroup ${open?'open':''}"><div class="pghead" onclick="pgToggle(decodeURIComponent('${encodeURIComponent(k).replace(/'/g,'%27')}'))"><span class="car">${open?'▾':'▸'}</span><b>${esc(g.label)}</b><span class="mute">${g.items.length} project${g.items.length>1?'s':''}</span>
+    return `<div class="pgroup ${open?'open':''}" style="${pcVars(g.col)}"><div class="pghead" onclick="pgToggle(decodeURIComponent('${encodeURIComponent(k).replace(/'/g,'%27')}'))"><span class="car">${open?'▾':'▸'}</span><span class="pav">${k==='none'?'—':esc(propAbbr(g.label))}</span><b style="font-size:15.5px">${esc(g.label)}</b><span class="mute">${g.items.length} project${g.items.length>1?'s':''}</span>
       ${over?`<span class="risk hi">${over} overdue</span>`:''}${wait?`<span class="chip2">⏳ ${wait} awaiting owner</span>`:''}
       ${g.pid?`<span class="tlink sm" style="margin-left:auto" onclick="event.stopPropagation();openProperty(${g.pid})">Property page →</span>`:''}</div>
       ${open?`<div class="pgbody"><div class="prow ph"><div class="pn">Project</div><div class="pp">Progress</div><div class="pd">Next due</div><div class="pf"></div></div>${g.items.map(x=>projRow(x.p,x.S)).join('')}</div>`:''}</div>`;}).join('');
