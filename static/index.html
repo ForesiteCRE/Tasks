@@ -377,14 +377,14 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
 </section>
 
 <section id="v-tasks" class="hidden">
-  <div class="pagehead"><div><h2>✓ All tasks</h2><div class="pagesub">Everything, with or without a project — filter by person, project or status.</div></div></div>
+  <div class="pagehead"><div><h2>✓ All tasks</h2><div class="pagesub">Everything, with or without a project — filter by person, property, project or status.</div></div></div>
   <div class="card"><h2>Add a task</h2>
     <div class="qadd"><input id="qTitle" placeholder="What needs doing?" onkeydown="if(event.key==='Enter')quickAdd()">
       <select id="qProj"></select><select id="qWho"></select><input id="qDue" type="date"><input id="qEst" placeholder="Est. 1h"><select id="qRepeat" title="Repeat"><option value="">Doesn't repeat</option><option value="weekly">🔁 Every week</option><option value="biweekly">🔁 Every 2 weeks</option><option value="monthly">🔁 Every month</option><option value="quarterly">🔁 Every quarter</option><option value="yearly">🔁 Every year</option></select><button class="b" onclick="quickAdd()">Add</button></div>
     <p class="mute" style="margin:6px 0 0;font-size:12.5px">Tasks don't need a project — leave it as “No project” for one-off work. <span class="mgronly">Assign it to someone and they get a Blink message.</span></p></div>
   <div class="toolbar">
     <input type="search" id="tSearch" placeholder="Search tasks…" oninput="renderTasks()">
-    <select id="tWho" onchange="renderTasks()"></select><select id="tProj" onchange="renderTasks()"></select>
+    <select id="tWho" onchange="renderTasks()"></select><select id="tPropF" onchange="renderTasks()"></select><select id="tProj" onchange="renderTasks()"></select>
     <select id="tStatus" onchange="renderTasks()"><option value="open">Open</option><option value="todo">To do</option><option value="in_progress">In progress</option><option value="blocked">Blocked</option><option value="done">Done</option><option value="all">All</option></select>
     <span id="tCount" class="mute"></span></div>
   <div class="card" style="padding:0;overflow:hidden"><table class="tl" id="tTable"></table></div>
@@ -619,6 +619,8 @@ async function refresh(){
   $('#calProj').innerHTML=`<option value="">All projects</option>${gen?`<option value="${gen.id}">No project</option>`:''}`+projOpts;$('#calProj').value=pj;
   const tp=$('#tProj').value,tw=$('#tWho').value,qp=$('#qProj').value,qw=$('#qWho').value;
   $('#tProj').innerHTML=`<option value="">All projects</option><option value="none">No project</option>`+projOpts;$('#tProj').value=tp;
+  const tpf=$('#tPropF').value,pmap=new Map();PROJECTS.forEach(p=>{const k=projPropKey(p);if(k)pmap.set(k,p.property_name||p.property);});
+  $('#tPropF').innerHTML=`<option value="">All properties</option>`+[...pmap].sort((a,b)=>a[1].localeCompare(b[1])).map(([k,l])=>`<option value="${esc(k)}">${esc(l)}</option>`).join('')+`<option value="none">No property</option>`;$('#tPropF').value=tpf;
   $('#tWho').innerHTML=`<option value="me">My tasks</option><option value="">Everyone</option><option value="unassigned">Unassigned</option>`+USERS.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('');$('#tWho').value=tw||(isMgr()?'':'me');
   $('#qProj').innerHTML=`<option value="">No project</option>`+(isMgr()?projOpts:'');$('#qProj').value=qp;
   $('#qWho').innerHTML=isMgr()?`<option value="">Unassigned</option>`+USERS.map(u=>`<option value="${u.id}" ${u.id===ME.id?'selected':''}>${esc(u.name)}${u.id===ME.id?' (me)':''}</option>`).join(''):`<option value="${ME.id}">Me</option>`;if(qw)$('#qWho').value=qw;
@@ -1499,11 +1501,13 @@ async function previewDigest(){const r=await api('/api/me/digest-preview',{metho
   $('#taskDlgBody').innerHTML=`<h2>🌆 Your 6pm recap</h2><p class="mute">${r.sent?'Sent to you in Blink just now. ':''}Everyone with a Blink ID gets this at 6pm each day (they can turn it off in My settings).</p><div class="cm" style="white-space:pre-wrap">${r.text?esc(r.text).replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>'):'Nothing to report for you today.'}</div>`;taskDlg.showModal();}
 
 /* ---------- all tasks ---------- */
-function renderTasks(){const q=$('#tSearch').value.trim().toLowerCase(),w=$('#tWho').value,pj=$('#tProj').value,st=$('#tStatus').value,t0=today(),wk=isoAdd(t0,7);
+const projPropKey=p=>p&&!p.is_general?(p.property_id?'p'+p.property_id:p.property?'a:'+p.property:''):'';
+function renderTasks(){const q=$('#tSearch').value.trim().toLowerCase(),w=$('#tWho').value,pj=$('#tProj').value,pf=$('#tPropF').value,PJ=Object.fromEntries(PROJECTS.map(p=>[p.id,p])),st=$('#tStatus').value,t0=today(),wk=isoAdd(t0,7);
   const gen=(PROJECTS.find(p=>p.is_general)||{}).id;
   let ts=TASKS.filter(t=>(st==='all'||(st==='open'?t.status!=='done':t.status===st))
     &&(!w||(w==='me'?t.assignee_id===ME.id:w==='unassigned'?!t.assignee_id:t.assignee_id==w))
     &&(!pj||(pj==='none'?t.project_id===gen:t.project_id==pj))
+    &&(!pf||(pf==='none'?!projPropKey(PJ[t.project_id]):projPropKey(PJ[t.project_id])===pf))
     &&(t.project_status!=='done'||st==='done'||st==='all')
     &&(!q||(t.title+' '+t.project_name+' '+(t.last_note||'')).toLowerCase().includes(q)));
   ts.sort((a,b)=>(a.due_date||'9999').localeCompare(b.due_date||'9999')||a.id-b.id);
@@ -1516,7 +1520,7 @@ function renderTasks(){const q=$('#tSearch').value.trim().toLowerCase(),w=$('#tW
     return `<tr class="tgrp ${cls||''}"><td colspan="6">${n} · ${g.length}</td></tr>`+g.map(t=>`<tr class="${t.status==='done'?'done':''}">
       <td><input type="checkbox" ${t.status==='done'?'checked':''} ${canEdit(t)?'':'disabled'} onchange="setStatus(${t.id},this.checked?'done':'todo')"></td>
       <td><span class="tlink" onclick="openTask(${t.id})">${t.parent_id?'<span class="mute">↳</span> ':''}${esc(t.title)}</span>${badges(t)}</td>
-      <td class="proj">${t.project_id===gen?'<span class="mute">—</span>':`<span class="tlink" onclick="openProject(${t.project_id})">${esc(t.project_name)}</span>`}</td>
+      <td class="proj">${t.project_id===gen?'<span class="mute">—</span>':`${PJ[t.project_id]&&projPropKey(PJ[t.project_id])?`<span class="pdot" style="${pcVars(propColor(PJ[t.project_id]))}" title="${esc(PJ[t.project_id].property_name||PJ[t.project_id].property)}"></span>`:''}<span class="tlink" onclick="openProject(${t.project_id})">${esc(t.project_name)}</span>`}</td>
       <td class="mute">${esc((USERS.find(u=>u.id===t.assignee_id)||{}).name||'Unassigned')}</td>
       <td class="${isOver(t)?'over':''}" style="white-space:nowrap">${fmtDate(t.due_date)||'—'}</td><td>${statusSel(t)}</td></tr>`).join('')}).join('')
     :`<tr><td class="empty" style="padding:24px;text-align:center">No tasks match. ${w==='me'?'Add one above, or switch to “Everyone”.':''}</td></tr>`;}
