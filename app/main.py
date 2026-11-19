@@ -116,6 +116,7 @@ class ProjectIn(BaseModel):
 class TaskIn(BaseModel):
     repeat: str | None = None
     project_id: int | None = None
+    property_id: int | None = None         # a task can belong to a property with or without a project
     parent_id: int | None = None
     title: str
     description: str | None = None
@@ -137,6 +138,7 @@ class TaskPatch(BaseModel):
     note: str | None = None
     user_id: int | None = None
     block: dict | None = None              # {kind: task|person|other, task_id, ref, label, reason, follow_up}
+    property_id: int | None = None         # project-less tasks only; 0 clears
 
 class SaveAsTemplate(BaseModel):
     name: str
@@ -576,7 +578,10 @@ def move_task(tid: int, body: TaskMove, request: Request):
         while stack:
             cur = stack.pop(); ids_.append(cur)
             stack += [r[0] for r in c.execute("SELECT id FROM tasks WHERE parent_id=?", (cur,))]
+        pp = c.execute("SELECT property_id FROM projects WHERE id=? AND is_general=0", (pid,)).fetchone()
         c.execute(f"UPDATE tasks SET project_id=?, role_id=NULL WHERE id IN ({','.join('?' * len(ids_))})", (pid, *ids_))
+        if pp:
+            c.execute(f"UPDATE tasks SET property_id=? WHERE id IN ({','.join('?' * len(ids_))})", (pp[0], *ids_))
         c.execute("UPDATE tasks SET parent_id=NULL WHERE id=?", (tid,))
         c.execute("UPDATE projects SET status='active' WHERE id=?", (pid,))
     return {"ok": True}
@@ -673,10 +678,14 @@ def create_task(t: TaskIn, background: BackgroundTasks, request: Request):
     if not t.project_id:
         t.project_id = team.general_project_id()
     with tx() as c:
+        proj_prop = c.execute("SELECT property_id FROM projects WHERE id=?", (t.project_id,)).fetchone()
+        prop_id = (proj_prop and proj_prop[0]) or t.property_id or None   # a project's property wins
+        if prop_id and not c.execute("SELECT 1 FROM properties WHERE id=?", (prop_id,)).fetchone():
+            raise HTTPException(400, "Unknown property")
         tid = c.execute(
-            "INSERT INTO tasks(project_id,parent_id,title,description,assignee_id,due_date,position) VALUES(?,?,?,?,?,?,999)",
+            "INSERT INTO tasks(project_id,parent_id,title,description,assignee_id,due_date,position,property_id) VALUES(?,?,?,?,?,?,999,?)",
             (t.project_id, t.parent_id, t.title, t.description, t.assignee_id,
-             t.due_date and t.due_date.isoformat())).lastrowid
+             t.due_date and t.due_date.isoformat(), prop_id)).lastrowid
         c.execute("UPDATE projects SET status='active' WHERE id=?", (t.project_id,))
         u = c.execute("SELECT blink_user_id FROM users WHERE id=?", (t.assignee_id,)).fetchone() if t.assignee_id else None
     if t.estimate not in (None, ""):
@@ -727,6 +736,8 @@ def patch_task(tid: int, p: TaskPatch, request: Request):
                 raise HTTPException(400, str(e))
         if p.description is not None:
             c.execute("UPDATE tasks SET description=? WHERE id=?", (p.description, tid))
+        if p.property_id is not None:
+            c.execute("UPDATE tasks SET property_id=? WHERE id=?", (p.property_id or None, tid))
         if p.assignee_id is not None:  # assigning a person directly detaches the task from its project role
             c.execute("UPDATE tasks SET assignee_id=?, role_id=NULL WHERE id=?", (p.assignee_id or None, tid))
         if p.due_date is not None:

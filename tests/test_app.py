@@ -1411,3 +1411,21 @@ def test_lj_answers_questions_in_blink():
     assert "role: staff" in CLAUDE_CALLS[-1]["system"] and CLAUDE_CALLS[-1]["tools"]
     # updates still go to the task parser
     assert "Comment added" in services.handle_inbound("u-sam", "comment 5 thanks")
+
+
+def test_task_on_a_property_without_a_project(mgr):
+    prop = ids(mgr.post("/api/properties", json={"address": "55 Loose Task Ln, San Antonio, TX"}))["id"]
+    tid = ids(mgr.post("/api/tasks", json={"title": "Call the city about the sign permit", "property_id": prop}))["id"]
+    page = ids(mgr.get(f"/api/properties/{prop}"))
+    t = [x for x in page["tasks"] if x["id"] == tid][0]
+    assert t["project_name"] == "No project"
+    allp = [p for p in ids(mgr.get("/api/projects")) if p["is_general"]][0]
+    assert [x for x in allp["tasks"] if x["id"] == tid][0]["property_id"] == prop
+    # a project's property wins over the one sent
+    proj = ids(mgr.post("/api/projects", json={"name": "Loose proj", "property": "55 Loose Task Ln, San Antonio, TX"}))["id"]
+    t2 = ids(mgr.post("/api/tasks", json={"title": "In project", "project_id": proj}))["id"]
+    pp = [p for p in ids(mgr.get("/api/projects")) if p["id"] == proj][0]
+    assert [x for x in pp["tasks"] if x["id"] == t2][0]["property_id"] == pp["property_id"] == prop
+    ids(mgr.patch(f"/api/tasks/{tid}", json={"property_id": 0}))
+    assert tid not in [x["id"] for x in ids(mgr.get(f"/api/properties/{prop}"))["tasks"]]
+    assert mgr.post("/api/tasks", json={"title": "x", "property_id": 999999}).status_code == 400

@@ -83,6 +83,11 @@ def init():
         c.execute("""CREATE TABLE IF NOT EXISTS property_team(
             property_id INTEGER NOT NULL, role_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
             PRIMARY KEY(property_id, role_id))""")
+        if "property_id" not in {r[1] for r in c.execute("PRAGMA table_info(tasks)")}:
+            # tasks without a project can still belong to a property (critical-date tasks, one-off work)
+            c.execute("ALTER TABLE tasks ADD COLUMN property_id INTEGER")
+            c.execute("""UPDATE tasks SET property_id=(SELECT d.property_id FROM critical_dates d WHERE d.task_id=tasks.id)
+                         WHERE id IN (SELECT task_id FROM critical_dates WHERE task_id IS NOT NULL)""")
     link_all(quiet=True)
     if new_team_table:
         migrate_teams()
@@ -310,6 +315,11 @@ def list_all() -> list[dict]:
                              FROM projects pr LEFT JOIN tasks t ON t.project_id=pr.id
                              WHERE pr.property_id=? AND pr.status='active'""", (today.isoformat(), p["id"])).fetchone()
             p.update({k: s[k] or 0 for k in ("projects", "open_tasks", "overdue")})
+            loose = c.execute("""SELECT SUM(t.status!='done'), SUM(t.status!='done' AND t.due_date < ?) FROM tasks t
+                                 JOIN projects pr ON pr.id=t.project_id WHERE pr.is_general=1 AND t.property_id=?""",
+                              (today.isoformat(), p["id"])).fetchone()
+            p["open_tasks"] += loose[0] or 0
+            p["overdue"] += loose[1] or 0
             nxt = c.execute("""SELECT * FROM critical_dates WHERE property_id=? AND status='open'
                                ORDER BY date LIMIT 1""", (p["id"],)).fetchone()
             p["next_date"] = _date_row(dict(nxt), today) if nxt else None
@@ -343,10 +353,14 @@ def get(pid: int) -> dict | None:
                                      WHERE pr.property_id=? GROUP BY pr.id
                                      ORDER BY pr.status='done', pr.start_date DESC""", (today.isoformat(), pid)))
         tasks = rows(c.execute("""SELECT t.id, t.title, t.status, t.due_date, t.assignee_id, t.project_id, t.role_id,
-                                         COALESCE(u.name,'Unassigned') AS assignee_name, pr.name AS project_name
+                                         COALESCE(u.name,'Unassigned') AS assignee_name, pr.name AS project_name, pr.is_general
                                   FROM tasks t JOIN projects pr ON pr.id=t.project_id LEFT JOIN users u ON u.id=t.assignee_id
-                                  WHERE pr.property_id=? AND t.status!='done' AND pr.status='active'
-                                  ORDER BY t.due_date IS NULL, t.due_date, t.id""", (pid,)))
+                                  WHERE t.status!='done' AND ((pr.property_id=? AND pr.status='active')
+                                                              OR (pr.is_general=1 AND t.property_id=?))
+                                  ORDER BY t.due_date IS NULL, t.due_date, t.id""", (pid, pid)))
+        for t in tasks:
+            if t.pop("is_general", 0):
+                t["project_name"] = "No project"
         people = rows(c.execute("""SELECT DISTINCT u.id, u.name, r.name AS role FROM project_team pt
                                    JOIN projects pr ON pr.id=pt.project_id JOIN users u ON u.id=pt.user_id
                                    JOIN project_roles r ON r.id=pt.role_id
@@ -488,10 +502,11 @@ def _ensure_task(c, d: dict) -> int:
     desc = "\n".join(filter(None, [f"Critical date at {prop['name']}: {KINDS.get(d['kind'], '')}",
                                    f"Tenant/suite: {d['tenant']}" if d["tenant"] else "", d["notes"] or "",
                                    f"From the lease: “{d['quote']}”" if d["quote"] else ""]))
-    tid = c.execute("""INSERT INTO tasks(project_id, title, description, assignee_id, due_date, position)
-                       VALUES(?,?,?,?,?,999)""",
+    tid = c.execute("""INSERT INTO tasks(project_id, title, description, assignee_id, due_date, position, property_id)
+                       VALUES(?,?,?,?,?,999,?)""",
                     (team.general_project_id(), f"{ICONS.get(d['kind'], '📌')} {d['title']} – {prop['name']}", desc,
-                     d["assignee_id"] or (property_manager(c, d["property_id"]) or {}).get("id"), d["date"])).lastrowid
+                     d["assignee_id"] or (property_manager(c, d["property_id"]) or {}).get("id"), d["date"],
+                     d["property_id"])).lastrowid
     c.execute("UPDATE critical_dates SET task_id=? WHERE id=?", (tid, d["id"]))
     return tid
 
