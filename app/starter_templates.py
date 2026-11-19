@@ -8,6 +8,72 @@ from .db import tx
 
 PM, ACCT, AP, AR, LEASING, AM = "Property Manager", "Head of Accounting", "AP", "AR", "Leasing", "Asset Manager"
 
+# ---------- Property Onboarding Document Requests (our Management Transition Documentation Request) ----------
+# One task; every document the prior manager provides is a subtask, labeled by section. "Prior to takeover" items
+# are due right after the request; "at takeover" items (accounting that keeps coming as months close) are due later.
+DOC_TASK = "Property Onboarding Document Requests"
+EARLY, LATE = 5, 55     # days after the template start date
+_DOCS = [  # (section, document, role, prior-to-takeover?, at-takeover?)
+    ("Tenant", "Current rent roll", PM, 1, 0),
+    ("Tenant", "All tenant leases, amendments & letter agreements", PM, 1, 0),
+    ("Tenant", "Tenant notice addresses, contact names & emails", PM, 1, 0),
+    ("Tenant", "Aged tenant receivables / delinquency", AR, 1, 1),
+    ("Tenant", "Tenant ledgers through the assumption date", AR, 1, 0),
+    ("Tenant", "List & status of security deposits", AR, 1, 0),
+    ("Tenant", "Current tenant COIs", PM, 1, 0),
+    ("Tenant", "Prior & current-year reconciliations, escalations & statements (with CAM caps)", ACCT, 1, 0),
+    ("Accounting", "Monthly trial balance (Excel) — YTD now, remaining months as completed", ACCT, 1, 1),
+    ("Accounting", "Current-year operating budget(s)", ACCT, 1, 0),
+    ("Accounting", "Prior-year & current YTD general ledger (Excel) — remaining months as completed", ACCT, 1, 1),
+    ("Accounting", "Most recent monthly report pack — remaining months as completed", ACCT, 1, 1),
+    ("Accounting", "Current-year AP invoices (incl. utilities, for the billing change)", AP, 0, 1),
+    ("Accounting", "Recurring journal entry schedule", ACCT, 0, 1),
+    ("Accounting", "Depreciation schedule(s)", ACCT, 0, 1),
+    ("Accounting", "Balance sheet", ACCT, 0, 1),
+    ("Banking", "List of operating / deposit account numbers", ACCT, 1, 0),
+    ("Banking", "Banking contact information", ACCT, 1, 0),
+    ("Banking", "YTD deposit register — remaining months as completed", ACCT, 1, 1),
+    ("Banking", "Current-year bank statements & reconciliations — remaining months as completed", ACCT, 1, 1),
+    ("Taxes & insurance", "Current property insurance certificate & agent contact", PM, 1, 0),
+    ("Taxes & insurance", "Copy of current insurance policy", PM, 1, 0),
+    ("Taxes & insurance", "List of insurance claims in the last year, if any", PM, 1, 0),
+    ("Taxes & insurance", "Owner W-9", ACCT, 1, 0),
+    ("Taxes & insurance", "Property tax statements (prior 2 years)", PM, 1, 0),
+    ("Taxes & insurance", "Franchise tax statements (prior 2 years)", ACCT, 1, 0),
+    ("Building", "All building site & floor plans — paper & electronic", PM, 1, 0),
+    ("Building", "Warranties (roof, HVAC, etc.)", PM, 1, 0),
+    ("Loan", "Most recent loan statement(s)", ACCT, 1, 0),
+    ("Loan", "Amortization schedules", ACCT, 0, 1),
+    ("Loan", "List of escrow accounts & balances", ACCT, 1, 0),
+    ("Vendors / AP", "Utility & vendor files (copies of utility bills, contracts, COIs & W-9s)", AP, 1, 0),
+    ("Vendors / AP", "YTD aged payables report", AP, 1, 0),
+    ("Vendors / AP", "YTD check register — remaining months as completed", AP, 1, 1),
+    ("Vendors / AP", "Vendor list with email, phone & point of contact", AP, 1, 0),
+    ("Vendors / AP", "Emergency vendor list", PM, 1, 0),
+    ("Vendors / AP", "Maintenance contracts", PM, 1, 0),
+    ("Vendors / AP", "Online payment logins (utilities, bank, etc.) — keep in our password manager, not in the Task Manager", AP, 1, 0),
+]
+
+
+def _doc_subtasks() -> list[dict]:
+    subs = []
+    for sec, doc, role, early, late in _DOCS:
+        base = doc.split(" — ")[0]
+        if early:
+            subs.append({"title": f"{sec} · {base} — so far" if late else f"{sec} · {doc}", "role": role, "days": EARLY, "est": 10})
+        if late:
+            subs.append({"title": f"{sec} · {doc} (at takeover)" if not early else f"{sec} · {base} — final / remaining months (at takeover)",
+                         "role": role, "days": LATE, "est": 10})
+    return subs
+
+
+DOC_REQUEST_ITEM = {
+    "title": DOC_TASK, "role": PM, "days": LATE, "est": 60, "after": ["Fully executed management agreement on file"],
+    "checklist": ["Request sent to prior management with the assumption date & due dates",
+                  "Documents go to Nancy Braun (property management) and Lisa Jimenez (accounting)",
+                  "Prior manager told to skip items that don't apply"],
+    "subtasks": _doc_subtasks()}
+
 STARTERS = [
     {
         "key": "onboarding",
@@ -19,17 +85,12 @@ STARTERS = [
             {"title": "Fully executed management agreement on file", "role": AM, "days": 0, "est": 30,
              "checklist": ["Signed by owner and us", "Fee schedule & leasing commissions noted", "Owner reporting requirements noted",
                            "Approval/spending limits noted", "Insurance requirements noted"]},
-            {"title": "Collect property documents from owner / prior manager", "role": PM, "days": 3, "est": 180,
-             "after": ["Fully executed management agreement on file"],
-             "checklist": ["Current rent roll & aged receivables", "All leases, amendments & guaranties", "Security deposit ledger",
-                           "Service/vendor contracts", "Current-year budget & prior-year CAM reconciliation",
-                           "Property tax statements & protest history", "Insurance policies / COIs", "Warranties, plans & as-builts",
-                           "Keys, codes & access devices list", "Open work orders & capital projects"]},
+            DOC_REQUEST_ITEM,
             {"title": "Site inspection & property condition walk", "role": PM, "days": 5, "est": 240,
              "subtasks": [{"title": "Photo-document roof, parking lot, common areas & signage", "role": PM, "days": 5, "est": 120},
                           {"title": "Inventory keys, locks & access systems", "role": PM, "days": 6, "est": 60}]},
             {"title": "Set up property in accounting system", "role": ACCT, "days": 7, "est": 240,
-             "after": ["Collect property documents from owner / prior manager"],
+             "after": ["Fully executed management agreement on file"],
              "checklist": ["Property & owner entity created", "Chart of accounts / GL mapped", "Owner W-9 on file",
                            "Management & leasing fees configured", "Reporting package template set up"]},
             {"title": "Open operating & security deposit bank accounts", "role": ACCT, "days": 10, "est": 120,
@@ -40,7 +101,7 @@ STARTERS = [
              "checklist": ["Tenants & contacts", "Base rent & escalations", "CAM / tax / insurance estimates",
                            "Security deposits by tenant", "Opening receivable balances tie to prior manager"]},
             {"title": "Lease abstracts for every tenant", "role": LEASING, "days": 14, "est": 480,
-             "after": ["Collect property documents from owner / prior manager"],
+             "after": ["Fully executed management agreement on file"],
              "checklist": ["Critical dates (expirations, options, ROFR)", "CAM caps & exclusions", "Co-tenancy / exclusives",
                            "Insurance requirements", "Notice addresses"]},
             {"title": "Send tenant notification letters (new manager & payment instructions)", "role": PM, "days": 20, "est": 120,
@@ -388,6 +449,61 @@ def delete_project(pid: int):
         c.execute("DELETE FROM projects WHERE id=?", (pid,))
 
 
+def _add_item(tid: int, item: dict, roles: dict, ids: dict, parent=None) -> int:
+    from . import tpl
+    iid = tpl.add_item(tid, item["title"], parent_item_id=parent, due_offset_days=item.get("days", 0),
+                       default_role_id=roles.get((item.get("role") or "").lower()))
+    tpl.update_item(iid, {"estimate_minutes": item.get("est")})
+    for line in item.get("checklist", []):
+        tpl.add_checklist(iid, line)
+    ids[item["title"]] = iid
+    for sub in item.get("subtasks", []):
+        _add_item(tid, sub, roles, ids, iid)
+    return iid
+
+
+def migrate_onboarding_docs() -> bool:
+    """One time: in an installed onboarding template, swap the old one-step document checklist for
+    "Property Onboarding Document Requests" (one subtask per document). Anything else edited in the template stays.
+    Projects already started from the template are not touched."""
+    from . import team, tpl
+    from .db import get_setting, set_setting
+    if get_setting("tpl.onboarding_docs_v1"):
+        return False
+    onboarding = next(x for x in STARTERS if x["key"] == "onboarding")
+    with tx() as c:
+        t = c.execute("SELECT id FROM templates WHERE name=?", (onboarding["name"],)).fetchone()
+        if not t:
+            set_setting("tpl.onboarding_docs_v1", "no template")
+            return False
+        tid = t[0]
+        if c.execute("SELECT 1 FROM template_items WHERE template_id=? AND title=?", (tid, DOC_TASK)).fetchone():
+            set_setting("tpl.onboarding_docs_v1", "already there")
+            return False
+        old = c.execute("""SELECT id, position FROM template_items WHERE template_id=? AND parent_item_id IS NULL
+                           AND title='Collect property documents from owner / prior manager'""", (tid,)).fetchone()
+        agreement = c.execute("""SELECT id FROM template_items WHERE template_id=? AND parent_item_id IS NULL
+                                 AND title='Fully executed management agreement on file'""", (tid,)).fetchone()
+        waiting = [r[0] for r in c.execute("SELECT item_id FROM template_dependencies WHERE depends_on_item_id=?",
+                                           (old["id"],))] if old else []
+    if old:
+        tpl.delete_item(old["id"])
+    roles = {r["name"].lower(): r["id"] for r in team.list_roles()}
+    new_id = _add_item(tid, DOC_REQUEST_ITEM, roles, {})
+    with tx() as c:
+        if old:   # same spot in the list as the step it replaces
+            c.execute("UPDATE template_items SET position=? WHERE id=?", (old["position"], new_id))
+    if agreement:
+        tpl.add_dependency(new_id, agreement[0])
+        for w in waiting:   # steps that waited on the old document step now wait on the management agreement
+            try:
+                tpl.add_dependency(w, agreement[0])
+            except ValueError:
+                pass
+    set_setting("tpl.onboarding_docs_v1", "done")
+    return True
+
+
 def _install_templates(keys: list[str]) -> list[str]:
     from . import team, tpl
     roles = {r["name"].lower(): r["id"] for r in team.list_roles()}
@@ -401,19 +517,8 @@ def _install_templates(keys: list[str]) -> list[str]:
             tid = c.execute("INSERT INTO templates(name, description, board_period) VALUES(?,?,?)",
                             (s["name"], s["description"], s.get("board"))).lastrowid
         ids = {}
-
-        def add(item, parent=None):
-            iid = tpl.add_item(tid, item["title"], parent_item_id=parent, due_offset_days=item.get("days", 0),
-                               default_role_id=roles.get((item.get("role") or "").lower()))
-            tpl.update_item(iid, {"estimate_minutes": item.get("est")})
-            for line in item.get("checklist", []):
-                tpl.add_checklist(iid, line)
-            ids[item["title"]] = iid
-            for sub in item.get("subtasks", []):
-                add(sub, iid)
-
         for item in s["items"]:
-            add(item)
+            _add_item(tid, item, roles, ids)
         for item in s["items"]:
             for dep in item.get("after", []):
                 if dep in ids:

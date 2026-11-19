@@ -1581,3 +1581,34 @@ def test_blink_notification_settings(mgr, staff):
         notify.DEFAULT.clear(); notify.DEFAULT.update(saved)
         with tx() as c:
             c.execute("DELETE FROM user_prefs WHERE user_id=? AND key LIKE 'notify%'", (staff.me["id"],))
+
+
+def test_onboarding_document_requests(mgr):
+    from app import starter_templates as st, tpl
+    from app.db import tx, set_setting
+    st.install(["onboarding"])
+    name = next(x for x in st.STARTERS if x["key"] == "onboarding")["name"]
+    t = next(x for x in ids(mgr.get("/api/templates")) if x["name"] == name)
+    doc = next(i for i in t["items"] if i["title"] == st.DOC_TASK)
+    kids = [i for i in t["items"] if i.get("parent_item_id") == doc["id"]]
+    assert len(kids) == len(st._doc_subtasks()) == 45
+    assert any(k["title"] == "Tenant · Current rent roll" and k["due_offset_days"] == 5 for k in kids)
+    assert any(k["title"].startswith("Accounting · Balance sheet") and k["due_offset_days"] == 55 for k in kids)
+    # simulate a template installed before this change, then run the one-time update
+    tpl.delete_item(doc["id"])
+    agreement = next(i for i in t["items"] if i["title"] == "Fully executed management agreement on file")
+    old = tpl.add_item(t["id"], "Collect property documents from owner / prior manager", due_offset_days=3)
+    acct = next(i for i in t["items"] if i["title"] == "Set up property in accounting system")
+    tpl.add_dependency(acct["id"], old)
+    with tx() as c:
+        c.execute("UPDATE template_items SET position=? WHERE id=?", (agreement["position"] + 0, old))
+    set_setting("tpl.onboarding_docs_v1", "")
+    assert st.migrate_onboarding_docs() is True
+    t = next(x for x in ids(mgr.get("/api/templates")) if x["name"] == name)
+    titles = [i["title"] for i in t["items"] if not i.get("parent_item_id")]
+    assert "Collect property documents from owner / prior manager" not in titles and st.DOC_TASK in titles
+    doc = next(i for i in t["items"] if i["title"] == st.DOC_TASK)
+    assert len([i for i in t["items"] if i.get("parent_item_id") == doc["id"]]) == 45
+    acct = next(i for i in t["items"] if i["title"] == "Set up property in accounting system")
+    assert agreement["id"] in acct["waiting_on"]
+    assert st.migrate_onboarding_docs() is False                                   # only once

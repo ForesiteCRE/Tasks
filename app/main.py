@@ -47,6 +47,10 @@ async def lifespan(_):
     init_db()
     tpl.init()
     try:
+        starter_templates.migrate_onboarding_docs()
+    except Exception:
+        logging.getLogger("templates").exception("onboarding document-request update failed")
+    try:
         demo.backfill_contacts()
     except Exception:
         logging.getLogger("demo").exception("sample contact backfill failed")
