@@ -35,6 +35,12 @@ def init():
             c.execute("ALTER TABLE template_items ADD COLUMN tutorial_url TEXT")
         if "tutorial_url" not in {r[1] for r in c.execute("PRAGMA table_info(tasks)")}:
             c.execute("ALTER TABLE tasks ADD COLUMN tutorial_url TEXT")
+        if "board_period" not in {r[1] for r in c.execute("PRAGMA table_info(templates)")}:
+            # Tracking boards: only templates switched on here get a board (month/quarter/year/none = ongoing).
+            c.execute("ALTER TABLE templates ADD COLUMN board_period TEXT")
+            for like, per in (("Month-End Close%", "month"), ("Property Onboarding%", "none"), ("Property Sale – Hand Off%", "none"),
+                              ("Annual Budget%", "year"), ("Annual CAM Reconciliation%", "year")):
+                c.execute("UPDATE templates SET board_period=? WHERE name LIKE ?", (per, like))
 
 
 def _ordered(items: list[dict]) -> list[dict]:
@@ -174,6 +180,9 @@ def update_template(template_id: int, fields: dict):
             c.execute("UPDATE templates SET name=? WHERE id=?", (fields["name"].strip(), template_id))
         if "description" in fields:
             c.execute("UPDATE templates SET description=? WHERE id=?", (fields["description"] or "", template_id))
+        if "board_period" in fields:   # show this template's projects as a tracking board (or not)
+            v = fields["board_period"] if fields["board_period"] in ("month", "quarter", "year", "none") else None
+            c.execute("UPDATE templates SET board_period=? WHERE id=?", (v, template_id))
 
 
 def move_item(item_id: int, direction: int):

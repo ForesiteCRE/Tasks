@@ -11,6 +11,7 @@ PM, ACCT, AP, AR, LEASING, AM = "Property Manager", "Head of Accounting", "AP", 
 STARTERS = [
     {
         "key": "onboarding",
+        "board": "none",
         "name": "Property Onboarding (Management Takeover)",
         "description": "New management assignment. Start date = management commencement date (set it ~30 days before "
                        "takeover so pre-takeover items land in time). Adjust days to your process.",
@@ -67,6 +68,7 @@ STARTERS = [
     },
     {
         "key": "sale_handoff",
+        "board": "none",
         "name": "Property Sale – Hand Off (management ends at closing)",
         "description": "Owner is selling and the buyer is bringing their own manager. Start date = PSA effective date; "
                        "closing assumed around day 45 — shift due dates to your actual closing.",
@@ -187,6 +189,7 @@ STARTERS = [
     },
     {
         "key": "cam_rec",
+        "board": "year",
         "name": "Annual CAM Reconciliation",
         "description": "Year-end common area maintenance reconciliation. Start date = Jan 15.",
         "items": [
@@ -202,6 +205,7 @@ STARTERS = [
     },
     {
         "key": "month_end",
+        "board": "month",
         "name": "Month-End Close",
         "description": "Monthly accounting close and owner reporting. Start date = 1st of the month (pairs well with Monthly recurring).",
         "items": [
@@ -221,6 +225,7 @@ STARTERS = [
     },
     {
         "key": "budget",
+        "board": "year",
         "name": "Annual Budget",
         "description": "Next-year operating & capital budget. Start date = Sept 15.",
         "items": [
@@ -233,6 +238,55 @@ STARTERS = [
             {"title": "Capital plan", "role": PM, "days": 25, "est": 240},
             {"title": "Owner review & approval", "role": AM, "days": 45, "est": 90, "after": ["Draft operating budget", "Capital plan"]},
             {"title": "Load budget & new CAM estimates", "role": ACCT, "days": 60, "est": 120, "after": ["Owner review & approval"]},
+        ],
+    },
+    {
+        "key": "tax_protest",
+        "board": "year",
+        "name": "Property Tax Protest",
+        "description": "Appraisal notice → protest → hearing. Start date = when notices arrive (~April 15); Texas protests are usually due May 15.",
+        "items": [
+            {"title": "Review notice of appraised value", "role": AM, "days": 0, "est": 45},
+            {"title": "Compare to purchase price, comps & income approach", "role": AM, "days": 7, "est": 120,
+             "after": ["Review notice of appraised value"]},
+            {"title": "Decide: protest ourselves or send to the tax protest company", "role": AM, "days": 10, "est": 30,
+             "after": ["Compare to purchase price, comps & income approach"]},
+            {"title": "Gather evidence (rent roll, operating statements, photos, repairs)", "role": ACCT, "days": 20, "est": 120},
+            {"title": "File protest by the deadline", "role": PM, "days": 25, "est": 30,
+             "after": ["Decide: protest ourselves or send to the tax protest company"]},
+            {"title": "Informal review / ARB hearing", "role": AM, "days": 50, "est": 120, "after": ["File protest by the deadline"]},
+            {"title": "Record result & update budget / escrow", "role": ACCT, "days": 75, "est": 45, "after": ["Informal review / ARB hearing"]},
+        ],
+    },
+    {
+        "key": "year_end",
+        "board": "year",
+        "name": "Year-End Close & 1099s",
+        "description": "December close, owner year-end package and vendor 1099s (due Jan 31). Start date = Dec 1.",
+        "items": [
+            {"title": "Collect missing vendor W-9s", "role": AP, "days": 0, "est": 120},
+            {"title": "Confirm year-end accruals & prepaids", "role": ACCT, "days": 25, "est": 120},
+            {"title": "Final December close", "role": ACCT, "days": 40, "est": 240, "after": ["Confirm year-end accruals & prepaids"]},
+            {"title": "Owner year-end package & tax information", "role": ACCT, "days": 55, "est": 180, "after": ["Final December close"]},
+            {"title": "Issue 1099s to vendors (by Jan 31)", "role": AP, "days": 55, "est": 120, "after": ["Collect missing vendor W-9s"]},
+            {"title": "File 1099s with the IRS", "role": AP, "days": 58, "est": 45, "after": ["Issue 1099s to vendors (by Jan 31)"]},
+            {"title": "Archive the year & roll the fiscal year", "role": ACCT, "days": 70, "est": 60, "after": ["Owner year-end package & tax information"]},
+        ],
+    },
+    {
+        "key": "inspection",
+        "board": "quarter",
+        "name": "Quarterly Property Inspection",
+        "description": "The same walk at every property each quarter. Start date = first day of the quarter.",
+        "items": [
+            {"title": "Exterior walk", "role": PM, "days": 10, "est": 60,
+             "checklist": ["Roof & drainage", "Parking lot & striping", "Lighting", "Landscaping & irrigation", "Signage", "Dumpster area"]},
+            {"title": "Common areas & life safety", "role": PM, "days": 10, "est": 45,
+             "checklist": ["Fire extinguishers & tags", "Exit / emergency lights", "Sprinkler & alarm tags", "Restrooms & corridors"]},
+            {"title": "Check vacant suites", "role": LEASING, "days": 12, "est": 30},
+            {"title": "Photos & inspection report", "role": PM, "days": 14, "est": 45, "after": ["Exterior walk", "Common areas & life safety"]},
+            {"title": "Work orders for issues found", "role": PM, "days": 16, "est": 30, "after": ["Photos & inspection report"]},
+            {"title": "Send summary to owner / asset manager", "role": PM, "days": 20, "est": 20, "after": ["Photos & inspection report"]},
         ],
     },
 ]
@@ -254,6 +308,11 @@ SAMPLE_PROJECTS = {
     "cam_rec": ("Sample – 2026 CAM Reconciliation (777 E Sonterra)", "777 E Sonterra Blvd, San Antonio, TX 78258",
                 "Sonterra Commons Owner LLC", -15),
     "budget": ("Sample – 2027 Budget (8800 Research Blvd)", "8800 Research Blvd, Austin, TX", "Research Plaza Owner LP", -6),
+    "tax_protest": ("Sample – 2026 Tax Protest (4500 Fredericksburg Rd)", "4500 Fredericksburg Rd, San Antonio, TX",
+                    "Fredericksburg Center LLC", -12),
+    "year_end": ("Sample – 2026 Year-End & 1099s (777 E Sonterra)", "777 E Sonterra Blvd, San Antonio, TX 78258",
+                 "Sonterra Commons Owner LLC", -5),
+    "inspection": ("Sample – Q4 Inspection (8800 Research Blvd)", "8800 Research Blvd, Austin, TX", "Research Plaza Owner LP", -9),
 }
 
 
@@ -339,7 +398,8 @@ def _install_templates(keys: list[str]) -> list[str]:
         if s["key"] not in keys or s["name"] in have:
             continue
         with tx() as c:
-            tid = c.execute("INSERT INTO templates(name, description) VALUES(?,?)", (s["name"], s["description"])).lastrowid
+            tid = c.execute("INSERT INTO templates(name, description, board_period) VALUES(?,?,?)",
+                            (s["name"], s["description"], s.get("board"))).lastrowid
         ids = {}
 
         def add(item, parent=None):

@@ -1896,11 +1896,8 @@ def help_ask(body: HelpIn, request: Request):
 # ---------- month-end close board ----------
 
 @app.get("/api/close-board")
-def close_board(month: str | None = None, template_id: int | None = None):
-    import re as _re
-    if month and not _re.fullmatch(r"\d{4}-\d{2}", month):
-        raise HTTPException(400, "month must look like 2026-11")
-    return closeboard.board(month, template_id)
+def close_board(period: str | None = None, month: str | None = None, template_id: int | None = None):
+    return closeboard.board(period or month, template_id)   # bad/mismatched periods fall back to the current one
 
 
 # ---------- recently deleted + activity log ----------

@@ -19,7 +19,7 @@ MENU (computer: top bar · phone: bottom tabs Home / Tasks / Projects / Properti
   waiting on me; reminders; comments & @mentions) and "Team" (managers: workload, projects, overdue, blocked, unassigned). Team wins feed
   with 👏 high-fives and each person's progress ring. Number boxes are clickable.
 - Tasks ▾: All tasks (filter by person/project/status; quick add at top; tasks can have no project) · Calendar (Month grid or List;
-  phones tap a day) · By person (managers) · Month-end close board (properties × close steps for a month; "Start close" for missing ones).
+  phones tap a day) · By person (managers) · 📊 Tracking boards (properties × a template's steps — Month-End Close monthly, Quarterly Inspection quarterly, Budget/CAM/Tax protest/Year-end yearly, Onboarding and Sale hand-off ongoing; tabs pick the board, ‹ › change the period, "Start" for properties missing this period. Managers choose which templates get a board in Admin ▾ → Templates → "📊 Tracking board". Property team now sits at the top right of each property page).
 - Projects ▾: Projects (grouped by property, or Board: Not started / In progress / Waiting on owner / Done; quick filters Mine, Needs
   attention, Waiting on owner, Repeating, Finished; click a row to open the project panel) · Templates (reusable checklists, managers).
 - Properties ▾: Properties (one page per building) · Vendors · ✉️ Emails to send.

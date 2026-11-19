@@ -884,6 +884,7 @@ def test_month_end_close_board(mgr):
     tpl = ids(mgr.post("/api/templates", json={"name": "Test Month-End Close", "items": [
         {"title": "Post receipts", "due_offset_days": 2}, {"title": "Bank rec", "due_offset_days": 8},
         {"title": "Owner report", "due_offset_days": 12}]}))["id"]
+    ids(mgr.patch(f"/api/templates/{tpl}", json={"board_period": "month"}))
     month = "2030-03"
     a = ids(mgr.post("/api/projects", json={"name": "Close A", "template_id": tpl, "start_date": "2030-03-01", "property": "10 Close St, Austin, TX"}))["id"]
     b = ids(mgr.post("/api/projects", json={"name": "Close B", "template_id": tpl, "start_date": "2030-03-01", "property": "20 Close St, Austin, TX"}))["id"]
@@ -897,7 +898,36 @@ def test_month_end_close_board(mgr):
     assert ra["cells"]["Post receipts"]["status"] == "done" and ra["done"] == 1 and ra["next"]["title"] == "Bank rec"
     assert board["totals"]["Post receipts"] == 1 and board["prev"] == "2030-02" and board["next"] == "2030-04"
     assert [m["label"] for m in board["missing"]] == ["30 Close St"]                 # closed last month, not this month
-    assert mgr.get("/api/close-board", params={"month": "March"}).status_code == 400
+    assert ids(mgr.get("/api/close-board", params={"period": "March", "template_id": tpl}))["period"] == date.today().strftime("%Y-%m")
+
+
+def test_tracking_boards_periods_and_switch(mgr):
+    tpl = ids(mgr.post("/api/templates", json={"name": "Test Inspection", "items": [{"title": "Walk"}, {"title": "Report"}]}))["id"]
+    ids(mgr.post("/api/projects", json={"name": "Insp A", "template_id": tpl, "start_date": "2031-05-10", "property": "1 Q St, Austin, TX"}))
+    ids(mgr.post("/api/projects", json={"name": "Insp B old", "template_id": tpl, "start_date": "2031-02-01", "property": "2 Q St, Austin, TX"}))
+    # off by default: not offered as a board
+    b = ids(mgr.get("/api/close-board", params={"template_id": tpl}))
+    assert tpl not in [t["id"] for t in b["templates"]]
+    ids(mgr.patch(f"/api/templates/{tpl}", json={"board_period": "quarter"}))
+    assert [t for t in ids(mgr.get("/api/templates")) if t["id"] == tpl][0]["board_period"] == "quarter"
+    b = ids(mgr.get("/api/close-board", params={"template_id": tpl, "period": "2031-Q2"}))
+    assert b["period_kind"] == "quarter" and b["label"] == "Q2 2031" and b["prev"] == "2031-Q1" and b["next"] == "2031-Q3"
+    assert [r["label"] for r in b["rows"]] == ["1 Q St"] and [m["label"] for m in b["missing"]] == ["2 Q St"]
+    assert b["start_date"] == "2031-04-01" and "2031-Q1" in b["periods"]
+    # ongoing: every open project, no periods
+    ids(mgr.patch(f"/api/templates/{tpl}", json={"board_period": "none"}))
+    b = ids(mgr.get("/api/close-board", params={"template_id": tpl}))
+    assert b["period_kind"] == "none" and len(b["rows"]) == 2 and b["missing"] == []
+    ids(mgr.patch(f"/api/templates/{tpl}", json={"board_period": None}))
+    assert tpl not in [t["id"] for t in ids(mgr.get("/api/close-board"))["templates"]]
+
+
+def test_starter_templates_come_with_boards(mgr):
+    from app import starter_templates
+    starter_templates.install(["tax_protest", "inspection", "month_end"])
+    by = {t["name"]: t["board_period"] for t in ids(mgr.get("/api/templates"))}
+    assert by["Property Tax Protest"] == "year" and by["Quarterly Property Inspection"] == "quarter"
+    assert by["Month-End Close"] == "month"
 
 
 def test_vendors_ratings_properties_and_projects(mgr, staff):
