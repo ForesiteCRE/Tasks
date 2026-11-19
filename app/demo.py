@@ -105,12 +105,67 @@ def add_extra_team(m: dict):
     m["extra_team"] = True
 
 
+# Fictional team wins for demos: (person, icon-kind, what they did, detail). "me" = whoever loaded the demo.
+SAMPLE_WINS = [
+    ("Chris Ogden", "Collected $18,400 past-due rent from Lone Star Dental", "Suite 300 · 4500 Fredericksburg Rd"),
+    ("Taylor Brooks", "Signed a 5-year renewal with Coastal Coffee", "Suite 110 · 777 E Sonterra Blvd"),
+    ("Sam Patel", "Won the tax protest — 777 E Sonterra value cut 8%", "Saves the owner about $21,000 this year"),
+    ("Priya Shah", "Roof leak at 8800 Research fixed the same day", "No tenant damage · vendor on site in 2 hours"),
+    ("Maria Garza", "Collected every vendor W-9 before year-end", "1099s ready to go in January"),
+    ("Jordan Lee", "Sent October owner reports 3 days early", "All 4 properties"),
+    ("Alex Rivera", "Cut landscaping cost 12% after rebidding", "4500 Fredericksburg Rd · same scope"),
+    ("Dana Whitfield", "Trained two new coordinators on the Task Manager", "Property Management team"),
+    ("me", "Onboarded 777 E Sonterra in 28 days", "Every takeover step done before day 30"),
+]
+
+
+def add_sample_wins(m: dict, me_id: int):
+    import random as _r
+    rnd = _r.Random(23)
+    handles = dict(PEOPLE)
+    m.setdefault("sample_wins", [])
+    with tx() as c:
+        users = {r["email"]: r["id"] for r in c.execute("SELECT id, email FROM users")}
+        everyone = list(m["users"]) + [me_id]
+        for who, title, detail in SAMPLE_WINS:
+            uid = me_id if who == "me" else users.get(f"{handles[who]}@{DEMO_DOMAIN}")
+            if not uid:
+                continue
+            wid = c.execute("INSERT INTO wins(user_id, kind, ref_id, title, detail, at) VALUES(?,?,?,?,?,datetime('now', ?))",
+                            (uid, "shoutout", None, title, detail, f"-{rnd.randint(30, 3 * 24 * 60)} minutes")).lastrowid
+            m["sample_wins"].append(wid)
+            for k in rnd.sample(everyone, k=rnd.randint(1, 4)):
+                if k != uid:
+                    c.execute("INSERT OR IGNORE INTO win_kudos(win_id, user_id) VALUES(?,?)", (wid, k))
+
+
+def refresh_wins():
+    """The wins feed shows the last 7 days — keep the demo's sample wins recent (once a day)."""
+    m = manifest()
+    if not m or not m.get("sample_wins") or get_setting("demo.wins_day") == date.today().isoformat():
+        return
+    import random as _r
+    rnd = _r.Random(date.today().toordinal())
+    with tx() as c:
+        for wid in m["sample_wins"]:
+            c.execute("UPDATE wins SET at=datetime('now', ?) WHERE id=?", (f"-{rnd.randint(30, 3 * 24 * 60)} minutes", wid))
+    set_setting("demo.wins_day", date.today().isoformat())
+
+
 def backfill_contacts():
     """Demo data loaded before sample contacts existed gets them once."""
     m = manifest()
-    if m and ("contacts" not in m or "extra_team" not in m):
+    if m and ("contacts" not in m or "extra_team" not in m or "sample_wins" not in m):
         if "contacts" not in m:
             add_sample_contacts(m)
+        if "sample_wins" not in m:
+            with tx() as c:
+                me = c.execute("SELECT user_id FROM property_team WHERE role_id=(SELECT id FROM project_roles WHERE name='Property Manager') "
+                               "AND user_id NOT IN (SELECT id FROM users WHERE email LIKE ?) LIMIT 1", (f"%@{DEMO_DOMAIN}",)).fetchone()
+            if me:
+                add_sample_wins(m, me[0])
+            else:
+                m["sample_wins"] = []
         with blink.quiet():
             add_extra_team(m)
         set_setting("demo.manifest", json.dumps(m))
@@ -502,6 +557,7 @@ def _showcase(m: dict, me_id: int, ids: dict, hq_id):
         except ValueError:
             pass
     # wins spread over the last few days, high-fives, a few badges and streaks
+    add_sample_wins(m, me_id)
     with tx() as c:
         wins = [dict(r) for r in c.execute("SELECT id, user_id FROM wins WHERE user_id IN (%s) OR ref_id IN (%s)" % (
             ",".join("?" * len(m["users"])), ",".join("?" * len(m["projects"]))), m["users"] + m["projects"])]
@@ -566,6 +622,9 @@ def remove() -> dict:
         if empty:
             properties.delete(pid)
     with tx() as c:
+        for wid in m.get("sample_wins", []):
+            c.execute("DELETE FROM win_kudos WHERE win_id=?", (wid,))
+            c.execute("DELETE FROM wins WHERE id=?", (wid,))
         for cid in m.get("contacts", []):
             c.execute("DELETE FROM property_contacts WHERE id=?", (cid,))
         for eid in m.get("emails", []):

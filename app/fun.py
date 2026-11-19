@@ -67,13 +67,13 @@ def feed(limit: int = 30, me: int | None = None) -> list[dict]:
                                       (SELECT GROUP_CONCAT(ku.name, ', ') FROM win_kudos k JOIN users ku ON ku.id=k.user_id WHERE k.win_id=w.id) AS kudos_from,
                                       EXISTS(SELECT 1 FROM win_kudos k WHERE k.win_id=w.id AND k.user_id=?) AS mine_kudo
                                FROM wins w LEFT JOIN users u ON u.id=w.user_id
-                               WHERE w.at >= datetime('now','-7 days') ORDER BY w.id DESC LIMIT ?""", (me, limit)))
+                               WHERE w.at >= datetime('now','-7 days') ORDER BY w.at DESC, w.id DESC LIMIT ?""", (me, limit)))
     for w in ws:
         if w["kind"] == "badge":
             ico, name, _ = BADGES.get(w["title"], ("🏅", w["title"], ""))
             w["title"], w["icon"] = f"earned {name}", ico
         else:
-            w["icon"] = {"task": "✅", "project": "🎉", "streak": "🔥"}.get(w["kind"], "✅")
+            w["icon"] = {"task": "✅", "project": "🎉", "streak": "🔥", "shoutout": "🏆"}.get(w["kind"], "✅")
     return ws
 
 
@@ -90,7 +90,7 @@ def kudo(win_id: int, user_id: int) -> dict:
         n = c.execute("SELECT COUNT(*) FROM win_kudos WHERE win_id=?", (win_id,)).fetchone()[0]
     if new and w["blink_user_id"]:
         what = {"task": f"finishing *{w['title']}*", "project": f"completing *{w['title']}*", "streak": "your streak",
-                "badge": f"earning {BADGES.get(w['title'], ('', w['title'], ''))[1]}"}.get(w["kind"], w["title"])
+                "badge": f"earning {BADGES.get(w['title'], ('', w['title'], ''))[1]}"}.get(w["kind"], f"*{w['title']}*")
         automations._send([w["blink_user_id"]], f"👏 **{me['name'] if me else 'Someone'} gave you a high-five** for {what}!")
     return {"kudos": n}
 

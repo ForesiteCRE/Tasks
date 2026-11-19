@@ -571,9 +571,14 @@ def test_demo_data_load_and_remove(mgr, staff):
     assert {"Owner contact", "CPA", "Bank", "Lawyer", "Tax protest company"} <= roles
     with tx() as c:
         assert all(r[0].endswith("@example.com") for r in c.execute("SELECT email FROM property_contacts WHERE email IS NOT NULL"))
+    feed = ids(mgr.get("/api/fun/team"))["wins"]
+    assert any(w["kind"] == "shoutout" and w["icon"] == "🏆" for w in feed)
+    from app import demo as _demo
+    _demo.refresh_wins()
     ids(mgr.delete("/api/demo"))
     with tx() as c:
         assert not c.execute("SELECT 1 FROM property_contacts WHERE name='Margaret Ellison'").fetchone()
+        assert not c.execute("SELECT 1 FROM wins WHERE kind='shoutout'").fetchone()
     left = [p for p in ids(mgr.get("/api/projects")) if p["id"] not in before_projects and not p["is_general"]]
     assert not left, [(p["name"], p["is_general"]) for p in left]
     assert {u["id"] for u in ids(mgr.get("/api/users"))} == before_users

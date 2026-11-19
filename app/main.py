@@ -27,7 +27,7 @@ async def scheduler_loop():
     reminders (once/day/task) and, on the summary weekday, the weekly summary (once/week)."""
     while True:
         for job in (maintenance.daily_backup, services.run_recurrences, dashboard.send_due_reminders,
-                    dashboard.send_daily_digests, fun.run_daily):
+                    dashboard.send_daily_digests, fun.run_daily, demo.refresh_wins):
             try:
                 job()
             except Exception:
