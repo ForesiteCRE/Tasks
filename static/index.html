@@ -343,18 +343,18 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
 <header><h1 class="brand"><img src="/brand/logo.png" alt="Foresite Commercial Real Estate"><span class="app">Task Manager</span></h1>
 <nav id="nav">
   <button data-v="home" class="on">Home<span id="mBadge" class="nbadge hidden" title="Unread @mentions"></span></button>
+  <div class="dd" data-g="properties" data-icon="🏢"><button class="ddb">Properties<span id="emBadge" class="nbadge hidden" title="Emails ready to send"></span> <span class="car">▾</span></button><div class="ddm">
+    <button data-v="properties">🏢 Properties<small>critical dates, vendors, insurance, team</small></button>
+    <button data-v="vendors">🧰 Vendors<small>who we've used — ratings, prices &amp; notes</small></button>
+    <button data-v="emails">✉️ Emails to send <span id="emBadge2" class="nbadge hidden"></span><small>insurance &amp; approval emails drafted for you</small></button></div></div>
+  <div class="dd" data-g="projects" data-icon="📁"><button class="ddb">Projects <span class="car">▾</span></button><div class="ddm">
+    <button data-v="projects">📁 Projects<small>start a project, progress, bids &amp; approvals</small></button>
+    <button data-v="templates" class="mgr">📋 Templates<small>reusable checklists projects are built from</small></button></div></div>
   <div class="dd" data-g="tasks" data-icon="✓"><button class="ddb">Tasks <span class="car">▾</span></button><div class="ddm">
     <button data-v="tasks">✓ All tasks<small>with or without a project</small></button>
     <button data-v="calendar">📅 Calendar<small>due dates by month or as a list</small></button>
     <button data-v="team" class="mgr">👥 By person<small>each person's open, overdue &amp; blocked work</small></button>
     <button data-v="close">📊 Tracking boards<small>month-end close, onboarding, budgets… at a glance</small></button></div></div>
-  <div class="dd" data-g="projects" data-icon="📁"><button class="ddb">Projects <span class="car">▾</span></button><div class="ddm">
-    <button data-v="projects">📁 Projects<small>start a project, progress, bids &amp; approvals</small></button>
-    <button data-v="templates" class="mgr">📋 Templates<small>reusable checklists projects are built from</small></button></div></div>
-  <div class="dd" data-g="properties" data-icon="🏢"><button class="ddb">Properties<span id="emBadge" class="nbadge hidden" title="Emails ready to send"></span> <span class="car">▾</span></button><div class="ddm">
-    <button data-v="properties">🏢 Properties<small>critical dates, vendors, insurance, team</small></button>
-    <button data-v="vendors">🧰 Vendors<small>who we've used — ratings, prices &amp; notes</small></button>
-    <button data-v="emails">✉️ Emails to send <span id="emBadge2" class="nbadge hidden"></span><small>insurance &amp; approval emails drafted for you</small></button></div></div>
   <div class="dd mgr" data-g="admin" data-icon="⚙︎"><button class="ddb">Admin <span class="car">▾</span></button><div class="ddm">
     <button data-v="history" class="mgr">🗑 Recently deleted &amp; history<small>restore deletes · who changed what</small></button>
     <button data-v="people" class="adm">👥 People &amp; departments<small>team, roles, department heads</small></button>
@@ -1878,9 +1878,9 @@ async function runReminders(){const r=await api('/api/reminders/run',{method:'PO
 </div>
 <nav id="tabbar" aria-label="Main">
   <button data-t="home" onclick="show('home')"><i>🏠</i>Home<span id="mBadgeM" class="nbadge hidden"></span></button>
-  <button data-t="tasks" onclick="openNavSheet(document.querySelector('.dd[data-g=tasks]'))"><i>✓</i>Tasks</button>
-  <button data-t="projects" onclick="openNavSheet(document.querySelector('.dd[data-g=projects]'))"><i>📁</i>Projects</button>
   <button data-t="properties" onclick="openNavSheet(document.querySelector('.dd[data-g=properties]'))"><i>🏢</i>Properties<span id="emBadgeM" class="nbadge hidden"></span></button>
+  <button data-t="projects" onclick="openNavSheet(document.querySelector('.dd[data-g=projects]'))"><i>📁</i>Projects</button>
+  <button data-t="tasks" onclick="openNavSheet(document.querySelector('.dd[data-g=tasks]'))"><i>✓</i>Tasks</button>
   <button data-t="more" onclick="openMoreSheet()"><i>☰</i>More</button>
 </nav>
 </body></html>

@@ -14,7 +14,7 @@ log = logging.getLogger("helpbot")
 GUIDE = """
 FORESITE TASK MANAGER — HOW IT WORKS (for answering staff questions)
 
-MENU (computer: top bar · phone: bottom tabs Home / Tasks / Projects / Properties / More)
+MENU (computer: top bar · phone: bottom tabs Home / Properties / Projects / Tasks / More; top bar order Home · Properties ▾ · Projects ▾ · Tasks ▾ · Admin ▾)
 - Home: "My day" (today ring = tasks due today or earlier; 🔥 streak = workdays with nothing overdue; badges; agenda; blocked for me;
   waiting on me; reminders; comments & @mentions) and "Team" (managers: workload, projects, overdue, blocked, unassigned). Team wins feed
   with 👏 high-fives and each person's progress ring. Number boxes are clickable.
@@ -222,7 +222,7 @@ def ask(messages: list[dict], user: dict, page: str | None = None) -> dict:
     from . import intake
     if not intake.ai_enabled():
         return {"reply": "The help assistant needs Claude (an ANTHROPIC_API_KEY in Railway). Meanwhile: the menu groups everything under "
-                         "Tasks, Projects and Properties, and every page has a short description at the top."}
+                         "Properties, Projects and Tasks, and every page has a short description at the top."}
     import anthropic
     client = anthropic.Anthropic()
     system = ("You are LJ, the built-in help assistant for Foresite Real Estate's Task Manager web app. You're an assistant, not a "
