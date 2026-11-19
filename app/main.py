@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import (audit, auth, automations, bids, blink, blockers, fun, chat, closeboard, departments, emails, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
+from . import (audit, auth, automations, bids, blink, blockers, fun, ourcoi, chat, closeboard, departments, emails, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
                starter_templates, team, timing, tpl)
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
@@ -924,6 +924,7 @@ class PropertyPatch(BaseModel):
     spend_limit: float | None = None
     bank_name: str | None = None
     bank_accounts: str | None = None
+    our_coi_requirements: str | None = None
 
 class DateIn(BaseModel):
     kind: str = "other"
@@ -1798,6 +1799,84 @@ def give_kudos(wid: int, request: Request):
         return fun.kudo(wid, _me_id(request))
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+# ---------- Foresite's own certificates of insurance (per property) ----------
+
+class OurCoiPatch(BaseModel):
+    expires: str | None = None
+    owner_named: bool | None = None
+    meets_reqs: bool | None = None
+
+class AgentIn(BaseModel):
+    name: str | None = None
+    email: str | None = None
+    company: str | None = None
+
+
+@app.post("/api/properties/{pid}/our-coi")
+def upload_our_coi(pid: int, body: DocIn, request: Request):
+    if not _can_assign(request, property_id=pid):
+        raise HTTPException(403, "Only managers or people on this property's team can upload our certificates.")
+    import base64
+    data = base64.b64decode(body.data_b64)
+    if len(data) > intake.MAX_DOC_BYTES:
+        raise HTTPException(413, "File too large (25 MB max).")
+    out = ourcoi.save(pid, data, body.filename, body.content_type, _me_id(request))
+    p = properties.get(pid)
+    audit.log(_me_id(request), "uploaded our COI", "property", pid, p["name"] if p else None, out["status"]["label"])
+    return out
+
+
+@app.get("/api/our-cois/{cid}")
+def our_coi_file(cid: int):
+    got = ourcoi.file(cid)
+    if not got:
+        raise HTTPException(404, "File not found")
+    return FileResponse(got[1], media_type=got[0]["content_type"] or "application/octet-stream", filename=got[0]["filename"])
+
+
+@app.patch("/api/our-cois/{cid}")
+def patch_our_coi(cid: int, body: OurCoiPatch, request: Request):
+    with tx() as c:
+        k = c.execute("SELECT property_id FROM our_cois WHERE id=?", (cid,)).fetchone()
+    if not k or not _can_assign(request, property_id=k["property_id"]):
+        raise HTTPException(403, "Only managers or people on this property's team can update our certificates.")
+    f = body.model_dump(exclude_unset=True)
+    if f.get("expires"):
+        try:
+            f["expires"] = date.fromisoformat(f["expires"][:10]).isoformat()
+        except ValueError:
+            raise HTTPException(400, "Expiration must be a date.")
+    ourcoi.update(cid, f, _me_id(request))
+    return {"ok": True}
+
+
+@app.delete("/api/our-cois/{cid}")
+def delete_our_coi(cid: int, request: Request):
+    _require_manager(request)
+    ourcoi.delete(cid)
+    return {"ok": True}
+
+
+@app.post("/api/properties/{pid}/our-coi/request")
+def request_our_coi(pid: int, request: Request):
+    if not _can_assign(request, property_id=pid):
+        raise HTTPException(403, "Only managers or people on this property's team can do that.")
+    did = ourcoi.draft_request(pid, _me_id(request))
+    return emails.get(did)
+
+
+@app.get("/api/our-coi/agent")
+def get_agent():
+    return ourcoi.agent()
+
+
+@app.put("/api/our-coi/agent")
+def put_agent(body: AgentIn, request: Request):
+    _require_manager(request)
+    ourcoi.set_agent(body.model_dump())
+    return ourcoi.agent()
 
 
 # ---------- month-end close board ----------

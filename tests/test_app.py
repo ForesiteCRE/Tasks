@@ -1304,3 +1304,38 @@ def test_wins_kudos_streaks_and_badges(mgr, staff):
         c.execute("UPDATE user_days SET overdue=2 WHERE user_id=? AND day=?", (sam, (d - timedelta(days=3)).isoformat()))
     assert fun.streak(sam) < 5
     assert any(x["id"] == sam for x in ids(mgr.get("/api/fun/team"))["today"])
+
+
+def test_our_own_coi_per_property(mgr, staff):
+    import base64
+    from datetime import date, timedelta
+    pid = ids(mgr.post("/api/properties", json={"address": "12 Our Coi Ct, Austin, TX", "client": "Our Coi Owner LLC"}))["id"]
+    ids(mgr.patch(f"/api/properties/{pid}", json={"our_coi_requirements": "CGL $1M/$2M; Crime $250k; Owner as additional insured"}))
+    page = ids(mgr.get(f"/api/properties/{pid}"))
+    assert page["our_coi"]["status"]["state"] == "missing" and "Crime" in page["our_coi_requirements"]
+    assert [p for p in ids(mgr.get("/api/properties")) if p["id"] == pid][0]["our_coi"]["state"] == "missing"
+    exp = (date.today() + timedelta(days=200)).isoformat()
+    CLAUDE.append({"is_coi": True, "named_insured": "Foresite Real Estate, Inc.", "carrier": "Chubb", "expires": exp,
+                   "owner_additional_insured": "yes", "meets_requirements": "no", "gaps": "Crime coverage not shown",
+                   "evidence": "CGL 1M/2M; AI: Our Coi Owner LLC"})
+    doc = {"filename": "foresite-coi.pdf", "content_type": "application/pdf", "data_b64": base64.b64encode(b"%PDF ours").decode()}
+    out = ids(mgr.post(f"/api/properties/{pid}/our-coi", json=doc))
+    assert out["status"]["state"] == "gaps" and "Crime" in out["status"]["gaps"]
+    assert staff.post(f"/api/properties/{pid}/our-coi", json=doc).status_code == 403
+    ids(mgr.patch(f"/api/our-cois/{out['id']}", json={"meets_reqs": True}))       # someone checked: crime is on a separate cert
+    st = ids(mgr.get(f"/api/properties/{pid}"))["our_coi"]["status"]
+    assert st["state"] == "ok" and st["expires"] == exp
+    dates = [d for d in ids(mgr.get(f"/api/properties/{pid}"))["dates"] if d["kind"] == "our_coi"]
+    assert len(dates) == 1 and dates[0]["date"] == exp and dates[0]["remind_days"] == "30,7"
+    assert mgr.get(f"/api/our-cois/{out['id']}").content == b"%PDF ours"
+    # request a certificate from our agent
+    ids(mgr.put("/api/our-coi/agent", json={"name": "Kelly Agent", "email": "kelly@ouragency.test", "company": "Our Agency"}))
+    d = ids(mgr.post(f"/api/properties/{pid}/our-coi/request"))
+    assert d["to_email"] == "kelly@ouragency.test" and "Our Coi Owner LLC" in d["body"] and "Crime $250k" in d["body"]
+    # reading a management agreement picks up what we have to carry
+    CLAUDE.append({"doc_type": "mgmt_agreement", "summary": "PMA", "dates": [], "spend_limit": 0, "report_notes": "", "bank_name": "",
+                   "manager_insurance": "CGL $2M per occurrence; E&O $1M; Owner and lender as additional insured",
+                   "contacts": [], "insurance": {"carrier": "", "policy_number": "", "expires": "", "foresite_additional_insured": "not_applicable", "evidence": ""}})
+    r = ids(mgr.post(f"/api/properties/{pid}/read-document", json={"filename": "pma.pdf", "content_type": "application/pdf",
+                                                                    "data_b64": base64.b64encode(b"%PDF pma").decode()}))
+    assert "E&O $1M" in r["manager_insurance"]

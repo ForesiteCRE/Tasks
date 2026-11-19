@@ -29,6 +29,7 @@ KINDS = {
     "cam_recon": "CAM reconciliation due",
     "loan": "Lender reporting / loan deadline",
     "vendor_coi": "Vendor insurance (COI) expires",
+    "our_coi": "Our (Foresite) certificate of insurance expires",
     "mgmt_agreement": "Management agreement renewal",
     "inspection": "Inspection / permit / license",
     "other": "Other",
@@ -39,7 +40,7 @@ KINDS = {
 OFFERED = ["tax_protest", "tax_payment", "insurance_renewal", "owner_report", "budget_due", "cam_recon", "loan",
            "mgmt_agreement", "inspection", "other"]
 ICONS = {"tax_protest": "🏛", "tax_payment": "💵", "insurance_renewal": "☂️", "owner_report": "📊", "budget_due": "📒",
-         "cam_recon": "🧮", "loan": "🏦", "mgmt_agreement": "🤝", "inspection": "🔎", "other": "📌", "vendor_coi": "🧰",
+         "cam_recon": "🧮", "loan": "🏦", "mgmt_agreement": "🤝", "inspection": "🔎", "other": "📌", "vendor_coi": "🧰", "our_coi": "🏢",
          "lease_expiration": "📄", "option_notice": "⚑", "rent_increase": "📈", "coi_expiry": "🛡"}
 REPEATS = {"monthly": 1, "quarterly": 3, "yearly": 12}
 DOC_KINDS = {"insurance": "Property insurance", "mgmt_agreement": "Management agreement", "tax_notice": "Tax notice / appraisal",
@@ -249,7 +250,8 @@ def create(address: str, name: str | None = None, client: str | None = None, not
 
 
 def update(pid: int, fields: dict):
-    allowed = {k: v for k, v in fields.items() if k in ("name", "client", "notes", "address", "report_notes", "bank_name", "bank_accounts") and v is not None}
+    allowed = {k: v for k, v in fields.items() if k in ("name", "client", "notes", "address", "report_notes", "bank_name", "bank_accounts",
+                                                             "our_coi_requirements") and v is not None}
     if "bank_accounts" in allowed:
         allowed["bank_accounts"] = mask_accounts(allowed["bank_accounts"])
     if "spend_limit" in fields:
@@ -312,6 +314,8 @@ def list_all() -> list[dict]:
                                ORDER BY date LIMIT 1""", (p["id"],)).fetchone()
             p["next_date"] = _date_row(dict(nxt), today) if nxt else None
             p["insurance"] = _insurance_status(c, p["id"])
+            from .ourcoi import status as our_status
+            p["our_coi"] = our_status(c, p["id"])
             from .vendors import coi_status
             p["coi_issues"] = sum(1 for r in c.execute("""SELECT DISTINCT vendor_id FROM property_vendors WHERE property_id=?
                                                           AND status='current' AND trade NOT LIKE 'Utilities%'""",
@@ -359,10 +363,15 @@ def get(pid: int) -> dict | None:
             team_by_person[x["id"]]["roles"].append(x["role"])
     photo = next((pr for pr in projects if pr["photo_path"]), projects[0] if projects else None)
     return {**p, "projects": projects, "tasks": tasks, "team": list(team_by_person.values()), "dates": dates,
-            "pm": _pm_name(pid), "roles": team_list(pid), "contacts": contacts(pid), "docs": docs(pid), "vendors": _vendors(pid),
+            "pm": _pm_name(pid), "our_coi": _our_coi(pid), "roles": team_list(pid), "contacts": contacts(pid), "docs": docs(pid), "vendors": _vendors(pid),
             "insurance": _insurance_status_id(pid), "offered": OFFERED, "contact_roles": CONTACT_ROLES,
             "photo_project_id": photo["id"] if photo else None, "photo_path": photo["photo_path"] if photo else None,
             "kinds": KINDS}
+
+
+def _our_coi(pid: int) -> dict:
+    from . import ourcoi
+    return {"status": ourcoi.status_id(pid), "certs": ourcoi.listing(pid), "agent": ourcoi.agent()}
 
 
 def _pm_name(pid: int):
@@ -550,7 +559,7 @@ def upcoming(days: int = 120, user_id: int | None = None) -> list[dict]:
 
 EXTRACT_SCHEMA = {
     "type": "object", "additionalProperties": False,
-    "required": ["doc_type", "summary", "dates", "spend_limit", "report_notes", "bank_name", "contacts", "insurance"],
+    "required": ["doc_type", "summary", "dates", "spend_limit", "report_notes", "bank_name", "manager_insurance", "contacts", "insurance"],
     "properties": {
         "doc_type": {"type": "string", "enum": list(DOC_KINDS)},
         "summary": {"type": "string", "description": "2-4 lines: what this document is and what matters for managing the property"},
@@ -569,6 +578,7 @@ EXTRACT_SCHEMA = {
         "spend_limit": {"type": "number", "description": "dollar threshold above which capital expenditures / non-emergency repairs need the owner's prior approval (operating expenses are excluded); 0 if not stated"},
         "report_notes": {"type": "string", "description": "how/when the owner wants reports: contents, format, recipients, deadlines. Empty if none."},
         "bank_name": {"type": "string", "description": "bank holding the property's operating/trust account, if named; else empty"},
+        "manager_insurance": {"type": "string", "description": "insurance the MANAGER (Foresite) must carry under this agreement: each coverage with limits, who must be named additional insured, certificate holder, notice terms. Empty if not stated."},
         "contacts": {"type": "array", "items": {
             "type": "object", "additionalProperties": False, "required": ["role", "name", "company", "email", "phone"],
             "properties": {"role": {"type": "string", "enum": CONTACT_ROLES}, "name": {"type": "string"},
@@ -591,6 +601,7 @@ Find:
 - Property-level critical dates: tax protest deadline, tax payment due, insurance renewal/expiration, owner report due dates (monthly/quarterly — give the next one and set repeat), annual budget due, CAM reconciliation due, lender reporting, management agreement term/renewal/termination notice, required inspections. Use exact dates; when the document gives a rule ("by the 15th of each month", "60 days after year end"), compute the next occurrence on or after today and say how in notes. Skip anything that would be a guess.
 - spend_limit: the dollar threshold above which capital expenditures and non-emergency repairs need the owner's prior approval. It normally excludes routine operating expenses; note in report_notes exactly what it covers (per item / per contract, emergency exceptions). 0 if not stated.
 - report_notes: what the owner wants in reports and how (format, contents, who receives them, when).
+- manager_insurance: in a management agreement, the insurance Foresite (the manager) must carry — list each coverage and limit, who must be additional insured, certificate holder.
 - bank_name: the bank where the property's operating / trust / security deposit accounts are held. Never copy account numbers.
 - contacts: owner contact, the owner's asset manager, CPA/accountant, banker at the property's bank (role Bank), insurance agent/broker, lender, tax protest company/property tax consultant, lawyer/attorney — only people/companies actually named.
 - insurance: for an insurance document, carrier, policy number, expiration, and whether Foresite is named as an ADDITIONAL INSURED (look at additional insured sections, endorsements, certificate holder boxes — being only the certificate holder is NOT additional insured). Otherwise use not_applicable and empty strings.
@@ -658,6 +669,7 @@ def read_document(pid: int, data: bytes, content_type: str, filename: str, user_
     out["doc_kind"] = kind
     out["spend_limit"] = out.get("spend_limit") or 0
     out["bank_name"] = (out.get("bank_name") or "").strip()
+    out["manager_insurance"] = (out.get("manager_insurance") or "").strip()
     return out
 
 

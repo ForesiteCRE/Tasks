@@ -109,10 +109,11 @@ def _staff_allowed(request: Request) -> bool:
     if re.fullmatch(r"/api/projects/\d+/(bids|recommendation|approval|recommendation-draft)", path) or \
             re.fullmatch(r"/api/bids/\d+", path) or \
             re.fullmatch(r"/api/(properties|projects)/\d+/(vendors|vendor-slots)", path) or \
-            re.fullmatch(r"/api/properties/\d+/vendors/\d+/coi", path):
+            re.fullmatch(r"/api/properties/\d+/vendors/\d+/coi", path) or \
+            re.fullmatch(r"/api/properties/\d+/our-coi(/request)?", path):
         return True   # vendor endpoints check property/project team membership themselves
     return path.startswith(("/api/tasks", "/api/checklist/", "/api/reminders", "/api/me/", "/api/critical-dates/",
-                             "/api/vendors", "/api/vendor-reviews/", "/api/property-vendors/", "/api/project-vendors/", "/api/emails", "/api/wins/",
+                             "/api/vendors", "/api/vendor-reviews/", "/api/property-vendors/", "/api/project-vendors/", "/api/emails", "/api/wins/", "/api/our-cois/",
                              "/api/vendor-cois/"))
 
 

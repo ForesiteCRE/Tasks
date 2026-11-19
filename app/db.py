@@ -186,6 +186,8 @@ def _init_extras():
     blockers.init()
     from . import fun
     fun.init()
+    from . import ourcoi
+    ourcoi.init()
 
 
 def get_setting(key: str) -> str | None:
