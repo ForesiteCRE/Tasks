@@ -181,6 +181,9 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 .pill.dh{background:#efe7fa;color:#6741a5}
 .pchip.sm{font-size:11.5px;padding:2px 8px}.coiline{margin-top:4px;font-size:12px}.coirow{background:#f7fafc;border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px;font-size:13px}.coirow a{color:var(--ink)}.b.sm.on{background:var(--acc);color:#fff}
 .emcard{padding:12px 14px}.empreview{font-size:13px;color:var(--mute);margin-top:6px}
+.bidrow{display:flex;gap:10px;align-items:flex-start;padding:10px;border:1px solid var(--line);border-radius:8px;margin:6px 0}.bidrow.rec{border-color:var(--acc);background:#f4f9fc}.bidrow.declined{opacity:.6}.bidrow input[type=radio]{width:auto;margin-top:3px}
+.bidamt{font-weight:700;font-size:16px;text-align:right;white-space:nowrap}.bidamt .sub{font-weight:400;font-size:11.5px;color:var(--ok)}.bidadd{margin:8px 0}.recbox{margin-top:12px}.recbox textarea{width:100%}
+.apbox{margin-top:10px;padding:10px 12px;border-radius:8px;background:#eef3f7;font-weight:700}.apbox.approved{background:#eef6e4}.apbox.changes_requested{background:#fdf6ea}.apbox.declined{background:#fdecec}.apbox .sub{font-weight:400}
 .vacts{font-size:12px;margin-top:2px;color:var(--mute)}.vslot a[href^=tel]{color:inherit}
 .vslot{display:flex;gap:12px;padding:8px 2px;border-bottom:1px solid var(--line)}.vslot .vt{width:150px;flex:none;font-size:13px;color:var(--mute);padding-top:2px}.vcur+.vcur{margin-top:8px}.vpast{margin-top:4px}
 .tlink.sm{font-size:12.5px}.rev{padding:9px 2px;border-bottom:1px solid var(--line)}
@@ -612,6 +615,7 @@ async function openProject(pid){const p=PROJECTS.find(x=>x.id===pid);if(!p)retur
    <label class="mute" style="font-size:12px">Summary / notes</label><textarea ${dis} rows="3" onchange="projPatch(${p.id},{description:this.value})">${esc(p.description||'')}</textarea>
    ${p.property_id?`<div class="row" style="margin:6px 0 0"><button class="b ghost" onclick="openProperty(${p.property_id})">🏢 Property page — critical dates &amp; everything at this address</button></div>`:''}
    ${projTaskPreview(p)}
+   <div class="sec" id="bidsBox"><h3 style="margin:0">💰 Bids &amp; owner approval</h3><div class="mute" style="font-size:13px">Loading…</div></div>
    ${projVendors(p)}
    ${p.property_id?`<div class="sec"><div class="row" style="justify-content:space-between;margin:0"><h3 style="margin:0">👥 Team <span class="mute" style="font-weight:400;font-size:12.5px;margin-left:6px">from the property</span></h3>
      <button class="b ghost sm" onclick="openProperty(${p.property_id})">${mg?'Change on property page →':'Property page →'}</button></div>
@@ -625,7 +629,7 @@ async function openProject(pid){const p=PROJECTS.find(x=>x.id===pid);if(!p)retur
      <p>Deleting removes this project and all ${p.tasks.length} of its tasks for everyone. It can't be undone (only restored from a nightly backup).</p>
      <label>Type the project name <b>${esc(p.name)}</b> to confirm<input id="delConfirm" autocomplete="off" oninput="$('#delBtn').disabled=this.value.trim().toLowerCase()!==${esc(JSON.stringify(p.name.trim().toLowerCase()))}"></label>
      <button class="b" id="delBtn" disabled style="background:var(--bad);border-color:var(--bad);margin-top:8px" onclick="delProject(${p.id})">Permanently delete project</button></details>`:''}`;
-  if(!taskDlg.open)taskDlg.showModal();if($('#pjvSel'))pjvList(p.id);}
+  if(!taskDlg.open)taskDlg.showModal();if($('#pjvSel'))pjvList(p.id);loadBids(p.id);}
 function projTaskPreview(p){const ts=orderTasks(p.tasks),done=p.tasks.filter(t=>t.status==='done').length,pct=p.tasks.length?Math.round(100*done/p.tasks.length):0;
   const ico={done:'✅',in_progress:'🔵',blocked:'⛔',todo:'⬜'};
   return `<div class="sec"><div class="row" style="justify-content:space-between;margin:0"><h3 style="margin:0">📋 Tasks <span class="mute" style="font-weight:400;font-size:13px;margin-left:6px">${done}/${p.tasks.length} done</span></h3>
@@ -1013,6 +1017,48 @@ async function emSet(id,b){await api('/api/emails/'+id,{method:'PATCH',body:b});
 async function gmailOff(){if(!confirm('Disconnect Gmail? Drafts will stay in the app only.'))return;await api('/api/me/gmail',{method:'DELETE'});renderEmails();}
 async function emDraft(pid,vid){const d=await api('/api/emails',{method:'POST',body:{property_id:pid,vendor_id:vid||null}});await renderEmailsQuiet();emOpen(d.id);}
 async function renderEmailsQuiet(){const r=await api('/api/emails');EMAILS=r.drafts;GMAIL=r.gmail_connected;}
+
+/* ---------- project bids, recommendation, owner approval ---------- */
+let BIDS=null;
+async function loadBids(pid){const box=$('#bidsBox');if(!box)return;BIDS=await api(`/api/projects/${pid}/bids`);if(!VENDORS.length)await loadVendors();
+  const p=PROJECTS.find(x=>x.id===pid)||{team:[]},can=isMgr()||p.team.some(m=>m.user_id===ME.id),B=BIDS,money=n=>n==null?'—':'$'+Number(n).toLocaleString(undefined,{maximumFractionDigits:0});
+  const ap=B.approvals[0],locked=ap&&ap.status==='approved';
+  box.innerHTML=`<h3 style="margin:0 0 6px">💰 Bids &amp; owner approval</h3>
+    ${B.bids.map(b=>`<div class="bidrow ${b.status} ${b.id===B.recommended_bid_id?'rec':''}">
+      ${can&&!locked?`<input type="radio" name="recbid" title="Recommend this bid" ${b.id===B.recommended_bid_id?'checked':''} onchange="recSet(${pid},{bid_id:${b.id}})">`:''}
+      <div class="grow"><div>${b.vendor_id?`<span class="tlink" onclick="openVendor(${b.vendor_id})"><b>${esc(b.vendor_label)}</b></span>`:`<b>${esc(b.vendor_label||'?')}</b> <span class="mute" style="font-size:12px">(not in vendor list)</span>`}
+        ${b.reviews?`<span class="stars sm">${starStr(b.avg)}</span>`:''} ${priceTag(b)} ${vbadge(b)} ${b.id===B.recommended_bid_id?'<span class="chip2">⭐ recommended</span>':''}${b.status==='selected'?' <span class="vbadge good">✅ approved</span>':b.status==='declined'?' <span class="mute" style="font-size:12px">not selected</span>':''}</div>
+        <div class="sub">${[b.scope,b.exclusions?'Excludes: '+b.exclusions:'',b.timeline?'Timeline: '+b.timeline:'',b.warranty?'Warranty: '+b.warranty:''].filter(Boolean).map(esc).join(' · ')}</div>
+        <div class="sub">${b.submitted_on?'Received '+fmtDate(b.submitted_on):''}${b.filename?` · <a href="/api/bids/${b.id}/file" target="_blank" rel="noopener">📄 ${esc(b.filename)}</a>`:''}${b.notes?' · '+esc(b.notes):''}</div></div>
+      <div class="bidamt">${money(b.amount)}${b.amount&&b.amount===B.low&&B.bids.length>1?'<div class="sub">lowest</div>':''}${can&&!locked?`<div><span class="tlink sm" style="color:var(--bad)" onclick="bidDel(${b.id},${pid})">remove</span></div>`:''}</div></div>`).join('')
+      ||'<div class="mute" style="font-size:13px">No bids yet.</div>'}
+    ${can&&!locked?`<details class="bidadd"${B.bids.length?'':' open'}><summary class="tlink">+ Add a bid</summary>
+      <div class="cdform"><label class="lbl">Bid document <span class="mute">(PDF or photo — Claude fills in the rest)</span></label><input type="file" id="bidFile" accept=".pdf,image/*,.doc,.docx">
+      <div class="team-grid" style="margin-top:6px"><label>Vendor<select id="bidVendor"><option value="">— from the document / type below —</option>${[...VENDORS].sort((a,b)=>a.name.localeCompare(b.name)).map(v=>`<option value="${v.id}">${esc(v.name)}${v.reviews?' — '+'★'.repeat(Math.round(v.avg)):''}${v.badge&&v.badge!=='good'?' ⚠️':''}</option>`).join('')}</select></label>
+        <label>…or vendor name<input id="bidVName" placeholder="if not in the vendor list"></label><label>Amount<input id="bidAmt" placeholder="$"></label><label>Scope<input id="bidScope" placeholder="what's included"></label></div>
+      <label class="lbl">Notes</label><input id="bidNotes" style="width:100%">
+      <div class="row" style="justify-content:flex-end"><button class="b" id="bidAddBtn" onclick="bidAdd(${pid})">Add bid</button></div></div></details>`:''}
+    ${B.bids.length?`<div class="recbox"><b>Property manager's recommendation</b>
+      ${B.over_limit?`<div class="warnbox">💲 The recommended bid is over this property's ${money(B.spend_limit)} limit — owner approval is required.</div>`:''}
+      <textarea id="recText" rows="4" ${can&&!locked?'':'disabled'} placeholder="Which bid you recommend and why (price, scope, track record, timing)…">${esc(B.recommendation||'')}</textarea>
+      ${can&&!locked?`<div class="row" style="justify-content:flex-end;gap:6px"><button class="b ghost" onclick="recDraft(${pid})">✨ Draft with Claude</button><button class="b ghost" onclick="recSet(${pid},{text:$('#recText').value})">Save</button></div>`:''}</div>`:''}
+    ${ap?`<div class="apbox ${ap.status}">${{pending:'⏳ Waiting for owner approval',approved:'✅ Owner approved',changes_requested:'✏️ Owner asked for changes',declined:'❌ Owner declined',superseded:'Replaced by a newer request'}[ap.status]||ap.status}
+      <div class="sub">${ap.status==='pending'?`Requested ${fmtDate(ap.requested_at.slice(0,10))} by ${esc(ap.requested_by_name||'')}${ap.owner_email?' · to '+esc(ap.owner_name||'')+' &lt;'+esc(ap.owner_email)+'&gt;':''} · <span class="tlink" onclick="navigator.clipboard.writeText('${ap.link}');toast('Approval link copied')">copy approval link</span> · <a href="${ap.link}" target="_blank" rel="noopener">preview what the owner sees</a>${ap.email_draft_id?' · <span class="tlink" onclick="show(\'emails\');taskDlg.close()">✉️ email draft</span>':''}`
+        :`${esc(ap.decided_by||'')} · ${fmtDate((ap.decided_at||'').slice(0,10))}${ap.decision_note?` — “${esc(ap.decision_note)}”`:''}`}</div></div>`:''}
+    ${can&&B.bids.length&&!locked?`<div class="row" style="margin-top:8px"><button class="b" onclick="askOwner(${pid})">📨 ${ap&&ap.status==='pending'?'Send a new approval request':'Request owner approval'}</button></div>`:''}`;}
+async function bidAdd(pid){const f=$('#bidFile').files[0],btn=$('#bidAddBtn');const body={vendor_id:+$('#bidVendor').value||null,vendor_name:$('#bidVName').value||null,amount:$('#bidAmt').value||null,scope:$('#bidScope').value||null,notes:$('#bidNotes').value||null};
+  if(f){if(f.size>25e6){alert('That file is over 25 MB.');return;}btn.disabled=true;btn.textContent='Reading the bid…';
+    Object.assign(body,{filename:f.name,content_type:f.type,data_b64:await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result.split(',')[1]);fr.readAsDataURL(f)})});}
+  try{const r=await api(`/api/projects/${pid}/bids`,{method:'POST',body});toast(r.read?`Bid read: ${r.read.vendor_name||''} ${r.read.amount?'$'+Number(r.read.amount).toLocaleString():''}`:'Bid added');}
+  catch(e){alert(e.message||e);btn.disabled=false;btn.textContent='Add bid';return;}
+  loadBids(pid);}
+async function bidDel(id,pid){if(!confirm('Remove this bid?'))return;await api('/api/bids/'+id,{method:'DELETE'});loadBids(pid);}
+async function recSet(pid,b){await api(`/api/projects/${pid}/recommendation`,{method:'PUT',body:b});toast('Saved');loadBids(pid);}
+async function recDraft(pid){const t=$('#recText');t.value='✨ Writing…';const r=await api(`/api/projects/${pid}/recommendation-draft`,{method:'POST'}).catch(e=>({text:''}));t.value=r.text||'';if(r.text)toast('Draft ready — edit, then Save');}
+async function askOwner(pid){const t=$('#recText');if(t&&t.value.trim()!==(BIDS.recommendation||''))await api(`/api/projects/${pid}/recommendation`,{method:'PUT',body:{text:t.value}});
+  if(!BIDS.recommended_bid_id){alert('Pick the bid you recommend first (the round button next to it).');return;}
+  const r=await api(`/api/projects/${pid}/approval`,{method:'POST',body:{}});
+  await loadBids(pid);alert(`📨 Approval request ready.\n\n${r.in_gmail?'The email to the owner is in your Gmail drafts (with the bids attached) — review and send it.':'The email to the owner is drafted under ✉️ Emails to send — review it and send from Gmail.'}\n\nThe owner approves at:\n${r.link}`);}
 async function delProject(pid){const typed=$('#delConfirm').value;
   const r=await api(`/api/projects/${pid}?confirm=${encodeURIComponent(typed)}`,{method:'DELETE'});taskDlg.close();await refresh();toast('Project deleted',()=>restoreTrash(r.trash_id),'Undo');}
 async function removeSamples(){if(!confirm('Remove all sample projects and their tasks? Your real projects are not affected.'))return;

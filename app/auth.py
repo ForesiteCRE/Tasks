@@ -106,7 +106,9 @@ def _staff_allowed(request: Request) -> bool:
     # Task-level writes: each endpoint checks ownership / manager itself.
     if method == "DELETE" and re.fullmatch(r"/api/projects/\d+", path):
         return True   # delete_project itself only allows the project's creator (or a manager)
-    if re.fullmatch(r"/api/(properties|projects)/\d+/(vendors|vendor-slots)", path) or \
+    if re.fullmatch(r"/api/projects/\d+/(bids|recommendation|approval|recommendation-draft)", path) or \
+            re.fullmatch(r"/api/bids/\d+", path) or \
+            re.fullmatch(r"/api/(properties|projects)/\d+/(vendors|vendor-slots)", path) or \
             re.fullmatch(r"/api/properties/\d+/vendors/\d+/coi", path):
         return True   # vendor endpoints check property/project team membership themselves
     return path.startswith(("/api/tasks", "/api/checklist/", "/api/reminders", "/api/me/", "/api/critical-dates/",
@@ -123,14 +125,14 @@ async def require_login(request: Request, call_next):
     # calendar feeds and health checks keep answering on any address so nothing breaks mid-switch).
     host = request.headers.get("host", "").lower()
     if (_PUBLIC_HOST and host and host != _PUBLIC_HOST and request.method == "GET"
-            and not request.url.path.startswith(("/api/", "/blink/", "/calendar/", "/healthz", "/brand/"))):
+            and not request.url.path.startswith(("/api/", "/blink/", "/calendar/", "/healthz", "/brand/", "/approve/"))):
         query = f"?{request.url.query}" if request.url.query else ""
         return RedirectResponse(f"{PUBLIC_URL}{request.url.path}{query}", status_code=301)
     if LOCKED and request.url.path not in ("/healthz", "/blink/webhook"):
         return HTMLResponse("<p style='font:16px system-ui;text-align:center;margin-top:20vh'>"
                             "Sign-in isn't configured yet — set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.</p>",
                             status_code=503)
-    if request.url.path in PUBLIC_PATHS or request.url.path.startswith(("/calendar/", "/brand/")):  # feeds use a secret token; logo files
+    if request.url.path in PUBLIC_PATHS or request.url.path.startswith(("/calendar/", "/brand/", "/approve/")):  # secret-token links; logo files
         return await call_next(request)
     if ENABLED and (u := request.session.get("user")):
         _ensure_user_row(request, u)

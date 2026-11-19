@@ -1118,3 +1118,58 @@ def test_insurance_emails_drafted_for_property_manager(mgr, staff, monkeypatch):
     assert ids(staff.patch(f"/api/emails/{did}", json={"subject": "Updated"}))["in_gmail"]
     ids(staff.delete("/api/me/gmail"))
     assert not ids(staff.get("/api/emails"))["gmail_connected"]
+
+
+def test_bids_recommendation_and_owner_approval(mgr, staff):
+    import base64
+    from fastapi.testclient import TestClient
+    with tx() as c:
+        sam = c.execute("SELECT id FROM users WHERE blink_user_id='u-sam'").fetchone()["id"]
+    prop = ids(mgr.post("/api/properties", json={"address": "90 Bid Blvd, San Antonio, TX", "client": "Bid Blvd Owner LP"}))["id"]
+    ids(mgr.patch(f"/api/properties/{prop}", json={"spend_limit": 5000}))
+    ids(mgr.put(f"/api/properties/{prop}/team/{S['pm']}", json={"user_id": sam}))
+    ids(mgr.post(f"/api/properties/{prop}/contacts", json={"role": "Owner contact", "name": "Olivia Owner", "email": "olivia@owner.test"}))
+    pj = ids(mgr.post("/api/projects", json={"name": "Bid Blvd roof replacement", "property": "90 Bid Blvd, San Antonio, TX"}))["id"]
+    good = ids(mgr.post("/api/vendors", json={"name": "Bid Good Roofing LLC", "trades": ["Roofing"]}))["id"]
+    ids(mgr.post(f"/api/vendors/{good}/reviews", json={"stars": 5, "price": 4}))
+    # a bid read from a PDF: amount/scope filled in and vendor matched by name
+    CLAUDE.append({"vendor_name": "Bid Good Roofing", "amount": 48500, "scope": "Tear off and replace TPO roof",
+                   "exclusions": "Deck repairs", "timeline": "3 weeks", "warranty": "20-yr NDL", "submitted_on": "2026-11-10"})
+    pdf = base64.b64encode(b"%PDF bid one").decode()
+    b1 = ids(staff.post(f"/api/projects/{pj}/bids", json={"filename": "good.pdf", "content_type": "application/pdf", "data_b64": pdf}))
+    assert b1["read"]["amount"] == 48500
+    b2 = ids(mgr.post(f"/api/projects/{pj}/bids", json={"vendor_name": "Cheap Roof Co", "amount": "$39,900", "scope": "Overlay only"}))
+    info = ids(mgr.get(f"/api/projects/{pj}/bids"))
+    by = {b["vendor_label"]: b for b in info["bids"]}
+    assert by["Bid Good Roofing LLC"]["vendor_id"] == good and by["Bid Good Roofing LLC"]["exclusions"] == "Deck repairs"
+    assert by["Bid Good Roofing LLC"]["avg"] == 5 and info["low"] == 39900
+    assert mgr.post(f"/api/projects/{pj}/approval", json={}).status_code == 400              # recommend one first
+    ids(staff.put(f"/api/projects/{pj}/recommendation", json={"bid_id": b1["id"], "text": "Full replacement with 20-yr warranty."}))
+    assert ids(mgr.get(f"/api/projects/{pj}/bids"))["over_limit"]                             # 48.5k > 5k limit
+    assert ids(mgr.post(f"/api/projects/{pj}/recommendation-draft"))["text"]
+    r = ids(staff.post(f"/api/projects/{pj}/approval", json={}))
+    token = r["link"].rsplit("/", 1)[1]
+    d = [x for x in ids(staff.get("/api/emails"))["drafts"] if x["id"] == r["email_draft_id"]][0]
+    assert d["to_email"] == "olivia@owner.test" and "Bid Good Roofing LLC" in d["body"] and token in d["body"]
+    # the owner (not signed in) answers on the public page
+    with TestClient(app) as owner:
+        page = owner.get(f"/approve/{token}")
+        assert page.status_code == 200 and "Bid Blvd roof replacement" in page.text and "Recommended" in page.text
+        assert owner.get(f"/approve/{token}/bid/{b1['id']}").content == b"%PDF bid one"
+        assert owner.get(f"/approve/{token}/bid/999999").status_code == 404
+        bad = owner.post(f"/approve/{token}", data={"decision": "approved", "bid_id": str(b1["id"]), "name": ""})
+        assert bad.status_code == 400 and "your name" in bad.text
+        before = len(SENT)
+        ok = owner.post(f"/approve/{token}", data={"decision": "approved", "bid_id": str(b1["id"]), "name": "Olivia Owner", "note": "Go ahead"})
+        assert ok.status_code == 200 and "Approved" in ok.text
+        assert any(b == "u-sam" and "Owner ✅" not in t and "approved" in t for b, t in SENT[before:])
+        assert owner.post(f"/approve/{token}", data={"decision": "declined", "name": "X"}).status_code == 400   # once only
+        assert owner.get("/approve/not-a-token").status_code == 404
+    info = ids(mgr.get(f"/api/projects/{pj}/bids"))
+    assert {b["vendor_label"]: b["status"] for b in info["bids"]} == {"Bid Good Roofing LLC": "selected", "Cheap Roof Co": "declined"}
+    assert info["approvals"][0]["status"] == "approved" and info["approvals"][0]["decided_by"] == "Olivia Owner"
+    proj = [p for p in ids(mgr.get("/api/projects")) if p["id"] == pj][0]
+    assert any(v["vendor_id"] == good for v in proj["vendors"])                              # winner added to the project
+    # staff not on the team can't add bids elsewhere
+    other = ids(mgr.post("/api/projects", json={"name": "Not Sam's project"}))["id"]
+    assert staff.post(f"/api/projects/{other}/bids", json={"vendor_name": "X", "amount": 1}).status_code == 403

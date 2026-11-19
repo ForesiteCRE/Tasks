@@ -36,6 +36,8 @@ def init():
             vendor_id INTEGER, to_email TEXT, to_name TEXT, subject TEXT NOT NULL, body TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'open', gmail_draft_id TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT)""")
+        if "attachments" not in {r[1] for r in c.execute("PRAGMA table_info(email_drafts)")}:
+            c.execute("ALTER TABLE email_drafts ADD COLUMN attachments TEXT")   # [{path, filename, ctype}] in the docs folder
         cols = {r[1] for r in c.execute("PRAGMA table_info(users)")}
         if "gmail_token" not in cols:
             c.execute("ALTER TABLE users ADD COLUMN gmail_token TEXT")
@@ -98,6 +100,13 @@ def _mime(d: dict, from_email: str | None) -> str:
         m["From"] = from_email
     m["Subject"] = d["subject"]
     m.set_content(d["body"])
+    from .properties import _doc_dir
+    for a in json.loads(d.get("attachments") or "[]"):
+        p = os.path.join(_doc_dir(), os.path.basename(a["path"]))
+        if os.path.exists(p):
+            mt, _, st = (a.get("ctype") or "application/octet-stream").partition("/")
+            with open(p, "rb") as fh:
+                m.add_attachment(fh.read(), maintype=mt, subtype=st or "octet-stream", filename=a["filename"])
     return base64.urlsafe_b64encode(m.as_bytes()).decode()
 
 
@@ -222,14 +231,16 @@ def _pm(c, property_id):
     return pm
 
 
-def create(user_id, kind: str, issue_key: str | None, property_id, vendor_id, msg: dict, notify: bool = True) -> int | None:
+def create(user_id, kind: str, issue_key: str | None, property_id, vendor_id, msg: dict, notify: bool = True,
+           attachments: list | None = None) -> int | None:
     """Store the draft (once per issue_key), put it in the owner's Gmail if connected, and tell them on Blink."""
     with tx() as c:
         if issue_key and c.execute("SELECT 1 FROM email_drafts WHERE issue_key=?", (issue_key,)).fetchone():
             return None
-        did = c.execute("""INSERT INTO email_drafts(user_id, kind, issue_key, property_id, vendor_id, to_email, to_name, subject, body)
-                           VALUES(?,?,?,?,?,?,?,?,?)""", (user_id, kind, issue_key, property_id, vendor_id, msg.get("to_email"),
-                                                         msg.get("to_name"), msg["subject"], msg["body"])).lastrowid
+        did = c.execute("""INSERT INTO email_drafts(user_id, kind, issue_key, property_id, vendor_id, to_email, to_name, subject, body,
+                                                    attachments) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                        (user_id, kind, issue_key, property_id, vendor_id, msg.get("to_email"), msg.get("to_name"), msg["subject"],
+                         msg["body"], json.dumps(attachments) if attachments else None)).lastrowid
         u = c.execute("SELECT blink_user_id FROM users WHERE id=?", (user_id,)).fetchone() if user_id else None
     in_gmail = _push_to_gmail(did)
     if notify and u and u["blink_user_id"]:

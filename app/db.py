@@ -180,6 +180,8 @@ def _init_extras():
     departments.init()
     from . import emails
     emails.init()
+    from . import bids
+    bids.init()
 
 
 def get_setting(key: str) -> str | None:

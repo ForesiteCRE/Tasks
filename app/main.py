@@ -8,12 +8,12 @@ from datetime import date, datetime
 from datetime import date as _date
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import (audit, auth, automations, blink, chat, closeboard, departments, emails, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
+from . import (audit, auth, automations, bids, blink, chat, closeboard, departments, emails, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
                starter_templates, team, timing, tpl)
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
@@ -1470,6 +1470,217 @@ def patch_email(did: int, body: EmailPatch, request: Request):
 def disconnect_gmail(request: Request):
     emails.disconnect_gmail(_me_id(request))
     return {"ok": True}
+
+
+# ---------- bids, recommendation, owner approval ----------
+
+class BidIn(BaseModel):
+    vendor_id: int | None = None
+    vendor_name: str | None = None
+    amount: float | str | None = None
+    scope: str | None = None
+    exclusions: str | None = None
+    timeline: str | None = None
+    warranty: str | None = None
+    notes: str | None = None
+    submitted_on: str | None = None
+    status: str | None = None
+    filename: str | None = None
+    content_type: str | None = None
+    data_b64: str | None = None
+
+class RecIn(BaseModel):
+    bid_id: int | None = None
+    text: str | None = None
+
+class ApprovalIn(BaseModel):
+    owner_name: str | None = None
+    owner_email: str | None = None
+
+
+def _bid_project(bid_id: int) -> int:
+    with tx() as c:
+        r = c.execute("SELECT project_id FROM project_bids WHERE id=?", (bid_id,)).fetchone()
+    if not r:
+        raise HTTPException(404, "Bid not found")
+    return r["project_id"]
+
+
+def _need_project_team(request, pid):
+    if not _can_assign(request, project_id=pid):
+        raise HTTPException(403, "Only managers or people on this project's team can manage bids.")
+
+
+@app.get("/api/projects/{pid}/bids")
+def get_bids(pid: int):
+    return bids.project_bids(pid)
+
+
+@app.post("/api/projects/{pid}/bids")
+def add_bid(pid: int, body: BidIn, request: Request):
+    _need_project_team(request, pid)
+    file = None
+    if body.data_b64:
+        import base64
+        data = base64.b64decode(body.data_b64)
+        if len(data) > intake.MAX_DOC_BYTES:
+            raise HTTPException(413, "File too large (25 MB max).")
+        file = (data, body.filename or "bid.pdf", body.content_type or "application/pdf")
+    try:
+        out = bids.add_bid(pid, body.model_dump(exclude={"filename", "content_type", "data_b64"}), _me_id(request), file)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    with tx() as c:
+        pj = c.execute("SELECT name FROM projects WHERE id=?", (pid,)).fetchone()
+    audit.log(_me_id(request), "bid added", "project", pid, pj["name"] if pj else None)
+    return out
+
+
+@app.patch("/api/bids/{bid_id}")
+def patch_bid(bid_id: int, body: BidIn, request: Request):
+    _need_project_team(request, _bid_project(bid_id))
+    f = body.model_dump(exclude_unset=True, exclude={"filename", "content_type", "data_b64"})
+    if "amount" in f and f["amount"] not in (None, ""):
+        try:
+            f["amount"] = float(str(f["amount"]).replace("$", "").replace(",", ""))
+        except ValueError:
+            raise HTTPException(400, "Amount must be a number.")
+    bids.update_bid(bid_id, f)
+    return {"ok": True}
+
+
+@app.delete("/api/bids/{bid_id}")
+def delete_bid(bid_id: int, request: Request):
+    _need_project_team(request, _bid_project(bid_id))
+    bids.delete_bid(bid_id)
+    return {"ok": True}
+
+
+@app.get("/api/bids/{bid_id}/file")
+def bid_file(bid_id: int):
+    got = bids.bid_file(bid_id)
+    if not got:
+        raise HTTPException(404, "No file")
+    return FileResponse(got[1], media_type=got[0]["content_type"] or "application/octet-stream", filename=got[0]["filename"])
+
+
+@app.put("/api/projects/{pid}/recommendation")
+def set_recommendation(pid: int, body: RecIn, request: Request):
+    _need_project_team(request, pid)
+    f = body.model_dump(exclude_unset=True)
+    bids.set_recommendation(pid, f.get("bid_id", None) if "bid_id" in f else None, f.get("text"))
+    if "bid_id" in f and not f["bid_id"]:
+        bids.set_recommendation(pid, 0, None)
+    return {"ok": True}
+
+
+@app.post("/api/projects/{pid}/recommendation-draft")
+def recommendation_draft(pid: int, request: Request):
+    _need_project_team(request, pid)
+    try:
+        return {"text": bids.draft_recommendation(pid)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/projects/{pid}/approval")
+def request_owner_approval(pid: int, body: ApprovalIn, request: Request):
+    _need_project_team(request, pid)
+    try:
+        out = bids.request_approval(pid, _me_id(request), body.owner_name, body.owner_email)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    with tx() as c:
+        pj = c.execute("SELECT name FROM projects WHERE id=?", (pid,)).fetchone()
+    audit.log(_me_id(request), "requested owner approval", "project", pid, pj["name"] if pj else None, body.owner_email)
+    return out
+
+
+# --- the owner's approval page (public; the secret link is the key) ---
+
+def _approval_page(a: dict, msg: str = "", status_code: int = 200):
+    from html import escape as h
+    pj = a["project"]
+    m = lambda n: f"${n:,.0f}" if n is not None else "—"
+    rows_html = "".join(
+        f"""<label class="bid {'rec' if b['id'] == a['recommended_bid_id'] else ''}">
+              {'<input type="radio" name="bid_id" value="%d" %s>' % (b['id'], 'checked' if b['id'] == a['recommended_bid_id'] else '') if a['status'] == 'pending' and not a['expired'] else ''}
+              <div class="bm"><div class="bv">{h(b['vendor'] or '')}{' <span class="tag">Recommended</span>' if b['id'] == a['recommended_bid_id'] else ''}</div>
+              <div class="bs">{h(b['scope'] or '')}</div>
+              <div class="bx">{' · '.join(h(x) for x in [('Excludes: ' + b['exclusions']) if b['exclusions'] else '', ('Timeline: ' + b['timeline']) if b['timeline'] else '', ('Warranty: ' + b['warranty']) if b['warranty'] else ''] if x)}</div>
+              {f'<a href="/approve/{a["token"]}/bid/{b["id"]}" target="_blank">View bid ({h(b["filename"])})</a>' if b['path'] else ''}</div>
+              <div class="ba">{m(b['amount'])}</div></label>""" for b in a["bids"])
+    decided = a["status"] in ("approved", "changes_requested", "declined")
+    win = next((b for b in a["bids"] if b["id"] == a["decision_bid_id"]), None)
+    result = (f"""<div class="done {a['status']}">{ {'approved': '✅ Approved', 'changes_requested': '✏️ Changes requested', 'declined': '❌ Declined'}[a['status']] }
+                 by {h(a['decided_by'] or '')} on {h((a['decided_at'] or '')[:10])}{(' — ' + h(win['vendor']) + ' at ' + m(win['amount'])) if win else ''}
+                 {('<div class="note">“' + h(a['decision_note']) + '”</div>') if a['decision_note'] else ''}</div>""" if decided else
+              '<div class="done">This request was replaced by a newer one — please use the latest link you received.</div>' if a["status"] == "superseded" else
+              '<div class="done">This request has expired — please contact your property manager.</div>' if a["expired"] else "")
+    form = "" if result else f"""
+      <label class="lbl">Your name</label><input name="name" required placeholder="Full name">
+      <label class="lbl">Comments (optional)</label><textarea name="note" rows="3" placeholder="Anything we should know?"></textarea>
+      <div class="btns"><button name="decision" value="approved" class="ok">Approve selected bid</button>
+      <button name="decision" value="changes_requested" class="mid">Request changes</button>
+      <button name="decision" value="declined" class="no">Decline</button></div>"""
+    over = (pj.get("spend_limit") and any(b["id"] == a["recommended_bid_id"] and (b["amount"] or 0) > pj["spend_limit"] for b in a["bids"]))
+    return HTMLResponse(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Approval: {h(pj['name'])} · Foresite</title><link rel="icon" href="/brand/favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&display=swap" rel="stylesheet"><style>
+*{{box-sizing:border-box}}body{{margin:0;font-family:Lato,Helvetica,Arial,sans-serif;background:#f3f5f7;color:#26323a}}
+header{{background:#3a4750;padding:16px 20px}}header img{{height:34px}}main{{max-width:760px;margin:0 auto;padding:20px 16px 40px}}
+h1{{font-size:22px;margin:4px 0}}.sub{{color:#6b7680;font-size:14px}}.card{{background:#fff;border:1px solid #e1e6ea;border-radius:10px;padding:16px;margin:14px 0}}
+.bid{{display:flex;gap:12px;align-items:flex-start;padding:12px;border:1px solid #e1e6ea;border-radius:8px;margin:8px 0;cursor:pointer}}
+.bid.rec{{border-color:#549fc5;background:#f2f8fb}}.bid input{{margin-top:4px}}.bm{{flex:1}}.bv{{font-weight:700}}.bs{{font-size:14px;margin-top:2px}}
+.bx{{font-size:12.5px;color:#6b7680;margin-top:2px}}.ba{{font-weight:700;font-size:18px;white-space:nowrap}}.bid a{{font-size:13px;color:#2f7fa8}}
+.tag{{font-size:11px;background:#549fc5;color:#fff;border-radius:99px;padding:2px 8px;margin-left:6px;vertical-align:2px}}
+.rec-text{{white-space:pre-wrap;line-height:1.5}}.lbl{{display:block;font-size:13px;color:#6b7680;margin:12px 0 4px}}
+input[name=name],textarea{{width:100%;font:inherit;padding:10px;border:1px solid #cfd6dc;border-radius:6px;font-size:16px}}
+.btns{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}button{{font:inherit;font-weight:700;border:0;border-radius:6px;padding:12px 18px;cursor:pointer;font-size:15px}}
+.ok{{background:#3d8b3d;color:#fff}}.mid{{background:#e9eef2;color:#26323a}}.no{{background:#fff;border:1px solid #d9534f!important;color:#c0392b}}
+.done{{padding:14px;border-radius:8px;background:#eef6e4;font-weight:700}}.done.changes_requested{{background:#fdf6ea}}.done.declined{{background:#fdecec}}.note{{font-weight:400;margin-top:6px}}
+.err{{background:#fdecec;color:#c0392b;padding:10px;border-radius:6px;margin:10px 0}}.warn{{font-size:13px;background:#fdf6ea;padding:8px 10px;border-radius:6px;margin-top:8px}}
+</style></head><body><header><img src="/brand/logo-white.png" alt="Foresite Commercial Real Estate"></header><main>
+<div class="sub">Owner approval requested by {h(a['requested_by_name'])} · Foresite Real Estate</div>
+<h1>{h(pj['name'])}</h1><div class="sub">{h(pj.get('address') or pj.get('property') or '')}{' · ' + h(pj['client']) if pj.get('client') else ''}</div>
+{f'<div class="err">{h(msg)}</div>' if msg else ''}
+<form method="post"><div class="card"><b>Bids received</b>{rows_html}
+{f'<div class="warn">The recommended bid is over the {m(pj["spend_limit"])} amount that needs your approval.</div>' if over else ''}</div>
+<div class="card"><b>Property manager's recommendation</b><div class="rec-text">{h(a['recommendation'] or '')}</div></div>
+<div class="card">{result}{form}</div></form>
+<div class="sub" style="text-align:center">Questions? Contact {h(a['requested_by_name'])} · <a href="mailto:{h(a['requested_by_email'])}">{h(a['requested_by_email'])}</a></div>
+</main></body></html>""", status_code=status_code)
+
+
+@app.get("/approve/{token}")
+def approval_page(token: str):
+    a = bids.by_token(token)
+    if not a:
+        return auth.branded_page("Not found", '<p class="msg">This approval link isn\'t valid.</p>', 404)
+    return _approval_page(a)
+
+
+@app.post("/approve/{token}")
+async def approval_submit(token: str, request: Request):
+    form = await request.form()
+    try:
+        bids.decide(token, form.get("decision", ""), int(form["bid_id"]) if form.get("bid_id") else None,
+                    form.get("name", ""), form.get("note", ""))
+    except ValueError as e:
+        a = bids.by_token(token)
+        return _approval_page(a, str(e), 400) if a else auth.branded_page("Not found", '<p class="msg">Not found.</p>', 404)
+    return _approval_page(bids.by_token(token))
+
+
+@app.get("/approve/{token}/bid/{bid_id}")
+def approval_bid_file(token: str, bid_id: int):
+    a = bids.by_token(token)
+    if not a or bid_id not in [b["id"] for b in a["bids"]]:
+        raise HTTPException(404, "Not found")
+    got = bids.bid_file(bid_id)
+    if not got:
+        raise HTTPException(404, "No file")
+    return FileResponse(got[1], media_type=got[0]["content_type"] or "application/octet-stream", filename=got[0]["filename"])
 
 
 # ---------- month-end close board ----------
