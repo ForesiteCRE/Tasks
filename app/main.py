@@ -453,6 +453,12 @@ def list_projects():
     for p in ps:
         p["team"] = team.project_team(p["id"])
         p["vendors"] = vendors.project_vendors(p["id"])
+        with tx() as c:
+            ap = c.execute("""SELECT status FROM project_approvals WHERE project_id=? AND status!='superseded'
+                              ORDER BY id DESC LIMIT 1""", (p["id"],)).fetchone()
+            pr = c.execute("SELECT name FROM properties WHERE id=?", (p["property_id"],)).fetchone() if p.get("property_id") else None
+        p["approval"] = ap["status"] if ap else None
+        p["property_name"] = pr["name"] if pr else None
     return ps
 
 @app.post("/api/projects")
