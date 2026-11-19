@@ -190,6 +190,8 @@ def _init_extras():
     ourcoi.init()
     from . import home
     home.init()
+    from . import notify
+    notify.init()
 
 
 def get_setting(key: str) -> str | None:

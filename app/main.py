@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import (audit, auth, automations, bids, blink, blockers, fun, helpbot, ourcoi, chat, closeboard, departments, emails, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
+from . import (audit, auth, automations, bids, blink, notify, blockers, fun, helpbot, ourcoi, chat, closeboard, departments, emails, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
                starter_templates, team, timing, tpl)
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
@@ -27,7 +27,7 @@ async def scheduler_loop():
     reminders (once/day/task) and, on the summary weekday, the weekly summary (once/week)."""
     while True:
         for job in (maintenance.daily_backup, services.run_recurrences, dashboard.send_due_reminders,
-                    dashboard.send_daily_digests, fun.run_daily, demo.refresh_wins):
+                    notify.run_summaries, fun.run_daily, demo.refresh_wins):
             try:
                 job()
             except Exception:
@@ -710,7 +710,7 @@ def create_task(t: TaskIn, background: BackgroundTasks, request: Request):
 
 def _notify(blink_user_id: str, text: str):
     try:
-        blink.send_dm(blink_user_id, text)
+        notify.deliver_blink([blink_user_id], "assigned", text)
     except Exception:
         logging.exception("Blink notification failed for %s", blink_user_id)
 
@@ -2024,6 +2024,35 @@ def my_prefs(body: PrefsIn, request: Request):
         with tx() as c:
             c.execute("UPDATE users SET week_ahead=? WHERE id=?", (int(body.week_ahead), _me_id(request)))
     return {"ok": True}
+
+# ---------- Blink notification settings (per person) ----------
+def _sees_team_alerts(request: Request) -> bool:
+    if auth.is_manager(request):
+        return True
+    with tx() as c:
+        return bool(c.execute("SELECT 1 FROM departments WHERE head_user_id=?", (_me_id(request),)).fetchone())
+
+@app.get("/api/me/notifications")
+def my_notifications(request: Request):
+    return notify.settings_for(_me_id(request), _sees_team_alerts(request))
+
+@app.put("/api/me/notifications")
+def my_notifications_save(body: dict, request: Request):
+    notify.save(_me_id(request), body)
+    return notify.settings_for(_me_id(request), _sees_team_alerts(request))
+
+@app.post("/api/me/notifications/reset")
+def my_notifications_reset(request: Request):
+    notify.save(_me_id(request), {**{k: v for k, v in notify.DEFAULT.items() if k != "cats"}, "cats": dict(notify.DEFAULT["cats"])})
+    return notify.settings_for(_me_id(request), _sees_team_alerts(request))
+
+@app.post("/api/me/notifications/preview")
+def my_notifications_preview(request: Request, send: bool = False):
+    uid = _me_id(request)
+    text = notify.build_summary(uid)
+    sent = notify.run_summaries(force_user=uid) if send else 0
+    return {"text": text, "sent": sent}
+
 
 @app.post("/api/me/week-ahead-preview")
 def week_ahead_preview(request: Request):

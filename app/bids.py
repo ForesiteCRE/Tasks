@@ -469,7 +469,7 @@ def decide(token: str, decision: str, bid_id: int | None, name: str, note: str |
             + (f"\nApproved: {winner['vendor']} at {_money(winner['amount'])}" if winner else "")
             + (f"\n“{note.strip()}”" if note and note.strip() else ""))
     if req and req["blink_user_id"]:
-        automations._send([req["blink_user_id"]], text)
+        automations._send([req["blink_user_id"]], text, cat="approvals")
     audit.log(None, f"owner {decision.replace('_', ' ')}", "project", a["project_id"], a["project"]["name"],
               f"{name.strip()}" + (f": {winner['vendor']} {_money(winner['amount'])}" if winner else "") + (f" — {note.strip()}" if note else "")
               + f" · record fingerprint {digest[:16]}…")

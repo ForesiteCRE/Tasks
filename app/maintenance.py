@@ -79,8 +79,9 @@ def send_weekly_summary(force: bool = False, today: date | None = None) -> int:
     if not recipients:
         return 0
     text = build_summary(today)
+    from . import notify
     for buid in recipients:
-        blink.send_dm(buid, text)
+        blink.send_dm(buid, text) if force else notify.deliver_blink([buid], "weekly", text)
     if not force:
         set_setting("last_summary_week", week)
     return len(recipients)

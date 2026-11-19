@@ -1525,3 +1525,59 @@ def test_home_layout_and_notes(mgr, staff):
     ids(staff.delete(f"/api/me/notes/{nid}"))
     ids(staff.put("/api/me/home/layout", json={"layout": None}))
     assert ids(staff.get("/api/me/home"))["layout"] is None
+
+
+def test_blink_notification_settings(mgr, staff):
+    import json as _json
+    from datetime import datetime
+    from app import notify
+    from app.db import tx
+    real = {"frequency": "daily", "time": "18:00", "weekdays_only": False, "cats": {k: v[2] for k, v in notify.CATEGORIES.items()}}
+    saved = _json.loads(_json.dumps(notify.DEFAULT))
+    notify.DEFAULT.clear(); notify.DEFAULT.update(_json.loads(_json.dumps(real)))
+    try:
+        with tx() as c:
+            c.execute("DELETE FROM user_prefs WHERE user_id=?", (staff.me["id"],))
+            c.execute("DELETE FROM notify_queue WHERE user_id=?", (staff.me["id"],))
+            c.execute("UPDATE users SET blink_user_id='u-sam', daily_digest=1, week_ahead=1 WHERE id=?", (staff.me["id"],))
+        s = ids(staff.get("/api/me/notifications"))
+        modes = {c["id"]: c["mode"] for c in s["categories"]}
+        assert s["frequency"] == "daily" and s["time"] == "18:00"                      # default: daily summary at 6pm…
+        assert modes["mentions"] == "instant" and modes["assigned"] == "summary"        # …plus @mentions right away
+        assert "manager" not in modes                                                   # staff don't see team alerts
+        assert "manager" in {c["id"] for c in ids(mgr.get("/api/me/notifications"))["categories"]}
+        SENT.clear()
+        assert notify.deliver(staff.me["id"], "mentions", "💬 tagged") == "instant" and SENT[-1] == ("u-sam", "💬 tagged")
+        assert notify.deliver(staff.me["id"], "assigned", "📌 new task") == "summary" and len(SENT) == 1
+        assert notify.deliver(staff.me["id"], "checkin", "⏰ check-in") == "off"
+        assert ids(staff.get("/api/me/notifications"))["queued"] == 1
+        # nothing before 6pm; at 6pm one summary with the saved update, then the queue is empty
+        assert notify.run_summaries(datetime(2031, 3, 4, 17, 59), force_user=None) == 0 or all(b != "u-sam" for b, _ in SENT[1:])
+        SENT.clear()
+        notify.run_summaries(datetime(2031, 3, 4, 18, 1))
+        mine = [t for b, t in SENT if b == "u-sam"]
+        assert len(mine) == 1 and "📌 new task" in mine[0] and "Since your last summary" in mine[0]
+        assert ids(staff.get("/api/me/notifications"))["queued"] == 0
+        SENT.clear(); notify.run_summaries(datetime(2031, 3, 4, 19, 0))
+        assert not [t for b, t in SENT if b == "u-sam"]                                 # once a day
+        # change: twice a day at 5pm, weekdays only, assignments instant, wins off
+        s = ids(staff.put("/api/me/notifications", json={"frequency": "twice", "time": "17:00", "weekdays_only": True,
+                                                         "cats": {"assigned": "instant", "wins": "off", "recap": "instant", "bogus": "on"}}))
+        modes = {c["id"]: c["mode"] for c in s["categories"]}
+        assert s["frequency"] == "twice" and s["time"] == "17:00" and s["weekdays_only"]
+        assert modes["assigned"] == "instant" and modes["wins"] == "off" and modes["recap"] == "summary"
+        SENT.clear(); notify.deliver(staff.me["id"], "assigned", "📌 now"); assert SENT[-1] == ("u-sam", "📌 now")
+        notify.deliver(staff.me["id"], "comments", "💬 later")
+        SENT.clear(); notify.run_summaries(datetime(2031, 3, 8, 9, 0))                  # Saturday: weekdays only
+        assert not [t for b, t in SENT if b == "u-sam"]
+        notify.run_summaries(datetime(2031, 3, 10, 8, 5))                               # Monday 8am slot
+        assert any("💬 later" in t for b, t in SENT if b == "u-sam")
+        assert staff.put("/api/me/notifications", json={"time": "25:99"}).status_code == 200
+        assert ids(staff.get("/api/me/notifications"))["time"] == "17:00"
+        r = ids(staff.post("/api/me/notifications/reset"))
+        assert r["frequency"] == "daily" and r["time"] == "18:00"
+        assert "text" in ids(staff.post("/api/me/notifications/preview"))
+    finally:
+        notify.DEFAULT.clear(); notify.DEFAULT.update(saved)
+        with tx() as c:
+            c.execute("DELETE FROM user_prefs WHERE user_id=? AND key LIKE 'notify%'", (staff.me["id"],))

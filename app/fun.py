@@ -91,7 +91,7 @@ def kudo(win_id: int, user_id: int) -> dict:
     if new and w["blink_user_id"]:
         what = {"task": f"finishing *{w['title']}*", "project": f"completing *{w['title']}*", "streak": "your streak",
                 "badge": f"earning {BADGES.get(w['title'], ('', w['title'], ''))[1]}"}.get(w["kind"], f"*{w['title']}*")
-        automations._send([w["blink_user_id"]], f"👏 **{me['name'] if me else 'Someone'} gave you a high-five** for {what}!")
+        automations._send([w["blink_user_id"]], f"👏 **{me['name'] if me else 'Someone'} gave you a high-five** for {what}!", cat="wins")
     return {"kudos": n}
 
 
@@ -221,7 +221,7 @@ def check_badges(uid) -> list[str]:
     for b in new:
         if u and u["blink_user_id"]:
             ico, name, why = BADGES[b]
-            automations._send([u["blink_user_id"]], f"🏅 **You earned a badge: {ico} {name}!**\n_{why}_")
+            automations._send([u["blink_user_id"]], f"🏅 **You earned a badge: {ico} {name}!**\n_{why}_", cat="wins")
     return new
 
 

@@ -249,7 +249,7 @@ def create(user_id, kind: str, issue_key: str | None, property_id, vendor_id, ms
         where = ("It's in your **Gmail drafts**, ready to send." if in_gmail else
                  f"Review and send it here: {url}/#emails" if url else "Review and send it under Tasks → ✉️ Emails to send.")
         automations._send([u["blink_user_id"]], f"✉️ **Email drafted:** {msg['subject']}\nTo: {msg.get('to_name') or ''} "
-                                                f"{('<' + msg['to_email'] + '>') if msg.get('to_email') else '(add their email)'}\n{where}")
+                                                f"{('<' + msg['to_email'] + '>') if msg.get('to_email') else '(add their email)'}\n{where}", cat="emails")
     return did
 
 

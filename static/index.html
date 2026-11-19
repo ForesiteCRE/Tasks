@@ -294,6 +294,9 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
 .note.add{background:none;border:2px dashed var(--line);color:var(--mute);box-shadow:none;transform:none;align-items:center;justify-content:center;cursor:pointer;font:inherit;font-size:13.5px}
 .note.add:hover{border-color:var(--acc);color:var(--acc)}
 .hwproj .pgrid{margin-bottom:14px}
+.nftab{width:100%;border-collapse:collapse;font-size:13px}.nftab th{font-size:11.5px;color:var(--mute);font-weight:600;text-align:center;padding:4px 6px;white-space:nowrap}
+.nftab th:first-child{text-align:left}.nftab td{border-top:1px solid var(--line);padding:7px 6px;vertical-align:middle}.nftab td:not(:first-child){text-align:center;width:74px}
+.nftab td .mute{font-size:11.5px}.nftab input[type=radio]{width:18px;height:18px;cursor:pointer}
 /* ---------- phones ---------- */
 @media (max-width:640px){
   html,body{overflow-x:hidden}
@@ -611,7 +614,7 @@ $('#nav').onclick=e=>{const b=e.target.closest('button');if(!b)return;
 function openMoreSheet(){const sh=$('#navSheet'),adm=document.querySelector('.dd[data-g=admin] .ddm');
   sh.querySelector('.sheet').innerHTML=`<div class="sheethd">More<button class="xs" aria-label="Close" onclick="closeNavSheet()">✕</button></div>
     <div class="sheetme">${esc(ME.name||'')} <span class="pill">${{admin:'Admin',manager:'Manager'}[ME.role]||'Staff'}</span></div>
-    <button class="sheetbtn" onclick="closeNavSheet();openSettings()">⚙︎ My settings<small>daily recap, week ahead, calendar feed</small></button>
+    <button class="sheetbtn" onclick="closeNavSheet();openSettings()">⚙︎ My settings<small>Blink updates (how often &amp; what), calendar sync</small></button>
     ${isMgr()?adm.innerHTML:''}
     ${ME.auth_enabled?'<a class="sheetbtn" href="/logout">↩ Sign out</a>':''}`;
   sh.classList.remove('hidden');}
@@ -1577,13 +1580,41 @@ function setBadge(n){['#mBadge','#mBadgeM'].forEach(id=>{const b=$(id);if(b){b.t
 async function pollUnread(){try{const r=await api('/api/me/unread');setBadge(r.mentions);}catch(e){}}
 async function openSettings(){const [d,cal]=await Promise.all([api('/api/dashboard'),api('/api/me/calendar')]),u=d.user;
   $('#taskDlgBody').innerHTML=`<h2>⚙︎ My settings</h2>
-   <div class="setrow"><input type="checkbox" ${u.daily_digest?'checked':''} onchange="savePref({daily_digest:this.checked})"><div class="grow"><h4>🌆 6pm daily recap in Blink</h4><div class="mute">What you finished today, what's overdue or still due, and what's coming up.</div></div><button class="b ghost" onclick="previewDigest()">Send me one now</button></div>
-   <div class="setrow"><input type="checkbox" ${u.week_ahead?'checked':''} onchange="savePref({week_ahead:this.checked})"><div class="grow"><h4>📅 Monday “week ahead” in Blink</h4><div class="mute">Every Monday at 8am: this week's tasks day by day, overdue carry-over, project starts and reminders.</div></div><button class="b ghost" onclick="previewWeek()">Send me one now</button></div>
+   <div id="notifBox"><div class="mute">Loading…</div></div>
    <div class="setrow"><span style="font-size:20px">🗓</span><div class="grow"><h4>Sync to Google Calendar</h4><div class="mute">Your tasks with due dates, reminders and project starts appear in your calendar and stay up to date (Google refreshes every few hours).</div>
      <div class="row" style="margin-top:8px"><a class="b" style="text-decoration:none" href="${cal.google}" target="_blank" rel="noopener">Add to Google Calendar</a><a class="b ghost" style="text-decoration:none" href="${cal.webcal}">Apple / Outlook</a></div>
      <div class="copybox"><input readonly value="${esc(cal.url)}" onclick="this.select()"><button class="b ghost" onclick="navigator.clipboard.writeText('${esc(cal.url)}').then(()=>toast('Link copied'))">Copy</button></div>
      <div class="mute" style="font-size:12px;margin-top:6px">This link is private to you — anyone with it can see your task titles. <a href="#" onclick="regenCal();return false">Make a new link</a> (the old one stops working).</div></div></div>`;
-  if(!taskDlg.open)taskDlg.showModal();}
+  if(!taskDlg.open)taskDlg.showModal();loadNotif();}
+/* 🔔 Blink updates: how often + what */
+let NOTIF=null;
+async function loadNotif(){NOTIF=await api('/api/me/notifications');renderNotif();}
+function renderNotif(){const N=NOTIF,box=$('#notifBox');if(!box)return;
+  const times=[];for(let h=6;h<=21;h++)for(const m of ['00','30'])times.push(`${String(h).padStart(2,'0')}:${m}`);
+  const lbl=t=>{const [h,m]=t.split(':').map(Number);return `${(h%12)||12}:${String(m).padStart(2,'0')} ${h<12?'am':'pm'}`;};
+  const summaryOn=['daily','twice'].includes(N.frequency);
+  box.innerHTML=`<div class="setrow" style="display:block"><h4 style="margin:0 0 4px">🔔 Blink updates</h4>
+    <div class="mute" style="font-size:12.5px;margin-bottom:10px">Choose how often the Task Manager messages you in Blink, and what's included. Your own reminders and replies to your messages always come right away.</div>
+    <div class="row" style="gap:8px;margin:0 0 10px;flex-wrap:wrap">
+      <label class="mute" style="font-size:13px">How often<select id="nfFreq" style="margin-left:6px" onchange="notifSave({frequency:this.value})">${Object.entries(N.frequencies).map(([k,v])=>`<option value="${k}" ${k===N.frequency?'selected':''}>${esc(v)}</option>`).join('')}</select></label>
+      ${summaryOn?`<label class="mute" style="font-size:13px">Summary at<select style="margin-left:6px" onchange="notifSave({time:this.value})">${times.map(t=>`<option value="${t}" ${t===N.time?'selected':''}>${lbl(t)}</option>`).join('')}</select></label>
+      <label class="mute" style="font-size:13px;display:flex;gap:5px;align-items:center"><input type="checkbox" ${N.weekdays_only?'checked':''} onchange="notifSave({weekdays_only:this.checked})"> Weekdays only</label>`:''}</div>
+    <table class="nftab"><tr><th></th><th>Instant</th><th>In summary</th><th>Off</th></tr>
+    ${N.categories.map(c=>`<tr><td><b>${esc(c.label)}</b><div class="mute">${esc(c.help)}</div></td>${['instant','summary','off'].map(m=>{
+        const dis=(c.id==='recap'&&m==='instant')||(m==='summary'&&!summaryOn&&N.frequency==='none');
+        return `<td><input type="radio" name="nf_${c.id}" ${c.mode===m?'checked':''} ${dis?'disabled':''} onchange="notifSave({cats:{${c.id}:'${m}'}})" aria-label="${esc(c.label)}: ${m}"></td>`}).join('')}</tr>`).join('')}</table>
+    ${N.frequency==='instant'?'<div class="mute" style="font-size:12px;margin-top:6px">No summary: anything set to “In summary” is sent right away instead.</div>':''}
+    ${N.frequency==='none'?'<div class="mute" style="font-size:12px;margin-top:6px">No summary: only “Instant” items are sent.</div>':''}
+    <div class="row" style="gap:6px;margin:10px 0 0;flex-wrap:wrap">${summaryOn?`<button class="b ghost sm" onclick="notifPreview(false)">👀 Preview my summary</button><button class="b ghost sm" onclick="notifPreview(true)">Send it to me now</button>`:''}
+      <button class="b ghost sm" onclick="previewWeek()">📅 Preview week-ahead</button><button class="b ghost sm" onclick="notifReset()">Reset to default</button>
+      ${N.queued?`<span class="mute" style="font-size:12px;align-self:center">${N.queued} update${N.queued>1?'s':''} waiting for your next summary</span>`:''}</div></div>`;}
+async function notifSave(b){NOTIF=await api('/api/me/notifications',{method:'PUT',body:b});renderNotif();toast('Saved');}
+async function notifReset(){if(!confirm('Go back to the default: a daily summary at 6pm, plus @mentions right away?'))return;NOTIF=await api('/api/me/notifications/reset',{method:'POST'});renderNotif();toast('Back to default');}
+async function notifPreview(send){if(send&&!confirm('Send your summary to Blink now? Updates waiting for it are included (and cleared).'))return;
+  const r=await api('/api/me/notifications/preview'+(send?'?send=true':''),{method:'POST'});
+  $('#taskDlgBody').innerHTML=`<h2>🔔 Your summary</h2><p class="mute">${send?(r.sent?'Sent to you in Blink just now. ':'Nothing to send — you may not have a Blink ID yet. '):'This is what your next summary would say right now. '}</p>
+    <div class="cm" style="white-space:pre-wrap">${r.text?esc(r.text).replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>'):'Nothing to report yet.'}</div>
+    <div class="row" style="justify-content:flex-end"><button class="b" onclick="openSettings()">← Back to settings</button></div>`;}
 async function savePref(b){await api('/api/me/prefs',{method:'PATCH',body:b});toast('Saved');}
 async function regenCal(){if(!confirm('Make a new calendar link? Calendars using the old link will stop updating.'))return;await api('/api/me/calendar?regenerate=true');openSettings();toast('New link created — add it to your calendar again');}
 async function previewWeek(){const r=await api('/api/me/week-ahead-preview',{method:'POST'});

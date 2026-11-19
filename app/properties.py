@@ -551,7 +551,7 @@ def run_alerts(today: date | None = None) -> int:
         with tx() as c:
             pm = property_manager(c, d["property_id"])
         recipients = [x for x in [(pm or {}).get("blink_user_id"), d["assignee_blink"]] if x] or automations._managers()
-        automations._send(recipients, text)
+        automations._send(recipients, text, cat="critical")
         sent += 1
     return sent
 

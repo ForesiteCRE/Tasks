@@ -123,8 +123,9 @@ def handle(user: dict, desc: str) -> str:
         if mins:
             timing.set_times(tid, estimate=mins)
     if who["id"] != user["id"] and target and target["blink_user_id"]:
-        blink.send_dm(target["blink_user_id"], f"📌 New task assigned by {user['name']}: #{tid} {title}"
-                      + (f" – due {due:%b %d}" if due else "") + (f" · 🏢 {prop['name']}" if prop else ""))
+        from . import notify
+        notify.deliver(who["id"], "assigned", f"📌 New task assigned by {user['name']}: #{tid} {title}"
+                       + (f" – due {due:%b %d}" if due else "") + (f" · 🏢 {prop['name']}" if prop else ""))
     bits = [f"🏢 {prop['name']}" if prop else None, f"📁 {proj['name']}" if proj else None,
             f"👤 {'you' if who['id'] == user['id'] else who['name']}", f"due {due:%a %b %d}" if due else "no due date"]
     reply = f"📌 Added #{tid} {title}\n" + " · ".join(b for b in bits if b)

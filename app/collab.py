@@ -118,7 +118,7 @@ def add_comment(task_id: int, user_id, body: str, source: str = "web") -> dict:
         if u["blink_user_id"]:
             msg = (f"💬 **{author} mentioned you** on #{t['id']} {t['title']} · {t['project_name']}\n"
                    f"“{snippet}”\n\nJust reply here to answer on the task.")
-            automations._send([u["blink_user_id"]], msg)
+            automations._send([u["blink_user_id"]], msg, cat="mentions")
             chat.remember(u["id"], "", msg)      # so a plain reply ("I see it") is understood
             notified.append(u["id"])
     # Tell the assignee about comments from others, unless they were already @mentioned
@@ -126,7 +126,7 @@ def add_comment(task_id: int, user_id, body: str, source: str = "web") -> dict:
             and t["assignee_id"] not in notified):
         msg = (f"💬 **{author} commented** on your task #{t['id']} {t['title']}\n“{snippet}”\n\n"
                "Just reply here to answer on the task.")
-        automations._send([t["assignee_blink"]], msg)
+        automations._send([t["assignee_blink"]], msg, cat="comments")
         chat.remember(t["assignee_id"], "", msg)
     return {"id": cid, "mentioned": [u["name"] for u in mentioned]}
 

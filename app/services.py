@@ -133,7 +133,8 @@ def notify_new_assignments(project_id: int):
         by_user.setdefault(t["blink_user_id"], []).append(t)
     for buid, ts in by_user.items():
         lines = "\n".join(fmt_task(t) for t in ts)
-        blink.send_dm(buid, f"📋 New project *{p['name']}* — you've been assigned:\n{lines}\n\n{chat.help_text()}")
+        from . import notify
+        notify.deliver_blink([buid], "assigned", f"📋 New project *{p['name']}* — you've been assigned:\n{lines}\n\n{chat.help_text()}")
 
 
 def send_reminders(today: date | None = None, force: bool = False) -> int:
@@ -155,7 +156,8 @@ def send_reminders(today: date | None = None, force: bool = False) -> int:
         by_user.setdefault(t["blink_user_id"], []).append(t)
     for buid, ts in by_user.items():
         lines = "\n".join(fmt_task(t) for t in ts)
-        blink.send_dm(buid, f"⏰ Task check-in — how are these going?\n{lines}\n\n"
+        from . import notify
+        notify.deliver_blink([buid], "checkin", f"⏰ Task check-in — how are these going?\n{lines}\n\n"
                             "Reply here with an update (e.g. `done 12` or just tell me what's happening).")
         with tx() as c:
             c.executemany("UPDATE tasks SET last_reminded_on=? WHERE id=?", [(today.isoformat(), t["id"]) for t in ts])

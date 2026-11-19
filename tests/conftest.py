@@ -40,6 +40,10 @@ def fakes():
         SENT.append((buid, text))
         return True
     blink.send_dm = fake_send
+    # most tests check that a message went out: send everything instantly unless a test opts into the real default
+    from app import notify
+    notify.DEFAULT["frequency"] = "instant"
+    notify.DEFAULT["cats"] = {k: ("off" if v == "off" else "instant") if k != "recap" else v for k, v in notify.DEFAULT["cats"].items()}
     auth.link_blink_account = lambda uid, email: None
 
     def create(**kw):

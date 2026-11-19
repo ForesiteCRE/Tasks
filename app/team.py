@@ -146,7 +146,8 @@ def set_member(project_id: int, role_id: int, user_id, _from_property: bool = Fa
     if moved and u and u["blink_user_id"]:
         lines = "\n".join(f"#{t['id']} {t['title']}" + (f" – due {t['due_date']}" if t["due_date"] else "") for t in moved)
         try:
-            blink.send_dm(u["blink_user_id"],
+            from . import notify
+            notify.deliver_blink([u["blink_user_id"]], "team",
                           f"👤 You're now **{role['name']}** on *{proj['name']}* — these tasks are yours:\n{lines}")
         except Exception:
             pass

@@ -97,7 +97,11 @@ def send_week_ahead(force: bool = False, only_user: int | None = None) -> int:
         text = build_week_ahead(u["id"])
         if text:
             try:
-                blink.send_dm(u["blink_user_id"], text)
+                if force:
+                    blink.send_dm(u["blink_user_id"], text)
+                else:
+                    from . import notify
+                    notify.deliver(u["id"], "week_ahead", text, blink_id=u["blink_user_id"])
                 sent += 1
             except Exception:
                 log.exception("week ahead for %s failed", u["id"])

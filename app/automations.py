@@ -58,12 +58,10 @@ def _user_name(user_id) -> str:
     return r["name"] if r else "Someone"
 
 
-def _send(recipients, text):
-    for buid in dict.fromkeys(recipients):  # de-dupe, keep order
-        try:
-            blink.send_dm(buid, text)
-        except Exception:
-            log.exception("automation message to %s failed", buid)
+def _send(recipients, text, cat: str = "manager"):
+    """Every automated Blink message goes through each person's notification settings (send now / summary / off)."""
+    from . import notify
+    notify.deliver_blink(recipients, cat, text)
 
 
 def open_blockers(task_id: int) -> list[dict]:
@@ -121,7 +119,7 @@ def _notify_unblocked(done_task_id: int, who: str):
         if t["assignee_blink"]:
             due = f" – due {date.fromisoformat(t['due_date']):%b %d}" if t["due_date"] else ""
             _send([t["assignee_blink"]],
-                  f"▶️ **Your turn:** #{t['id']} {t['title']}{due} · {t['project_name']}\n"
+                  cat="your_turn", text=f"▶️ **Your turn:** #{t['id']} {t['title']}{due} · {t['project_name']}\n"
                   f"(#{done['id']} {done['title']} was just completed by {who}){moved}"
                   + (f"\n🎓 How-to: {t['tutorial_url']}" if t.get("tutorial_url") else ""))
 
