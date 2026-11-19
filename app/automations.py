@@ -83,10 +83,12 @@ def on_status_change(task_id: int, old: str | None, new: str | None, actor_id, n
     who = _user_name(actor_id)
 
     if new == "blocked" and _on("blocked"):
+        from .blockers import text as blocked_text
+        why = blocked_text(t) or note
         _send(_managers(exclude_user_id=actor_id),
               f"⛔ **Blocked:** #{t['id']} {t['title']} · {t['project_name']}\n"
               f"Assigned to {t['assignee_name'] or 'nobody'} · marked by {who}"
-              + (f"\n_“{note}”_" if note else ""))
+              + (f"\n_{why}_" if why else ""))
 
     if new == "done":
         if _on("your_turn"):
@@ -106,11 +108,21 @@ def _notify_unblocked(done_task_id: int, who: str):
         if open_blockers(d["id"]):
             continue
         t = _task(d["id"])
+        moved = ""
+        if t["status"] == "blocked" and t.get("blocked_kind") == "task":
+            # it was only waiting on that task → back to In progress automatically
+            from . import blockers
+            with tx() as c:
+                c.execute("UPDATE tasks SET status='in_progress' WHERE id=?", (t["id"],))
+                c.execute("INSERT INTO task_updates(task_id, user_id, source, status, note) VALUES(?,?,?,?,?)",
+                          (t["id"], None, "auto", "in_progress", f"Unblocked — #{done['id']} {done['title']} is done"))
+            blockers.clear(t["id"])
+            moved = "\nIt's moved from Blocked back to In progress."
         if t["assignee_blink"]:
             due = f" – due {date.fromisoformat(t['due_date']):%b %d}" if t["due_date"] else ""
             _send([t["assignee_blink"]],
                   f"▶️ **Your turn:** #{t['id']} {t['title']}{due} · {t['project_name']}\n"
-                  f"(#{done['id']} {done['title']} was just completed by {who})"
+                  f"(#{done['id']} {done['title']} was just completed by {who}){moved}"
                   + (f"\n🎓 How-to: {t['tutorial_url']}" if t.get("tutorial_url") else ""))
 
 

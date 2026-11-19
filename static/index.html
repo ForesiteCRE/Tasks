@@ -226,6 +226,12 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 .board{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:12px;overflow-x:auto;padding-bottom:6px}
 .bcol{background:#eef1f4;border-radius:10px;padding:8px;min-height:120px}.bhead{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);padding:4px 6px 8px;font-weight:700}.bhead span{font-weight:400}
 .bcard{background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.04)}.bcard:hover{border-color:var(--acc)}
+.blockpill{background:#fdf1e2;color:#9a5b0c;max-width:100%;white-space:normal}
+.blockbox{background:#fdf6ea;border:1px solid #f3dcb5;border-radius:8px;padding:10px 12px;margin:8px 0}
+#blockDlg{max-width:520px;width:calc(100vw - 24px)}.bkopts{display:grid;gap:6px;margin-bottom:10px}
+.bkopt{display:grid;grid-template-columns:auto 1fr;gap:0 8px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:9px 10px;cursor:pointer}
+.bkopt input{grid-row:span 2;width:auto}.bkopt span{font-size:12.5px}.bkopt:has(input:checked){border-color:var(--acc);background:#f4f9fc}
+.bkpane select,.bkpane input,#bkReason{width:100%}.bkquick{display:flex;gap:4px;flex-wrap:wrap;margin:6px 0 2px}.bkquick .chip2,.blockbox+* .chip2{cursor:pointer}
 /* ---------- phones ---------- */
 @media (max-width:640px){
   html,body{overflow-x:hidden}
@@ -495,6 +501,7 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
     <details id="pTeamBox"><summary class="mute" style="cursor:pointer">👥 Team <span id="pTeamSum"></span></summary><div id="pTeam" class="team-grid"></div></details>
     <div id="pPreview"></div>
   <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="b ghost" onclick="newProjDlg.close()">Cancel</button><button class="b" onclick="newProject()">Create project</button></div></dialog>
+<dialog id="blockDlg"><div id="blockBody"></div></dialog>
 <dialog id="taskDlg"><button class="xclose" aria-label="Close" onclick="taskDlg.close()">✕</button><div id="taskDlgBody"></div><div class="row" style="justify-content:flex-end;margin-top:12px"><button class="b ghost" onclick="taskDlg.close()">Close</button></div></dialog>
 
 <script>
@@ -584,7 +591,10 @@ async function refresh(){
 function orderTasks(ts){const kids={};ts.filter(t=>t.parent_id).forEach(t=>(kids[t.parent_id]=kids[t.parent_id]||[]).push(t));
   const ids=new Set(ts.map(t=>t.id)),out=[];const walk=t=>{out.push(t);(kids[t.id]||[]).forEach(walk)};
   ts.filter(t=>!t.parent_id||!ids.has(t.parent_id)).forEach(walk);return out;}
+function blockText(t){if(t.status!=='blocked')return'';const k=t.blocked_kind;
+  return (k==='task'||k==='person')&&t.blocked_label?`Waiting on ${t.blocked_label}${t.blocked_reason?' — '+t.blocked_reason:''}`:(t.blocked_reason||'');}
 function badges(t){const subs=TASKS.filter(x=>x.parent_id===t.id),b=[];
+  if(t.status==='blocked')b.push(`<span class="pill blockpill" ${canEdit(t)?`onclick="event.stopPropagation();blockDialog(${t.id},true)" style="cursor:pointer"`:''} title="${esc(blockText(t)||'Blocked — tap to say what it\'s waiting on')}">⛔ ${esc((blockText(t)||'no reason given').slice(0,48))}${(blockText(t)||'').length>48?'…':''}${t.blocked_follow_up?` · follow up ${fmtDate(t.blocked_follow_up)}`:''}</span>`);
   if(subs.length)b.push(`<span class="pill">↳ ${subs.filter(x=>x.status==='done').length}/${subs.length}</span>`);
   if(t.check_total)b.push(`<span class="pill">☑ ${t.check_done}/${t.check_total}</span>`);
   if(t.repeat)b.push(`<span class="pill" title="Repeats">🔁 ${({weekly:'weekly',biweekly:'every 2 wks',monthly:'monthly',quarterly:'quarterly',yearly:'yearly'})[t.repeat]||t.repeat}</span>`);
@@ -1155,6 +1165,40 @@ async function askOwner(pid){const t=$('#recText');if(t&&t.value.trim()!==(BIDS.
   if(!BIDS.recommended_bid_id){alert('Pick the bid you recommend first (the round button next to it).');return;}
   const r=await api(`/api/projects/${pid}/approval`,{method:'POST',body:{}});
   await loadBids(pid);alert(`📨 Approval request ready.\n\n${r.in_gmail?'The email to the owner is in your Gmail drafts (with the bids attached) — review and send it.':'The email to the owner is drafted under ✉️ Emails to send — review it and send from Gmail.'}\n\nThe owner approves at:\n${r.link}`);}
+
+/* ---------- "Blocked by what?" ---------- */
+let BLOCK_RESOLVE=null;
+async function blockDialog(id,editing){const t=TASKS.find(x=>x.id===id)||{},o=await api(`/api/tasks/${id}/block-options`);
+  const groups={};o.people.forEach(p=>(groups[p.group]=groups[p.group]||[]).push(p));
+  const cur=editing?t:{},kind=cur.blocked_kind||'person';
+  $('#blockBody').innerHTML=`<h2 style="margin:0 0 4px">⛔ Blocked by what?</h2><div class="mute" style="margin-bottom:10px">#${id} ${esc(t.title||'')}</div>
+    <div class="bkopts">
+      <label class="bkopt"><input type="radio" name="bk" value="person" ${kind==='person'?'checked':''}><b>👤 A person or company</b><span class="mute">owner, vendor, tenant, lender, teammate…</span></label>
+      <label class="bkopt"><input type="radio" name="bk" value="task" ${kind==='task'?'checked':''} ${o.tasks.length?'':'disabled'}><b>🔗 Another task</b><span class="mute">${o.tasks.length?'picks up again automatically when it\'s done':'no other open tasks in this project'}</span></label>
+      <label class="bkopt"><input type="radio" name="bk" value="other" ${kind==='other'?'checked':''}><b>✏️ Something else</b><span class="mute">a short reason</span></label></div>
+    <div class="bkpane" data-k="person"><select id="bkWho"><option value="">Choose who…</option>${Object.entries(groups).map(([g,ps])=>`<optgroup label="${esc(g)}">${ps.map(p=>`<option value="${esc(p.ref)}" ${cur.blocked_ref===p.ref?'selected':''}>${esc(p.label)}</option>`).join('')}</optgroup>`).join('')}<option value="__other">Someone else (type a name)…</option></select>
+      <input id="bkWhoName" class="hidden" placeholder="Name / company (e.g. City of San Antonio permits)" style="margin-top:6px"></div>
+    <div class="bkpane" data-k="task"><select id="bkTask"><option value="">Choose the task…</option>${o.tasks.map(x=>`<option value="${x.id}" ${cur.blocked_ref==='task:'+x.id?'selected':''}>#${x.id} ${esc(x.title)} — ${esc(x.who)}</option>`).join('')}</select></div>
+    <label class="lbl" id="bkReasonLbl">What exactly? <span class="mute">(optional)</span></label>
+    <input id="bkReason" value="${esc(cur.blocked_reason||'')}" placeholder="e.g. roof invoice approval">
+    <div class="bkquick">${o.quick.map(q=>`<span class="chip2" onclick="$('#bkReason').value='${q}'">${q}</span>`).join('')}</div>
+    <label class="lbl">📅 Follow up on <span class="mute">(optional — reminder for the assignee that morning)</span></label>
+    <div class="row" style="margin:0;gap:6px"><input type="date" id="bkFollow" value="${cur.blocked_follow_up||''}" style="width:auto">${[2,5,7].map(n=>`<span class="chip2" onclick="$('#bkFollow').value=isoAdd(today(),${n})">in ${n} days</span>`).join('')}</div>
+    <div class="row" style="justify-content:flex-end;margin-top:14px"><button class="b ghost" id="bkCancel">Cancel</button><button class="b" id="bkSave">${editing?'Save':'Mark blocked'}</button></div>`;
+  const sync=()=>{const k=document.querySelector('input[name=bk]:checked').value;document.querySelectorAll('.bkpane').forEach(p=>p.classList.toggle('hidden',p.dataset.k!==k));
+    $('#bkReasonLbl').innerHTML=k==='other'?'Reason <span class="over">(required)</span>':'What exactly? <span class="mute">(optional)</span>';};
+  document.querySelectorAll('input[name=bk]').forEach(r=>r.onchange=sync);sync();
+  $('#bkWho').onchange=()=>$('#bkWhoName').classList.toggle('hidden',$('#bkWho').value!=='__other');
+  if(cur.blocked_kind==='person'&&!cur.blocked_ref&&cur.blocked_label){$('#bkWho').value='__other';$('#bkWhoName').classList.remove('hidden');$('#bkWhoName').value=cur.blocked_label;}
+  blockDlg.showModal();
+  return new Promise(res=>{BLOCK_RESOLVE=res;
+    $('#bkCancel').onclick=()=>{blockDlg.close();res(false);};
+    blockDlg.oncancel=()=>res(false);
+    $('#bkSave').onclick=async()=>{const k=document.querySelector('input[name=bk]:checked').value,block={kind:k,reason:$('#bkReason').value,follow_up:$('#bkFollow').value||null};
+      if(k==='person'){const v=$('#bkWho').value;if(v==='__other'){block.label=$('#bkWhoName').value;}else block.ref=v;}
+      if(k==='task')block.task_id=+$('#bkTask').value||null;
+      try{await api('/api/tasks/'+id,{method:'PATCH',body:editing?{block}:{status:'blocked',block}});}catch(e){return;}   // api() already shows the error
+      blockDlg.close();await refresh();if(taskDlg.open&&OPEN_ID===id)openTask(id);toast(editing?'Updated':'⛔ Marked blocked');res(true);};});}
 async function delProject(pid){const typed=$('#delConfirm').value;
   const r=await api(`/api/projects/${pid}?confirm=${encodeURIComponent(typed)}`,{method:'DELETE'});taskDlg.close();await refresh();toast('Project deleted',()=>restoreTrash(r.trash_id),'Undo');}
 async function removeSamples(){if(!confirm('Remove all sample projects and their tasks? Your real projects are not affected.'))return;
@@ -1228,7 +1272,7 @@ async function renderHome(){const tok=++HTOK;
         <div class="chips">${p.roles.map(r=>`<span class="chip2">${esc(r)}</span>`).join('')}${p.overdue?`<span class="risk hi">${p.overdue} overdue</span>`:''}</div></div></div>`}).join('')||'<div class="empty">You\'re not on any active projects.</div>'}</div>
    </div><div>
      ${panel('⏳ Waiting on me',d.waiting_on_me.length,d.waiting_on_me.map(w=>`<div class="row2" style="cursor:pointer" onclick="openTask(${w.my_task_id})"><span class="ico">▶️</span><div class="grow"><b>#${w.my_task_id} ${esc(w.my_task_title)}</b><div class="sub">${esc(w.assignee_name)} can't start <i>${esc(w.title)}</i> until this is done${w.my_due?` · due ${fmtDate(w.my_due)}`:''}</div></div></div>`).join('')||'<div class="empty">Nobody is waiting on you.</div>')}
-     ${panel('⛔ Blocked for me',d.blocked.length,d.blocked.map(b=>`<div class="row2" style="cursor:pointer" onclick="openTask(${b.id})"><span class="ico">🔒</span><div class="grow">${esc(b.title)}<div class="sub">${b.blockers.length?'Waiting on '+b.blockers.map(x=>`#${x.id} ${esc(x.title)} (${esc(x.assignee_name)})`).join(', '):''}${b.last_note?` “${esc(b.last_note)}”`:''}</div></div></div>`).join('')||'<div class="empty">Nothing blocked. 👍</div>')}
+     ${panel('⛔ Blocked for me',d.blocked.length,d.blocked.map(b=>`<div class="row2" style="cursor:pointer" onclick="openTask(${b.id})"><span class="ico">🔒</span><div class="grow">${esc(b.title)}<div class="sub">${blockText(b)?esc(blockText(b)):b.blockers.length?'Waiting on '+b.blockers.map(x=>`#${x.id} ${esc(x.title)} (${esc(x.assignee_name)})`).join(', '):b.last_note?`“${esc(b.last_note)}”`:''}${b.blocked_follow_up?` · follow up ${fmtDate(b.blocked_follow_up)}`:''}</div></div></div>`).join('')||'<div class="empty">Nothing blocked. 👍</div>')}
      <div id="homeEmails"></div>
      ${panel('⏰ Reminders',reminders.length,(reminders.map(r=>`<div class="row2"><input type="checkbox" title="Done" onchange="remDone(${r.id})"><div class="grow">${esc(r.text)}<div class="sub">${new Date(r.remind_at).toLocaleString(undefined,{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}${r.sent?' · sent':''}</div></div><button class="x" style="border:0;background:none;color:var(--mute);cursor:pointer" onclick="remDel(${r.id})">✕</button></div>`).join('')||'<div class="empty">No reminders. Add one here or tell the bot in Blink: “remind me Friday 9am to call the owner”.</div>')
         +`<div class="row" style="margin-top:8px"><input id="remText" placeholder="Remind me to…" style="flex:1;min-width:140px"><input id="remAt" type="datetime-local" style="width:190px"><button class="b ghost" onclick="remAdd()">Add</button></div>`)}
@@ -1275,7 +1319,7 @@ function renderTeamHome(d){const c=d.counts;
        <td><span class="risk ${riskOf(p)}">${p.overdue||p.blocked?[p.overdue?p.overdue+' overdue':'',p.blocked?p.blocked+' blocked':''].filter(Boolean).join(' · '):'on track'}</span></td><td>${fmtDate(p.next_due)||'—'}</td></tr>`}).join('')}</table>`)}
     ${panel('⚠️ Overdue',d.overdue.length,d.overdue.map(t=>trow(t)).join('')||'<div class="empty">Nothing overdue. 🎉</div>')}
    </div><div>
-    ${panel('⛔ Blocked',d.blocked.length,d.blocked.map(t=>trow(t,`${t.last_note?`<br>“${esc(t.last_note)}”`:''}${t.blockers.length?'<br>Waiting on '+t.blockers.map(x=>'#'+x.id+' '+esc(x.title)).join(', '):''}`)).join('')||'<div class="empty">Nothing blocked.</div>')}
+    ${panel('⛔ Blocked',d.blocked.length,d.blocked.map(t=>trow(t,`${blockText(t)?`<br>⛔ ${esc(blockText(t))}`:t.last_note?`<br>“${esc(t.last_note)}”`:''}${!blockText(t)&&t.blockers.length?'<br>Waiting on '+t.blockers.map(x=>'#'+x.id+' '+esc(x.title)).join(', '):''}${t.blocked_follow_up?` · follow up ${fmtDate(t.blocked_follow_up)}`:''}`)).join('')||'<div class="empty">Nothing blocked.</div>')}
     ${panel('👤 Unassigned',d.unassigned.length,d.unassigned.map(t=>trow(t)).join('')||'<div class="empty">Everything has an owner.</div>')}
     ${panel('✅ Completed this week',d.done_week.length,d.done_week.map(t=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><span class="ico">✓</span><div class="grow">${esc(t.title)}<div class="sub">${esc(t.assignee_name)} · ${esc(t.project_name)}${t.actual_minutes?' · '+fmtMin(t.actual_minutes):''}</div></div></div>`).join('')||'<div class="empty">Nothing yet this week.</div>',null,d.missing_time.length?`<span class="over">${d.missing_time.length} without time logged</span>`:'')}
    </div></div>`;}
@@ -1369,6 +1413,8 @@ async function openTask(id){OPEN_ID=id;const [d,h]=await Promise.all([api(`/api/
    <tr><td>Due</td><td>${mg?`<input type="date" value="${d.due_date||''}" onchange="patch(${d.id},{due_date:this.value||null}).then(()=>openTask(${d.id}))">`:`<span class="${isOver(d)?'over':''}">${fmtDate(d.due_date)||'—'}</span>`}</td></tr>
    <tr><td>Repeats</td><td>${ed?`<select onchange="patch(${d.id},{repeat:this.value}).then(()=>openTask(${d.id}))">${`<option value="">Doesn't repeat</option><option value="weekly">🔁 Every week</option><option value="biweekly">🔁 Every 2 weeks</option><option value="monthly">🔁 Every month</option><option value="quarterly">🔁 Every quarter</option><option value="yearly">🔁 Every year</option>`.replace(`value="${d.repeat||''}"`,`value="${d.repeat||''}" selected`)}</select>`:(d.repeat?'🔁 '+d.repeat:'—')}<span class="mute" style="font-size:12px;margin-left:8px">${d.repeat?'Next one is created when this is marked done':''}</span></td></tr>
    <tr><td>Status</td><td>${statusSel({...d,assignee_id:ed?ME.id:d.assignee_id}).replace(/onchange="setStatus\((\d+),this.value\)"/,`onchange="setStatus($1,this.value).then(()=>openTask($1))"`)}</td></tr></table>
+   ${d.status==='blocked'?`<div class="blockbox">⛔ <b>${esc(blockText(d)||'Blocked — no reason given yet')}</b>${d.blocked_follow_up?`<div class="sub">📅 Follow up ${fmtDate(d.blocked_follow_up)}</div>`:''}${d.blocked_since?`<div class="sub">Blocked since ${fmtDate(d.blocked_since.slice(0,10))}</div>`:''}
+     ${ed?`<div class="row" style="margin:6px 0 0;gap:6px"><button class="b ghost sm" onclick="blockDialog(${d.id},true)">Change</button><button class="b ghost sm" onclick="setStatus(${d.id},'in_progress').then(()=>openTask(${d.id}))">Unblock → In progress</button></div>`:''}</div>`:''}
 
    ${d.tutorial_url||mg?`<div class="sec tutsec"><h3>🎓 How to do this</h3>
      ${d.tutorial_url?(embedUrl(d.tutorial_url)?`<div class="vid"><iframe src="${esc(embedUrl(d.tutorial_url))}" allow="fullscreen; picture-in-picture" allowfullscreen loading="lazy"></iframe></div>`:'')
@@ -1545,7 +1591,8 @@ async function fromDoc(inp){const f=inp.files[0];inp.value='';if(!f)return;
   $('#pDocInfo').innerHTML=`📄 <b>${esc(f.name)}</b> — ${esc(r.summary).replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>')}<br><span class="mute">Check the fields, team and preview below, then Create project.</span>`;}
 async function saveAsTpl(id,n){const name=prompt('Template name',n+' checklist');if(name){await api(`/api/projects/${id}/save-as-template`,{method:'POST',body:{name}});refresh();}}
 async function patch(id,b){try{await api('/api/tasks/'+id,{method:'PATCH',body:b})}finally{await refresh()}}
-const setStatus=async(id,s)=>{await patch(id,{status:s});const t=TASKS.find(x=>x.id===id);
+const setStatus=async(id,s)=>{if(s==='blocked'){const ok=await blockDialog(id);if(!ok){await refresh();if(taskDlg.open&&OPEN_ID===id)openTask(id);}return;}
+  await patch(id,{status:s});const t=TASKS.find(x=>x.id===id);
   if(s==='done'&&t&&t.repeat)toast('🔁 Done — next one scheduled');
   else if(s==='done'&&t&&!t.actual_minutes&&canEdit(t)&&!taskDlg.open)toast('⏱ Done! How long did it take?',()=>openTask(id).then(()=>{$('#timeSec').scrollIntoView({block:'center'});$('#actIn').focus()}),'Log time');};
 async function addTask(p){const t=$('#nt'+p).value;if(!t)return;await api('/api/tasks',{method:'POST',body:{project_id:p,title:t,assignee_id:+$('#na'+p).value||null,due_date:$('#nd'+p).value||null}});refresh();}

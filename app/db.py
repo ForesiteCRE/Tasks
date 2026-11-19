@@ -182,6 +182,8 @@ def _init_extras():
     emails.init()
     from . import bids
     bids.init()
+    from . import blockers
+    blockers.init()
 
 
 def get_setting(key: str) -> str | None:

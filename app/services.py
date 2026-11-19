@@ -72,6 +72,11 @@ def apply_update(task_id: int, user_id: int | None, source: str, status: str | N
             c.execute("UPDATE projects SET status='done' WHERE id=?", (t["project_id"],))
         elif status and status != "done":  # reopening a task reopens its project
             c.execute("UPDATE projects SET status='active' WHERE id=? AND status='done'", (t["project_id"],))
+    from . import blockers
+    if old == "blocked" and status and status != "blocked":
+        blockers.clear(task_id)
+    elif note and (status == "blocked" or (not status and old == "blocked")):
+        blockers.note_as_reason(task_id, note)       # e.g. a reason given in Blink
     automations.on_status_change(task_id, old, status, user_id, note)
     if old == "blocked" and status and status != "blocked":
         from . import departments
@@ -246,6 +251,13 @@ def handle_inbound(blink_user_id: str, text: str, files: list[dict] | None = Non
                 title = c.execute("SELECT title FROM tasks WHERE id=?", (cm["task_id"],)).fetchone()["title"]
             done_lines.append(f"💬 Comment added to #{cm['task_id']} {title}: “{cm['body']}”"
                               + (f" (notified {', '.join(r['mentioned'])})" if r["mentioned"] else ""))
+        from . import blockers as _bl
+        with tx() as c:
+            ask = [r["id"] for up in parsed["updates"] if up.get("status") == "blocked" and up["task_id"] in allowed
+                   for r in [c.execute("SELECT id, blocked_kind FROM tasks WHERE id=?", (up["task_id"],)).fetchone()] if r and not r["blocked_kind"]]
+        if ask:
+            done_lines.append(f"⛔ What is #{ask[0]} waiting on — a person (owner, vendor, tenant…), another task, or something else? "
+                              "Just reply and I'll note it (add a date if you want a follow-up reminder).")
         reply = "\n".join(done_lines) or parsed.get("reply") or "No changes made."
         need_time = [up["task_id"] for up in parsed["updates"] if up.get("status") == "done" and not up.get("actual_minutes")
                      and up["task_id"] in allowed]

@@ -115,6 +115,7 @@ Rules:
 - comments: when they ask to comment / leave a message / "add this to #12" / tell or ask a teammate something on a task, put the exact text in comments (keep any @names). Don't also copy it into note. A comment alone is a complete action — no status change needed.
 - A reply to a bot notification (e.g. "@X mentioned you on #141 …" then "I see it" / "on it" / "thanks") is a comment back on that task: put their reply text in comments for that task.
 - "Other tasks from this conversation" can only get comments, never status changes or notes.
+- If you (the bot) just asked what a Blocked task is waiting on, their next message is the answer: put it in note for that task, status "unchanged".
 - Use the earlier conversation to resolve follow-ups. If you just asked which task or what to add, their next message is the answer: act on it (e.g. you asked "what should I add to #141?" and they send text → that text is a comment on #141). Never treat such an answer as a test or small talk.
 - If it's unclear which task they mean, or the message isn't a task update (a question, small talk), return no updates and use reply to answer briefly or ask one short clarifying question that names the candidate task numbers.
 - Otherwise reply is one short, friendly confirmation line. No emoji spam."""

@@ -11,6 +11,7 @@ If the department has no head (or the person IS the head), managers get it inste
 from datetime import date, timedelta
 
 from . import automations
+from .blockers import text as blocked_text
 from .db import get_setting, rows, set_setting, tx
 
 DEFAULTS = {"dept_overdue_days": "3", "dept_blocked_days": "3", "dept_date_days": "1"}
@@ -111,6 +112,7 @@ def run_escalations(today: date | None = None) -> int:
         if bd > 0:
             for t in rows(c.execute(
                     """SELECT t.id, t.title, t.assignee_id, COALESCE(u.name,'Unassigned') AS who, p.name AS project,
+                              t.blocked_kind, t.blocked_label, t.blocked_reason,
                               (SELECT MAX(created_at) FROM task_updates x WHERE x.task_id=t.id AND x.status='blocked') AS since,
                               (SELECT note FROM task_updates x WHERE x.task_id=t.id AND x.status='blocked' ORDER BY id DESC LIMIT 1) AS note
                        FROM tasks t JOIN projects p ON p.id=t.project_id LEFT JOIN users u ON u.id=t.assignee_id
@@ -120,7 +122,7 @@ def run_escalations(today: date | None = None) -> int:
                     days = (today - date.fromisoformat(t["since"][:10])).days
                     items.append(("dept_blocked", t["id"], t["assignee_id"],
                                   f"⛔ #{t['id']} {t['title']} · {t['who']} · {t['project']} — **blocked {days} days**"
-                                  + (f" (“{t['note']}”)" if t["note"] else "")))
+                                  + (f" — {blocked_text(t) or t['note']}" if (blocked_text(t) or t["note"]) else "")))
         if dd > 0:
             for d in rows(c.execute(
                     """SELECT cd.id, cd.title, cd.date, cd.property_id, cd.assignee_id, p.name AS property FROM critical_dates cd

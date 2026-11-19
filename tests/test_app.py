@@ -1192,3 +1192,52 @@ def test_bids_recommendation_and_owner_approval(mgr, staff):
     # staff not on the team can't add bids elsewhere
     other = ids(mgr.post("/api/projects", json={"name": "Not Sam's project"}))["id"]
     assert staff.post(f"/api/projects/{other}/bids", json={"vendor_name": "X", "amount": 1}).status_code == 403
+
+
+def test_blocked_requires_what_its_waiting_on(mgr, staff):
+    from datetime import date, timedelta
+    with tx() as c:
+        sam = c.execute("SELECT id FROM users WHERE blink_user_id='u-sam'").fetchone()["id"]
+    pid = ids(mgr.post("/api/projects", json={"name": "Blocker test", "property": "11 Block Rd, Austin, TX"}))["id"]
+    prop = [p for p in ids(mgr.get("/api/projects")) if p["id"] == pid][0]["property_id"]
+    owner = ids(mgr.post(f"/api/properties/{prop}/contacts", json={"role": "Owner contact", "name": "Olga Owner"}))["id"]
+    first = ids(mgr.post("/api/tasks", json={"title": "Get owner sign-off", "project_id": pid, "assignee_id": sam}))["id"]
+    t = ids(mgr.post("/api/tasks", json={"title": "Order materials", "project_id": pid, "assignee_id": sam}))["id"]
+    # no reason → refused
+    assert staff.patch(f"/api/tasks/{t}", json={"status": "blocked"}).status_code == 400
+    opts = ids(staff.get(f"/api/tasks/{t}/block-options"))
+    assert any(x["id"] == first for x in opts["tasks"]) and any(x["ref"] == f"contact:{owner}" for x in opts["people"])
+    # waiting on a person, with a follow-up reminder
+    follow = (date.today() + timedelta(days=3)).isoformat()
+    ids(staff.patch(f"/api/tasks/{t}", json={"status": "blocked", "block": {"kind": "person", "ref": f"contact:{owner}",
+                                                                            "reason": "roof invoice", "follow_up": follow}}))
+    tt = ids_task(t)
+    assert tt["status"] == "blocked" and tt["blocked_label"] == "Olga Owner (Owner contact)" and tt["blocked_follow_up"] == follow
+    with tx() as c:
+        rem = c.execute("SELECT * FROM reminders WHERE id=?", (tt["blocked_reminder_id"],)).fetchone()
+    assert rem and rem["user_id"] == sam and rem["remind_at"].startswith(follow) and "Olga Owner" in rem["text"]
+    # change it to "waiting on another task" → dependency; finishing that task unblocks automatically
+    ids(staff.patch(f"/api/tasks/{t}", json={"block": {"kind": "task", "task_id": first}}))
+    with tx() as c:
+        assert c.execute("SELECT 1 FROM task_dependencies WHERE task_id=? AND depends_on_id=?", (t, first)).fetchone()
+        assert not c.execute("SELECT 1 FROM reminders WHERE id=?", (rem["id"],)).fetchone()          # old follow-up dropped
+    before = len(SENT)
+    ids(staff.patch(f"/api/tasks/{first}", json={"status": "done"}))
+    tt = ids_task(t)
+    assert tt["status"] == "in_progress" and tt["blocked_kind"] is None
+    assert any(b == "u-sam" and "back to In progress" in m for b, m in SENT[before:])
+    # a loop is refused; "other" needs a reason
+    assert staff.patch(f"/api/tasks/{first}", json={"status": "blocked", "block": {"kind": "task", "task_id": first}}).status_code == 400
+    assert staff.patch(f"/api/tasks/{t}", json={"status": "blocked", "block": {"kind": "other"}}).status_code == 400
+    ids(staff.patch(f"/api/tasks/{t}", json={"status": "blocked", "block": {"kind": "other", "reason": "City permit"}}))
+    assert ids_task(t)["blocked_reason"] == "City permit"
+    ids(staff.patch(f"/api/tasks/{t}", json={"status": "in_progress"}))
+    assert ids_task(t)["blocked_kind"] is None
+    # Blink: "blocked" with no reason → the bot asks; the answer becomes the reason
+    CLAUDE.append({"updates": [{"task_id": t, "status": "blocked", "note": "", "actual_minutes": 0, "time_note": ""}], "comments": [], "reply": ""})
+    r = services.handle_inbound("u-sam", f"{t} is blocked")
+    assert "waiting on" in r
+    CLAUDE.append({"updates": [{"task_id": t, "status": "unchanged", "note": "Waiting on the tenant to pick colors", "actual_minutes": 0,
+                                "time_note": ""}], "comments": [], "reply": ""})
+    services.handle_inbound("u-sam", "the tenant needs to pick colors")
+    assert ids_task(t)["blocked_reason"] == "Waiting on the tenant to pick colors"

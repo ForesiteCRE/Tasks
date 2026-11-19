@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import (audit, auth, automations, bids, blink, chat, closeboard, departments, emails, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
+from . import (audit, auth, automations, bids, blink, blockers, chat, closeboard, departments, emails, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
                starter_templates, team, timing, tpl)
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
@@ -136,6 +136,7 @@ class TaskPatch(BaseModel):
     due_date: date | None = None
     note: str | None = None
     user_id: int | None = None
+    block: dict | None = None              # {kind: task|person|other, task_id, ref, label, reason, follow_up}
 
 class SaveAsTemplate(BaseModel):
     name: str
@@ -754,9 +755,25 @@ def patch_task(tid: int, p: TaskPatch, request: Request):
                 raise HTTPException(400, f"Couldn't read “{v}” as a duration — try 1h30, 45m or 2h.")
             return m or 0
         timing.set_times(tid, estimate=mins(p.estimate), actual=mins(p.actual), notes=p.time_notes)
+    if p.status == "blocked" or p.block:
+        # "Blocked by what?" — required on the web: another task, a person/company, or a short reason
+        block = p.block or ({"kind": "other", "reason": p.note} if (p.note or "").strip() else None)
+        if not block:
+            raise HTTPException(400, "Say what it's blocked by — another task, a person, or a short reason.")
+        try:
+            desc = blockers.set_blocked(tid, block, p.user_id)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        if p.status == "blocked" and not p.note:
+            p.note = desc
     if p.status or p.note:
         services.apply_update(tid, p.user_id, "web", p.status, p.note)
     return {"ok": True}
+
+
+@app.get("/api/tasks/{tid}/block-options")
+def block_options(tid: int):
+    return blockers.options(tid)
 
 def _require_task_editor(request: Request, tid: int):
     """Managers, the task's assignee, or the assignee of its parent task."""

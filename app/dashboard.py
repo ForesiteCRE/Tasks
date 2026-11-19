@@ -35,6 +35,7 @@ def init():
 # ---------- shared query bits ----------
 
 TASK_COLS = """t.id, t.title, t.status, t.due_date, t.project_id, t.parent_id, t.assignee_id, t.estimate_minutes,
+               t.blocked_kind, t.blocked_label, t.blocked_reason, t.blocked_follow_up, t.blocked_since,
                t.actual_minutes, t.completed_at, p.name AS project_name, COALESCE(u.name,'Unassigned') AS assignee_name,
                (SELECT note FROM task_updates tu WHERE tu.task_id=t.id AND note IS NOT NULL ORDER BY tu.id DESC LIMIT 1) AS last_note,
                (SELECT GROUP_CONCAT(b.id) FROM task_dependencies d JOIN tasks b ON b.id=d.depends_on_id
