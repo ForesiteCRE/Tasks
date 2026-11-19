@@ -539,7 +539,7 @@ def test_demo_data_load_and_remove(mgr, staff):
     assert staff.post("/api/demo/load").status_code == 403
     SENT.clear()
     r = ids(mgr.post("/api/demo/load"))
-    assert r["projects"] >= 8 and r["people"] == 4
+    assert r["projects"] >= 8 and r["people"] == 8
     assert SENT == []                                                     # nothing sent to Blink while loading
     from app import blink as real_blink
     with real_blink.quiet():
@@ -555,8 +555,19 @@ def test_demo_data_load_and_remove(mgr, staff):
     assert ids(mgr.get("/api/me/unread"))["mentions"] >= 1
     assert ids(mgr.get("/api/insights/time"))["overall"]["count"] > 0
     assert ids(mgr.get("/api/demo"))["loaded"]
+    # the showcase: department heads, roof bids waiting on the owner, blocked reasons, high-fives
+    depts = {d["name"]: d for d in ids(mgr.get("/api/departments"))}
+    assert depts["Accounting"]["head_name"] and depts["Property Management"]["members"] >= 4
+    roof = [p for p in ids(mgr.get("/api/projects")) if p["name"].endswith("Roof replacement")][0]
+    rb = ids(mgr.get(f"/api/projects/{roof['id']}/bids"))
+    assert len(rb["bids"]) == 3 and rb["approvals"][0]["status"] == "pending" and rb["recommendation"]
+    with tx() as c:
+        assert c.execute("SELECT COUNT(*) FROM tasks WHERE status='blocked' AND blocked_kind IS NOT NULL").fetchone()[0] >= 3
+        assert c.execute("SELECT COUNT(*) FROM win_kudos").fetchone()[0] > 0
+    assert ids(mgr.get("/api/fun/team"))["wins"]
     ids(mgr.delete("/api/demo"))
-    assert {p["id"] for p in ids(mgr.get("/api/projects"))} == before_projects
+    left = [p for p in ids(mgr.get("/api/projects")) if p["id"] not in before_projects and not p["is_general"]]
+    assert not left, [(p["name"], p["is_general"]) for p in left]
     assert {u["id"] for u in ids(mgr.get("/api/users"))} == before_users
     assert not ids(mgr.get("/api/demo"))["loaded"]
 

@@ -10,7 +10,14 @@ from datetime import date, timedelta
 from . import blink, collab, dashboard, services, starter_templates, team, timing
 from .db import get_setting, set_setting, tx
 
-PEOPLE = [("Sam Patel", "sam.patel"), ("Jordan Lee", "jordan.lee"), ("Maria Garza", "maria.garza"), ("Alex Rivera", "alex.rivera")]
+# Fictional teammates (no Blink accounts, so nobody is messaged while you demo)
+PEOPLE = [("Sam Patel", "sam.patel"), ("Jordan Lee", "jordan.lee"), ("Maria Garza", "maria.garza"), ("Alex Rivera", "alex.rivera"),
+          ("Dana Whitfield", "dana.whitfield"), ("Priya Shah", "priya.shah"), ("Chris Ogden", "chris.ogden"),
+          ("Taylor Brooks", "taylor.brooks")]
+# department → (head, members)
+DEPARTMENTS = {"Property Management": ("Dana Whitfield", ["Dana Whitfield", "Alex Rivera", "Priya Shah", "Sam Patel"]),
+               "Accounting": ("Jordan Lee", ["Jordan Lee", "Maria Garza", "Chris Ogden"]),
+               "Leasing": ("Taylor Brooks", ["Taylor Brooks"])}
 DEMO_DOMAIN = "demo.example.com"   # never a real inbox
 
 
@@ -274,6 +281,13 @@ def load(me_id: int) -> dict:
                                     "carrier": carrier, "note": "Sample certificate" + ("" if named else
                                     " — owner listed only as certificate holder, not additional insured")})
 
+        # --- the showcase: departments + heads, property teams, blocked reasons, bids + owner approval, wins & badges
+        try:
+            _showcase(m, me_id, ids, hq["property_id"] if hq else None)
+        except Exception:
+            import logging
+            logging.getLogger("demo").exception("demo showcase step failed")
+
         # --- a monthly recurring setup (paused, so it doesn't create real projects)
         with tx() as c:
             tpl_id = c.execute("SELECT id FROM templates WHERE name='Month-End Close'").fetchone()
@@ -286,7 +300,146 @@ def load(me_id: int) -> dict:
     m["loaded_at"] = date.today().isoformat()
     set_setting("demo.manifest", json.dumps(m))
     return {"people": len(m["users"]), "projects": len(m["projects"]), "loose_tasks": len(m["tasks"]),
-            "reminders": len(m["reminders"])}
+            "reminders": len(m["reminders"]), "emails": len(m.get("emails", []))}
+
+
+def _showcase(m: dict, me_id: int, ids: dict, hq_id):
+    """Everything that makes a good live demo, on top of the sample projects."""
+    import random as _r
+    from . import bids, blockers, emails, properties
+    rnd = _r.Random(11)
+    U = lambda name: ids[name]
+    # departments and heads (remember what was there so Remove can put it back)
+    m.setdefault("dept_before", {})
+    m.setdefault("depts_created", [])
+    with tx() as c:
+        for dname, (head, members) in DEPARTMENTS.items():
+            d = c.execute("SELECT id, head_user_id FROM departments WHERE name=?", (dname,)).fetchone()
+            if d:
+                did = d["id"]
+                m["dept_before"][str(did)] = d["head_user_id"]
+            else:
+                did = c.execute("INSERT INTO departments(name, position) VALUES(?, 99)", (dname,)).lastrowid
+                m["depts_created"].append(did)
+            if not d or not d["head_user_id"]:
+                c.execute("UPDATE departments SET head_user_id=? WHERE id=?", (U(head), did))
+            for name in members:
+                c.execute("UPDATE users SET department_id=? WHERE id=?", (did, U(name)))
+        roles = {r["name"]: r["id"] for r in c.execute("SELECT id, name FROM project_roles")}
+    # property teams: different property managers own different buildings
+    pa = properties.property_for_address
+    teams = {hq_id: {"Property Manager": me_id, "Head of Accounting": U("Jordan Lee"), "AP": U("Maria Garza"), "AR": U("Chris Ogden"),
+                     "Leasing": U("Taylor Brooks"), "Asset Manager": U("Sam Patel")},
+             pa("4500 Fredericksburg Rd, San Antonio, TX"): {"Property Manager": U("Alex Rivera"), "Head of Accounting": U("Jordan Lee"),
+                     "AP": U("Maria Garza"), "AR": U("Maria Garza"), "Leasing": U("Taylor Brooks"), "Asset Manager": U("Sam Patel")},
+             pa("8800 Research Blvd, Austin, TX"): {"Property Manager": U("Priya Shah"), "Head of Accounting": U("Jordan Lee"),
+                     "AP": U("Chris Ogden"), "AR": U("Chris Ogden"), "Leasing": U("Taylor Brooks")},
+             pa("1200 Broadway St, San Antonio, TX"): {"Property Manager": U("Alex Rivera"), "Head of Accounting": U("Jordan Lee"),
+                     "AP": U("Maria Garza"), "AR": U("Chris Ogden")}}
+    for prop, team_ in teams.items():
+        if prop:
+            for role, uid in team_.items():
+                if role in roles:
+                    properties.set_member(prop, roles[role], uid)
+    # blocked tasks that say what they're waiting on
+    with tx() as c:
+        open_tasks = [dict(r) for r in c.execute(
+            f"""SELECT t.id, t.title, t.assignee_id, p.property_id FROM tasks t JOIN projects p ON p.id=t.project_id
+                WHERE t.status IN ('todo','in_progress') AND t.parent_id IS NULL AND t.project_id IN ({','.join('?' * len(m['projects']))})
+                ORDER BY t.id""", m["projects"])] if m["projects"] else []
+        owner = c.execute("SELECT id FROM property_contacts WHERE property_id=? AND role='Owner contact'", (hq_id,)).fetchone() if hq_id else None
+        waste = c.execute("SELECT id FROM vendors WHERE name='Alamo City Waste & Recycling'").fetchone()
+    plan = [({"kind": "person", "ref": f"contact:{owner['id']}" if owner else None, "label": None if owner else "Owner",
+              "reason": "signed management agreement addendum", "follow_up": (date.today() + timedelta(days=2)).isoformat()}, hq_id),
+            ({"kind": "person", "ref": f"vendor:{waste['id']}" if waste else None, "label": None if waste else "Waste hauler",
+              "reason": "corrected October invoice"}, None),
+            ({"kind": "other", "reason": "City of San Antonio sign permit", "follow_up": (date.today() + timedelta(days=5)).isoformat()}, None)]
+    used = set()
+    for block, prop in plan:
+        t = next((x for x in open_tasks if x["id"] not in used and x["assignee_id"] and (prop is None or x["property_id"] == prop)), None)
+        if not t:
+            continue
+        used.add(t["id"])
+        try:
+            desc = blockers.set_blocked(t["id"], block, t["assignee_id"])
+            services.apply_update(t["id"], t["assignee_id"], "web", "blocked", desc)
+            with tx() as c:   # make it look like it's been stuck a few days
+                c.execute("UPDATE tasks SET blocked_since=datetime('now','-4 days') WHERE id=?", (t["id"],))
+                c.execute("UPDATE task_updates SET created_at=datetime('now','-4 days') WHERE task_id=? AND status='blocked'", (t["id"],))
+        except ValueError:
+            pass
+    # a roof project with three bids, a recommendation and an owner approval waiting
+    if hq_id:
+        with tx() as c:
+            addr = c.execute("SELECT address, client FROM properties WHERE id=?", (hq_id,)).fetchone()
+            pj = c.execute("""INSERT INTO projects(name, start_date, property, client, description, property_id, created_by)
+                              VALUES(?,?,?,?,?,?,?)""", ("777 E Sonterra – Roof replacement", (date.today() - timedelta(days=21)).isoformat(),
+                                                          addr["address"], addr["client"], "Roof is 22 years old; two leaks this year.",
+                                                          hq_id, me_id)).lastrowid
+            roof = c.execute("SELECT id FROM vendors WHERE name='Hill Country Roofing'").fetchone()
+        m["projects"].append(pj)
+        properties.sync_project(pj)
+        for title, who, days, status in [("Roof inspection & moisture survey", me_id, -18, "done"), ("Collect 3 roof bids", me_id, -5, "done"),
+                                          ("Owner approval of roof bid", me_id, 3, "blocked"), ("Schedule roof replacement", me_id, 20, "todo"),
+                                          ("Notify tenants of roof work", U("Taylor Brooks"), 24, "todo")]:
+            with tx() as c:
+                tid = c.execute("INSERT INTO tasks(project_id, title, assignee_id, due_date, position) VALUES(?,?,?,?,999)",
+                                (pj, title, who, (date.today() + timedelta(days=days)).isoformat())).lastrowid
+            if status == "done":
+                services.apply_update(tid, who, "web", "done", None)
+            elif status == "blocked":
+                blockers.set_blocked(tid, {"kind": "person", "ref": f"contact:{owner['id']}" if owner else None,
+                                           "label": None if owner else "Owner", "reason": "roof bid approval"}, who)
+                services.apply_update(tid, who, "web", "blocked", "Waiting on owner approval of the roof bid")
+        b1 = bids.add_bid(pj, {"vendor_id": roof["id"] if roof else None, "vendor_name": None if roof else "Hill Country Roofing",
+                               "amount": 48500, "scope": "Tear-off and new 60-mil TPO roof, new flashing and edge metal",
+                               "exclusions": "Deck repairs over 200 sq ft", "timeline": "3 weeks, weather permitting",
+                               "warranty": "20-year manufacturer NDL + 5-year workmanship",
+                               "submitted_on": (date.today() - timedelta(days=6)).isoformat()}, me_id)["id"]
+        bids.add_bid(pj, {"vendor_name": "Lone Star Roofing Co", "amount": 41200, "scope": "Silicone coating over existing roof",
+                          "exclusions": "Wet insulation replacement", "timeline": "8 working days", "warranty": "10-year coating warranty",
+                          "submitted_on": (date.today() - timedelta(days=5)).isoformat()}, me_id)
+        bids.add_bid(pj, {"vendor_name": "Apex Commercial Roofing", "amount": 52900, "scope": "Tear-off and new TPO roof, tapered insulation",
+                          "timeline": "4 weeks", "warranty": "20-year NDL", "submitted_on": (date.today() - timedelta(days=4)).isoformat()}, me_id)
+        bids.set_recommendation(pj, b1, "We recommend Hill Country Roofing at $48,500. Their bid is a full tear-off and replacement "
+                                "with a 20-year manufacturer warranty, which addresses the wet insulation found in the moisture survey. "
+                                "The $41,200 coating option would trap that moisture and only carries a 10-year warranty. Hill Country "
+                                "has repaired leaks here quickly with photo reports, and they're $4,400 below Apex for the same scope.")
+        try:
+            bids.request_approval(pj, me_id)
+        except ValueError:
+            pass
+    # wins spread over the last few days, high-fives, a few badges and streaks
+    with tx() as c:
+        wins = [dict(r) for r in c.execute("SELECT id, user_id FROM wins WHERE user_id IN (%s) OR ref_id IN (%s)" % (
+            ",".join("?" * len(m["users"])), ",".join("?" * len(m["projects"]))), m["users"] + m["projects"])]
+        for w in wins:
+            c.execute("UPDATE wins SET at=datetime('now', ?) WHERE id=?", (f"-{rnd.randint(1, 72 * 60)} minutes", w["id"]))
+        everyone = m["users"] + [me_id]
+        for w in wins:
+            for uid in rnd.sample(everyone, k=rnd.randint(0, 3)):
+                if uid != w["user_id"]:
+                    c.execute("INSERT OR IGNORE INTO win_kudos(win_id, user_id) VALUES(?,?)", (w["id"], uid))
+        from .fun import BADGES
+        for name, badges in [("Jordan Lee", ["closer", "early_bird"]), ("Maria Garza", ["early_bird"]),
+                             ("Alex Rivera", ["vendor_scout"]), ("Taylor Brooks", ["same_day"]), ("Dana Whitfield", ["unblocker"])]:
+            for b in badges:
+                c.execute("INSERT OR IGNORE INTO user_badges(user_id, badge, earned_at) VALUES(?,?,datetime('now','-2 days'))", (U(name), b))
+                c.execute("INSERT INTO wins(user_id, kind, ref_id, title, detail, at) VALUES(?,?,?,?,?,datetime('now', ?))",
+                          (U(name), "badge", None, b, BADGES[b][2], f"-{rnd.randint(60, 3000)} minutes"))
+        for name, days in [("Jordan Lee", 12), ("Dana Whitfield", 9), ("Maria Garza", 6), ("Taylor Brooks", 4)]:
+            d, n = date.today() - timedelta(days=1), 0
+            while n < days:
+                if d.weekday() < 5:
+                    c.execute("INSERT OR REPLACE INTO user_days(user_id, day, overdue, done) VALUES(?,?,0,?)", (U(name), d.isoformat(), rnd.randint(1, 6)))
+                    n += 1
+                d -= timedelta(days=1)
+    # insurance follow-up emails for the property manager (you, at 777 E Sonterra)
+    with tx() as c:
+        before = c.execute("SELECT COALESCE(MAX(id),0) FROM email_drafts").fetchone()[0]
+    emails.run()
+    with tx() as c:
+        m["emails"] = [r[0] for r in c.execute("SELECT id FROM email_drafts WHERE id>?", (before,))]
 
 
 def _email(uid):
@@ -321,6 +474,13 @@ def remove() -> dict:
         if empty:
             properties.delete(pid)
     with tx() as c:
+        for eid in m.get("emails", []):
+            c.execute("DELETE FROM email_drafts WHERE id=?", (eid,))
+        for did, head in m.get("dept_before", {}).items():
+            c.execute("UPDATE departments SET head_user_id=? WHERE id=?", (head, int(did)))
+        for did in m.get("depts_created", []):
+            c.execute("UPDATE users SET department_id=NULL WHERE department_id=?", (did,))
+            c.execute("DELETE FROM departments WHERE id=?", (did,))
         for rid in m["reminders"]:
             c.execute("DELETE FROM reminders WHERE id=?", (rid,))
         for rid in m["recurrences"]:
