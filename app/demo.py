@@ -4,6 +4,7 @@ Everything created is recorded in a manifest (settings key 'demo.manifest') so '
 that and nothing else. No Blink messages are sent while loading (blink.quiet()).
 """
 import json
+import re
 import random
 from datetime import date, timedelta
 
@@ -24,6 +25,65 @@ DEMO_DOMAIN = "demo.example.com"   # never a real inbox
 def manifest() -> dict | None:
     raw = get_setting("demo.manifest")
     return json.loads(raw) if raw else None
+
+
+# Fictional contacts for the sample properties (example.com emails, 555 numbers — none of these are real).
+SAMPLE_CONTACTS = {
+    "777 E Sonterra Blvd, San Antonio, TX 78258": [
+        ("Owner contact", "Margaret Ellison", "Sonterra Commons Owner LLC", "(210) 555-0142", "Prefers email; monthly report by the 15th"),
+        ("Asset manager", "Derek Huang", "Hill Country Capital Partners", "(210) 555-0178", "Approves CapEx over threshold"),
+        ("CPA", "Linda Okafor, CPA", "Okafor & Reyes CPAs", "(210) 555-0119", "Year-end package & 1099 questions"),
+        ("Bank", "Raymond Ortiz", "Lone Star Community Bank", "(210) 555-0163", "Treasury services — operating & deposit accounts"),
+        ("Insurance agent", "Karen Whitlock", "Mission Risk Insurance Agency", "(210) 555-0187", "Property & GL renewals"),
+        ("Lender", "Paul Brennan", "Alamo Heights Lending", "(210) 555-0131", "Loan servicing — escrow & covenant reporting"),
+        ("Tax protest company", "Steve Morales", "Bexar Tax Advisors", "(210) 555-0156", "Files protest by May 15"),
+        ("Lawyer", "Rachel Kim", "Kim & Pruitt PLLC", "(210) 555-0124", "Leases, estoppels, collections")],
+    "4500 Fredericksburg Rd, San Antonio, TX": [
+        ("Owner contact", "Victor Salas", "Fredericksburg Center LLC", "(210) 555-0105", "Seller — call before emailing"),
+        ("Owner contact", "Hannah Price", "Alamo Retail Fund II", "(210) 555-0198", "Buyer's contact for the sale"),
+        ("CPA", "Greg Lindqvist, CPA", "Lindqvist Accounting", "(210) 555-0137", None),
+        ("Bank", "Anita Desai", "River City Bank", "(210) 555-0174", None),
+        ("Insurance agent", "Tom Gallegos", "Mission Risk Insurance Agency", "(210) 555-0149", None),
+        ("Lawyer", "Brian Foster", "Foster Real Estate Law", "(210) 555-0112", "Handling the purchase & sale agreement")],
+    "8800 Research Blvd, Austin, TX": [
+        ("Owner contact", "Olivia Grant", "Research Plaza Owner LP", "(512) 555-0161", "Quarterly owner calls"),
+        ("Asset manager", "Marcus Webb", "Capitol Ridge Investments", "(512) 555-0127", None),
+        ("CPA", "Jennifer Tran, CPA", "Tran & Associates", "(512) 555-0183", None),
+        ("Lender", "Chris Delgado", "Hill Country Lending", "(512) 555-0109", "DSCR reporting quarterly"),
+        ("Tax protest company", "Laura Benson", "Travis Property Tax Consultants", "(512) 555-0145", None)],
+    "1200 Broadway St, San Antonio, TX": [
+        ("Owner contact", "Daniel Reyes", "Broadway Lofts LP", "(210) 555-0115", None),
+        ("CPA", "Linda Okafor, CPA", "Okafor & Reyes CPAs", "(210) 555-0119", None),
+        ("Bank", "Raymond Ortiz", "Lone Star Community Bank", "(210) 555-0163", None),
+        ("Insurance agent", "Karen Whitlock", "Mission Risk Insurance Agency", "(210) 555-0187", None)],
+}
+
+
+def add_sample_contacts(m: dict):
+    """Adds the fictional contacts to the sample properties (skips ones already there) and records them for Remove."""
+    from . import properties
+    m.setdefault("contacts", [])
+    for addr, people in SAMPLE_CONTACTS.items():
+        pid = properties.property_for_address(addr)
+        if not pid:
+            continue
+        with tx() as c:
+            have = {(r[0], r[1]) for r in c.execute("SELECT role, name FROM property_contacts WHERE property_id=?", (pid,))}
+        for role, name, company, phone, notes in people:
+            if (role, name) in have:
+                continue
+            email = re.sub(r"[^a-z]", "", name.split(",")[0].split()[0].lower()) + "." + \
+                re.sub(r"[^a-z]", "", name.split(",")[0].split()[-1].lower()) + "@example.com"
+            m["contacts"].append(properties.add_contact(pid, {"role": role, "name": name, "company": company,
+                                                               "email": email, "phone": phone, "notes": notes or ""}))
+
+
+def backfill_contacts():
+    """Demo data loaded before sample contacts existed gets them once."""
+    m = manifest()
+    if m and "contacts" not in m:
+        add_sample_contacts(m)
+        set_setting("demo.manifest", json.dumps(m))
 
 
 def _task(pid, title_part):
@@ -309,6 +369,7 @@ def _showcase(m: dict, me_id: int, ids: dict, hq_id):
     from . import bids, blockers, emails, properties
     rnd = _r.Random(11)
     U = lambda name: ids[name]
+    add_sample_contacts(m)
     # departments and heads (remember what was there so Remove can put it back)
     m.setdefault("dept_before", {})
     m.setdefault("depts_created", [])
@@ -474,6 +535,8 @@ def remove() -> dict:
         if empty:
             properties.delete(pid)
     with tx() as c:
+        for cid in m.get("contacts", []):
+            c.execute("DELETE FROM property_contacts WHERE id=?", (cid,))
         for eid in m.get("emails", []):
             c.execute("DELETE FROM email_drafts WHERE id=?", (eid,))
         for did, head in m.get("dept_before", {}).items():

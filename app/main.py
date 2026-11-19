@@ -46,6 +46,10 @@ async def scheduler_loop():
 async def lifespan(_):
     init_db()
     tpl.init()
+    try:
+        demo.backfill_contacts()
+    except Exception:
+        logging.getLogger("demo").exception("sample contact backfill failed")
     task = asyncio.create_task(scheduler_loop())
     yield
     task.cancel()

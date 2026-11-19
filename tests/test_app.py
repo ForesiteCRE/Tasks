@@ -565,7 +565,15 @@ def test_demo_data_load_and_remove(mgr, staff):
         assert c.execute("SELECT COUNT(*) FROM tasks WHERE status='blocked' AND blocked_kind IS NOT NULL").fetchone()[0] >= 3
         assert c.execute("SELECT COUNT(*) FROM win_kudos").fetchone()[0] > 0
     assert ids(mgr.get("/api/fun/team"))["wins"]
+    from app import properties as _props
+    hq = _props.property_for_address("777 E Sonterra Blvd, San Antonio, TX 78258")
+    roles = {c["role"] for c in ids(mgr.get(f"/api/properties/{hq}"))["contacts"]}
+    assert {"Owner contact", "CPA", "Bank", "Lawyer", "Tax protest company"} <= roles
+    with tx() as c:
+        assert all(r[0].endswith("@example.com") for r in c.execute("SELECT email FROM property_contacts WHERE email IS NOT NULL"))
     ids(mgr.delete("/api/demo"))
+    with tx() as c:
+        assert not c.execute("SELECT 1 FROM property_contacts WHERE name='Margaret Ellison'").fetchone()
     left = [p for p in ids(mgr.get("/api/projects")) if p["id"] not in before_projects and not p["is_general"]]
     assert not left, [(p["name"], p["is_general"]) for p in left]
     assert {u["id"] for u in ids(mgr.get("/api/users"))} == before_users
