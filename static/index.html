@@ -210,6 +210,11 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 #navSheet .xs{border:0;background:#eef1f4;border-radius:50%;width:30px;height:30px;font-size:14px;cursor:pointer}
 #navSheet button[data-v]{display:block;width:100%;text-align:left;border:0;background:none;padding:13px 12px;border-radius:8px;font:inherit;font-size:16px;color:var(--ink);cursor:pointer}
 #navSheet button[data-v]:active,#navSheet button[data-v].on{background:#e6f2f8}#navSheet button small{display:block;font-size:12.5px;color:var(--mute);margin-top:2px}
+.pagesub{color:var(--mute);font-size:13.5px;margin-top:2px}.pagehead>div:first-child{min-width:0}
+#tabbar{display:none}
+.sheetme{padding:4px 12px 10px;font-weight:600}.sheetbtn{display:block;width:100%;text-align:left;border:0;background:none;padding:13px 12px;border-radius:8px;font:inherit;font-size:16px;color:var(--ink);cursor:pointer;text-decoration:none}
+.sheetbtn small{display:block;font-size:12.5px;color:var(--mute);margin-top:2px}
+.ddb .nbadge,#tabbar .nbadge{margin-left:4px}
 /* ---------- phones ---------- */
 @media (max-width:640px){
   html,body{overflow-x:hidden}
@@ -256,6 +261,16 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
   #v-calendar .card>.row.mute{display:none}
   .cdrow{flex-wrap:wrap}.cdrow .grow{flex:1 1 calc(100% - 34px);min-width:0}.cdact{text-align:left;min-width:0;flex-basis:100%;padding-left:28px}.cdact .row{justify-content:flex-start!important}
   .vslot{flex-wrap:wrap}.vslot .vt{width:100%}
+  /* phones: slim header, bottom tab bar instead of the top menu */
+  body>header #nav{display:none}body>header{padding:8px 12px!important;flex-wrap:nowrap!important}h1.brand img{height:30px!important}#me{font-size:12px}
+  #tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:65;background:#fff;border-top:1px solid var(--line);padding:4px 4px calc(4px + env(safe-area-inset-bottom,0px));box-shadow:0 -4px 16px rgba(0,0,0,.06)}
+  #me .so{display:none}#me{font-size:12px}
+  #tabbar button{flex:1;border:0;background:none;font:inherit;font-size:11px;text-transform:none;letter-spacing:0;font-weight:600;color:var(--mute);padding:6px 0 4px;display:flex;flex-direction:column;align-items:center;gap:2px;position:relative;cursor:pointer}
+  #tabbar button i{font-style:normal;font-size:20px;line-height:1;filter:grayscale(1);opacity:.7}#tabbar button.on{color:var(--acc)}#tabbar button.on i{filter:none;opacity:1}
+  #tabbar .nbadge{position:absolute;top:2px;left:calc(50% + 6px);margin:0}
+  main{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))!important}
+  #navSheet .sheet{top:auto!important;bottom:calc(68px + env(safe-area-inset-bottom,0px));max-height:calc(100% - 140px)}
+  .pagehead h2{font-size:18px}
   dialog{width:100vw!important;max-width:100vw!important;margin:0;max-height:100dvh;border-radius:0}
 }
 </style>
@@ -264,21 +279,23 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 <header><h1 class="brand"><img src="/brand/logo.png" alt="Foresite Commercial Real Estate"><span class="app">Task Manager</span></h1>
 <nav id="nav">
   <button data-v="home" class="on">Home<span id="mBadge" class="nbadge hidden" title="Unread @mentions"></span></button>
-  <div class="dd" data-g="tasks"><button class="ddb">Tasks <span class="car">▾</span></button><div class="ddm">
+  <div class="dd" data-g="tasks" data-icon="✓"><button class="ddb">Tasks <span class="car">▾</span></button><div class="ddm">
     <button data-v="tasks">✓ All tasks<small>with or without a project</small></button>
-    <button data-v="projects">📁 Projects<small>start a new project, see progress</small></button>
-    <button data-v="close">📊 Month-end close<small>every property's close at a glance</small></button>
-    <button data-v="emails">✉️ Emails to send<small>insurance follow-ups drafted for you</small></button>
-    <button data-v="vendors">🧰 Vendors<small>who we've used, ratings &amp; notes</small></button>
-    <button data-v="properties">🏢 Properties<small>each building, its critical dates &amp; work</small></button>
+    <button data-v="calendar">📅 Calendar<small>due dates by month or as a list</small></button>
+    <button data-v="team" class="mgr">👥 By person<small>each person's open, overdue &amp; blocked work</small></button>
+    <button data-v="close">📊 Month-end close<small>every property's close at a glance</small></button></div></div>
+  <div class="dd" data-g="projects" data-icon="📁"><button class="ddb">Projects <span class="car">▾</span></button><div class="ddm">
+    <button data-v="projects">📁 Projects<small>start a project, progress, bids &amp; approvals</small></button>
+    <button data-v="templates" class="mgr">📋 Templates<small>reusable checklists projects are built from</small></button></div></div>
+  <div class="dd" data-g="properties" data-icon="🏢"><button class="ddb">Properties<span id="emBadge" class="nbadge hidden" title="Emails ready to send"></span> <span class="car">▾</span></button><div class="ddm">
+    <button data-v="properties">🏢 Properties<small>critical dates, vendors, insurance, team</small></button>
+    <button data-v="vendors">🧰 Vendors<small>who we've used — ratings, prices &amp; notes</small></button>
+    <button data-v="emails">✉️ Emails to send <span id="emBadge2" class="nbadge hidden"></span><small>insurance &amp; approval emails drafted for you</small></button></div></div>
+  <div class="dd mgr" data-g="admin" data-icon="⚙︎"><button class="ddb">Admin <span class="car">▾</span></button><div class="ddm">
     <button data-v="history" class="mgr">🗑 Recently deleted &amp; history<small>restore deletes · who changed what</small></button>
-    <button data-v="templates" class="mgr">📋 Templates<small>reusable checklists</small></button></div></div>
-  <button data-v="calendar">Calendar</button>
-  <button data-v="team" class="mgr">By person</button>
-  <div class="dd adm" data-g="admin"><button class="ddb">Admin <span class="car">▾</span></button><div class="ddm">
-    <button data-v="people">👥 People<small>team members, roles, project roles</small></button>
-    <button data-v="admin">📊 Reports &amp; backups<small>insights, automations, backups</small></button>
-    <button data-v="chat" id="chatTab">💬 Blink simulator<small>test the chat bot</small></button></div></div>
+    <button data-v="people" class="adm">👥 People &amp; departments<small>team, roles, department heads</small></button>
+    <button data-v="admin" class="adm">📊 Reports &amp; automations<small>insights, Blink automations, backups, demo data</small></button>
+    <button data-v="chat" id="chatTab" class="adm">💬 Blink simulator<small>test the chat bot</small></button></div></div>
 </nav>
 <span id="me" class="mute"></span></header>
 <main>
@@ -296,6 +313,7 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 </section>
 
 <section id="v-tasks" class="hidden">
+  <div class="pagehead"><div><h2>✓ All tasks</h2><div class="pagesub">Everything, with or without a project — filter by person, project or status.</div></div></div>
   <div class="card"><h2>Add a task</h2>
     <div class="qadd"><input id="qTitle" placeholder="What needs doing?" onkeydown="if(event.key==='Enter')quickAdd()">
       <select id="qProj"></select><select id="qWho"></select><input id="qDue" type="date"><input id="qEst" placeholder="Est. 1h"><select id="qRepeat" title="Repeat"><option value="">Doesn't repeat</option><option value="weekly">🔁 Every week</option><option value="biweekly">🔁 Every 2 weeks</option><option value="monthly">🔁 Every month</option><option value="quarterly">🔁 Every quarter</option><option value="yearly">🔁 Every year</option></select><button class="b" onclick="quickAdd()">Add</button></div>
@@ -309,7 +327,7 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 </section>
 
 <section id="v-projects" class="hidden">
-  <div class="pagehead"><h2>Projects</h2>
+  <div class="pagehead"><div><h2>📁 Projects</h2><div class="pagesub">Start a project, track progress, collect bids and get owner approval.</div></div>
     <div class="row mgr" style="margin:0"><button class="b ghost" onclick="openNewProject(true)">📄 From document</button><button class="b" onclick="openNewProject()">+ New project</button></div></div>
   <div id="sampleBar" class="card hidden" style="display:flex;justify-content:space-between;align-items:center;gap:10px;background:#fffbea;border-color:#f5e3a3"><span>🧪 <b id="sampleN"></b> sample project(s) are showing — great for exploring. Remove them when you're ready.</span><button class="b ghost" onclick="removeSamples()">Remove all sample projects</button></div>
   <div class="row" style="margin-bottom:12px">
@@ -325,7 +343,7 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 </section>
 
 <section id="v-properties" class="hidden">
-  <div class="pagehead"><h2>Properties</h2>
+  <div class="pagehead"><div><h2>🏢 Properties</h2><div class="pagesub">Each building's critical dates, vendors, insurance, team and work.</div></div>
     <div class="row mgr" style="margin:0"><button class="b" onclick="addPropertyForm()">+ Add property</button></div></div>
   <div id="propAdd"></div>
   <div class="row" style="margin-bottom:12px"><input type="search" id="propSearch" placeholder="Search properties…" oninput="renderProperties()" style="flex:1;min-width:180px"></div>
@@ -334,7 +352,7 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 </section>
 
 <section id="v-close" class="hidden">
-  <div class="pagehead"><h2>Month-end close</h2>
+  <div class="pagehead"><div><h2>📊 Month-end close</h2><div class="pagesub">Every property's close for the month at a glance.</div></div>
     <div class="row" style="margin:0"><button class="b ghost" onclick="closeGo(CLOSE.prev)">‹</button><b id="closeMonth" style="min-width:130px;text-align:center"></b><button class="b ghost" onclick="closeGo(CLOSE.next)">›</button><select id="closeTpl" onchange="closeGo(CLOSE.month)"></select></div></div>
   <div id="closeSum" class="row" style="gap:6px;margin:0 0 10px"></div>
   <div class="card" style="padding:0"><div class="closewrap"><table class="closegrid" id="closeGrid"></table></div></div>
@@ -343,14 +361,13 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 </section>
 
 <section id="v-emails" class="hidden">
-  <div class="pagehead"><h2>Emails to send</h2><label class="mgr" style="font-size:13px"><input type="checkbox" id="emAll" style="width:auto" onchange="renderEmails()"> Everyone's</label></div>
+  <div class="pagehead"><div><h2>✉️ Emails to send</h2><div class="pagesub">Insurance follow-ups and owner-approval emails drafted for you.</div></div><label class="mgr" style="font-size:13px"><input type="checkbox" id="emAll" style="width:auto" onchange="renderEmails()"> Everyone's</label></div>
   <div id="gmailBar"></div>
-  <p class="mute" style="margin-top:0">When a vendor's certificate of insurance for a property is missing, expired, expiring or doesn't name the owner — or the property's own policy has a problem — an email is drafted from the property manager and they get a Blink message. Review it, then send.</p>
   <div id="emList"></div>
 </section>
 
 <section id="v-vendors" class="hidden">
-  <div class="pagehead"><h2>Vendors</h2><div class="row" style="margin:0"><button class="b ghost mgr" id="venSampleBtn" onclick="venSamples(true)">🧪 Load sample vendors</button><button class="b" onclick="vendorForm()">+ Add vendor</button></div></div>
+  <div class="pagehead"><div><h2>🧰 Vendors</h2><div class="pagesub">Who we've used — ratings, prices, notes and where they work.</div></div><div class="row" style="margin:0"><button class="b ghost mgr" id="venSampleBtn" onclick="venSamples(true)">🧪 Load sample vendors</button><button class="b" onclick="vendorForm()">+ Add vendor</button></div></div>
   <div id="venSampleBar" class="card hidden" style="display:flex;justify-content:space-between;align-items:center;gap:10px;background:#fffbea;border-color:#f5e3a3"><span>🧪 <b id="venSampleN"></b> sample vendors are showing (made-up companies with sample reviews) — great for trying ratings, warnings and property slots.</span><button class="b ghost" onclick="venSamples(false)">Remove sample vendors</button></div>
   <div class="row" style="margin-bottom:12px"><input type="search" id="venSearch" placeholder="Search vendors…" oninput="renderVendors()" style="flex:1;min-width:180px">
     <select id="venTrade" onchange="renderVendors(true)"><option value="">All trades</option></select></div>
@@ -360,7 +377,7 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 <section id="v-vendor" class="hidden"><div id="venPage"></div></section>
 
 <section id="v-history" class="hidden">
-  <div class="pagehead"><h2>Recently deleted &amp; history</h2></div>
+  <div class="pagehead"><div><h2>🗑 Recently deleted &amp; history</h2><div class="pagesub">Restore anything deleted in the last 30 days, and see who changed what.</div></div></div>
   <div class="panel"><header><h3>🗑 Recently deleted</h3><span class="cnt">kept 30 days</span></header><div class="body" id="binList"></div></div>
   <div class="panel" style="margin-top:16px"><header><h3>🕘 Who did what</h3><span class="cnt" id="actN"></span></header><div class="body">
     <div class="row" style="margin:6px 0 8px"><select id="actWho" onchange="renderActivity()"></select><select id="actKind" onchange="renderActivity()"><option value="">Everything</option><option value="task">Tasks</option><option value="project">Projects</option><option value="property">Properties</option><option value="vendor">Vendors</option></select></div>
@@ -370,6 +387,7 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 <section id="v-property" class="hidden"><div id="propPage"></div></section>
 
 <section id="v-calendar" class="hidden">
+  <div class="pagehead"><div><h2>📅 Calendar</h2><div class="pagesub">Due dates for everyone or just you, as a month grid or a list.</div></div></div>
   <div class="card">
     <div class="row" style="justify-content:space-between">
       <div class="row"><button class="b ghost" onclick="calMove(-1)">‹</button><h2 id="calTitle" style="margin:0;min-width:150px;text-align:center"></h2><button class="b ghost" onclick="calMove(1)">›</button><button class="b ghost" onclick="calMove(0)">Today</button>
@@ -385,6 +403,7 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 </section>
 
 <section id="v-team" class="hidden">
+  <div class="pagehead"><div><h2>👥 By person</h2><div class="pagesub">Each person's open, overdue and blocked work.</div></div></div>
   <div class="tiles" id="teamTiles"></div>
   <div class="row" style="margin-bottom:12px"><label>Sort by <select id="teamSort" onchange="renderTeam()"><option value="overdue">Most overdue</option><option value="open">Most open</option><option value="name">Name</option></select></label>
     <label><input type="checkbox" id="teamOnlyOverdue" onchange="renderTeam()"> Only overdue &amp; blocked</label></div>
@@ -392,6 +411,7 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 </section>
 
 <section id="v-templates" class="hidden">
+  <div class="pagehead"><div><h2>📋 Templates</h2><div class="pagesub">Reusable checklists — projects are built from these.</div></div></div>
   <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;background:linear-gradient(90deg,#eef6fa,#fff)">
     <div><h2 style="margin:0">📚 Starter templates</h2><div class="mute">Ready-made checklists for property onboarding, sales, move-ins/outs, renewals, CAM reconciliation and budgets — with roles, due dates, estimates and order already set.</div></div>
     <button class="b" onclick="openStarters()">Browse starter templates</button></div>
@@ -404,6 +424,7 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 </section>
 
 <section id="v-people" class="hidden">
+  <div class="pagehead"><div><h2>👥 People &amp; departments</h2><div class="pagesub">Team members, roles, departments and department heads, project roles.</div></div></div>
   <div class="card"><h2>Add person</h2><div class="row"><input id="uName" placeholder="Name"><input id="uEmail" placeholder="name@foresitecre.com"><input id="uBlink" placeholder="Blink ID (optional – found by email)"><button class="b" onclick="addUser()">Add</button><button class="b ghost" onclick="matchBlink()">🔗 Find missing Blink IDs</button></div>
   <p class="mute">Add teammates by work email — their Blink account is found automatically, so you can assign them tasks before they ever sign in.</p></div>
   <div class="card"><h2>🏛 Departments</h2><p class="mute" style="margin-top:0">Each department has a head. When something in their department goes on too long — a task overdue or blocked for days, a critical date passed and not handled — the head gets a daily Blink digest (set the timing in Reports &amp; backups → Automations).</p>
@@ -416,6 +437,7 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 </section>
 
 <section id="v-admin" class="hidden">
+  <div class="pagehead"><div><h2>📊 Reports &amp; automations</h2><div class="pagesub">Insights, Blink automations, backups and demo data.</div></div></div>
   <div class="card" style="background:linear-gradient(90deg,#fff8e6,#fff);border-color:#f5e3a3"><div class="row" style="justify-content:space-between;margin:0;gap:12px">
     <div style="flex:1;min-width:260px"><h2 style="margin:0">🧪 Demo data</h2><div class="mute" id="demoInfo">Load a realistic sample week to try every feature: 4 demo teammates, starter templates, 9 sample projects (incl. onboarding 777 E Sonterra Blvd), blocked tasks, @mentions, logged time, reminders and more. No Blink messages are sent while loading.</div></div>
     <div class="row" style="margin:0"><button class="b" id="demoLoad" onclick="demoLoad()">Load demo data</button><button class="b ghost hidden" id="demoRemove" style="color:var(--bad);border-color:#f3c4c4" onclick="demoRemove()">Remove demo data</button></div></div></div>
@@ -438,7 +460,8 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 </section>
 
 <section id="v-chat" class="hidden">
-  <div class="card"><h2>Blink chat simulator</h2>
+  <div class="pagehead"><div><h2>💬 Blink simulator</h2><div class="pagesub">See exactly what each person sees in Blink, and test the bot.</div></div></div>
+  <div class="card">
     <p class="mute">Shows exactly what each person sees in their Blink DM with the task bot. Type as that person to test status updates.</p>
     <div class="row"><select id="cUser" onchange="loadChat()"></select><button class="b ghost" onclick="runReminders()">⏰ Send reminders now</button></div>
     <div class="chat" id="chat"></div>
@@ -479,7 +502,7 @@ const hostOf=u=>{try{return new URL(u).hostname.replace(/^www\./,'')}catch(e){re
 const fmtMin=m=>{if(!m)return'';const h=Math.floor(m/60),r=m%60;return h&&r?`${h}h ${r}m`:h?`${h}h`:`${r}m`};
 const fmtDate=d=>d?new Date(d+'T12:00').toLocaleDateString(undefined,{month:'short',day:'numeric'}):'';
 function show(v){document.querySelectorAll('nav button[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
-  document.querySelectorAll('.dd').forEach(d=>{d.classList.remove('open');d.querySelector('.ddb').classList.toggle('on',!!d.querySelector(`[data-v="${v}"]`))});
+  document.querySelectorAll('.dd').forEach(d=>d.classList.remove('open'));markNav(v);
   if(v==='tasks')renderTasks();document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-'+v));
   if(v==='home')renderHome();if(v==='chat')loadChat();if(v==='admin')loadAdmin();if(v==='calendar')renderCalendar();if(v==='team')renderTeam();if(v==='properties')renderProperties(true);if(v==='history')renderHistory();if(v==='close')closeGo(CLOSE.month);if(v==='vendors')renderVendors(true);if(v==='emails')renderEmails();}
 $('#nav').onclick=e=>{const b=e.target.closest('button');if(!b)return;
@@ -488,6 +511,22 @@ $('#nav').onclick=e=>{const b=e.target.closest('button');if(!b)return;
   if(b.dataset.v)show(b.dataset.v)};
 /* Phones: menus open as a panel attached to the page (not inside the swipeable menu bar, which iPhone's
    browser clips — so the dropdown never appeared there). */
+
+/* ---------- navigation helpers ---------- */
+function openMoreSheet(){const sh=$('#navSheet'),adm=document.querySelector('.dd[data-g=admin] .ddm');
+  sh.querySelector('.sheet').innerHTML=`<div class="sheethd">More<button class="xs" aria-label="Close" onclick="closeNavSheet()">✕</button></div>
+    <div class="sheetme">${esc(ME.name||'')} <span class="pill">${{admin:'Admin',manager:'Manager'}[ME.role]||'Staff'}</span></div>
+    <button class="sheetbtn" onclick="closeNavSheet();openSettings()">⚙︎ My settings<small>daily recap, week ahead, calendar feed</small></button>
+    ${isMgr()?adm.innerHTML:''}
+    ${ME.auth_enabled?'<a class="sheetbtn" href="/logout">↩ Sign out</a>':''}`;
+  sh.classList.remove('hidden');}
+function groupOf(v){const b=document.querySelector(`#nav .ddm button[data-v="${v}"]`);return b?b.closest('.dd').dataset.g:(v==='property'?'properties':v==='vendor'?'properties':v);}
+function markNav(v){const g=groupOf(v);
+  document.querySelectorAll('#nav .dd').forEach(d=>d.querySelector('.ddb').classList.toggle('on',d.dataset.g===g));
+  document.querySelectorAll('#nav>button[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  document.querySelectorAll('#tabbar button').forEach(b=>b.classList.toggle('on',b.dataset.t===g||(b.dataset.t==='more'&&g==='admin')));}
+async function pollEmails(){try{const r=await api('/api/emails');const n=r.drafts.length;
+  ['#emBadge','#emBadge2','#emBadgeM'].forEach(id=>{const b=$(id);if(b){b.textContent=n>9?'9+':n;b.classList.toggle('hidden',!n);}});}catch(e){}}
 function openNavSheet(dd){const sh=$('#navSheet');
   sh.querySelector('.sheet').innerHTML=`<div class="sheethd">${esc(dd.querySelector('.ddb').textContent.replace('▾','').trim())}<button class="xs" aria-label="Close" onclick="closeNavSheet()">✕</button></div>`+dd.querySelector('.ddm').innerHTML;
   sh.classList.remove('hidden');}
@@ -667,7 +706,7 @@ async function addProperty(){const r=await api('/api/properties',{method:'POST',
   $('#propAdd').innerHTML='';PROPS=[];openProperty(r.id);}
 async function openProperty(id){PROP=await api('/api/properties/'+id);LEASE=null;
   document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-property'));
-  document.querySelectorAll('.dd').forEach(d=>d.querySelector('.ddb').classList.toggle('on',d.dataset.g==='tasks'));
+  markNav('property');
   if(taskDlg.open)taskDlg.close();renderProperty();scrollTo(0,0);}
 function insChip(ins){const m={ok:['ok','🛡 '],not_named:['bad','⚠️ '],unverified:['warn','🛡 '],expired:['bad','⚠️ '],missing:['warn','🛡 ']}[ins.state]||['warn',''];
   return `<span class="pchip ${m[0]}">${m[1]}${esc(ins.label)}${ins.expires&&ins.state!=='missing'?` · exp. ${fmtDate(ins.expires)}`:''}</span>`;}
@@ -861,7 +900,7 @@ async function renderVendors(fetch){if(fetch||!VENDORS.length)await loadVendors(
     ${v.phone||v.contact_name?`<div class="sub">${esc([v.contact_name,v.phone].filter(Boolean).join(' · '))}</div>`:''}</div>`).join('')
     ||`<p class="mute">${VENDORS.length?'No vendors match.':'No vendors yet — add the ones your team uses.'}</p>`;}
 async function openVendor(id){VEN=await api('/api/vendors/'+id);if(taskDlg.open)taskDlg.close();
-  document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-vendor'));renderVendor();scrollTo(0,0);}
+  document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-vendor'));markNav('vendor');renderVendor();scrollTo(0,0);}
 function renderVendor(){const v=VEN,canEdit=isMgr()||v.created_by===ME.id,cur=v.properties.filter(p=>p.status==='current'),past=v.properties.filter(p=>p.status!=='current');
   $('#venPage').innerHTML=`<div class="row" style="margin:0 0 10px"><button class="b ghost" onclick="show('vendors')">← All vendors</button></div>
   <div class="card"><div class="row" style="justify-content:space-between;margin:0;align-items:flex-start"><div><h2 style="margin:0">${esc(v.name)}</h2>
@@ -1013,7 +1052,7 @@ async function emSave(id,open){const b={to_name:$('#emToName').value,to_email:$(
   const w=open?window.open('about:blank','_blank'):null;
   const r=await api('/api/emails/'+id,{method:'PATCH',body:b});await renderEmails();const d=EMAILS.find(x=>x.id===id);
   if(w&&d)w.location=d.gmail_draft_id?'https://mail.google.com/mail/#drafts':d.compose_url;toast(r.in_gmail?'Saved — Gmail draft updated':'Saved');if(open)taskDlg.close();}
-async function emSet(id,b){await api('/api/emails/'+id,{method:'PATCH',body:b});toast(b.status==='sent'?'Marked as sent':'Dismissed');renderEmails();if(!$('#v-home').classList.contains('hidden'))renderHome();}
+async function emSet(id,b){await api('/api/emails/'+id,{method:'PATCH',body:b});pollEmails();toast(b.status==='sent'?'Marked as sent':'Dismissed');renderEmails();if(!$('#v-home').classList.contains('hidden'))renderHome();}
 async function gmailOff(){if(!confirm('Disconnect Gmail? Drafts will stay in the app only.'))return;await api('/api/me/gmail',{method:'DELETE'});renderEmails();}
 async function emDraft(pid,vid){const d=await api('/api/emails',{method:'POST',body:{property_id:pid,vendor_id:vid||null}});await renderEmailsQuiet();emOpen(d.id);}
 async function renderEmailsQuiet(){const r=await api('/api/emails');EMAILS=r.drafts;GMAIL=r.gmail_connected;}
@@ -1143,7 +1182,7 @@ async function renderHome(){const tok=++HTOK;
   api('/api/emails').then(r=>{const el=$('#homeEmails');if(!el||!r.drafts.length)return;
     el.innerHTML=panel('✉️ Emails ready to send',r.drafts.length,r.drafts.slice(0,5).map(d=>`<div class="row2" style="cursor:pointer" onclick="show('emails')"><span class="ico">✉️</span><div class="grow">${esc(d.subject)}<div class="sub">To ${esc(d.to_name||d.to_email||'?')}${d.gmail_draft_id?' · in your Gmail drafts':''}</div></div></div>`).join(''));});
 }
-function setBadge(n){const b=$('#mBadge');b.textContent=n>9?'9+':n;b.classList.toggle('hidden',!n);}
+function setBadge(n){['#mBadge','#mBadgeM'].forEach(id=>{const b=$(id);if(b){b.textContent=n>9?'9+':n;b.classList.toggle('hidden',!n);}});}
 async function pollUnread(){try{const r=await api('/api/me/unread');setBadge(r.mentions);}catch(e){}}
 async function openSettings(){const [d,cal]=await Promise.all([api('/api/dashboard'),api('/api/me/calendar')]),u=d.user;
   $('#taskDlgBody').innerHTML=`<h2>⚙︎ My settings</h2>
@@ -1515,11 +1554,18 @@ async function sendChat(){const text=$('#cText').value;if(!text)return;$('#cText
 async function runReminders(){const r=await api('/api/reminders/run',{method:'POST'});loadChat();alert(`Reminders sent for ${r.sent} task(s)${r.mock?' (mock mode)':''}`);}
 
 (async()=>{[ME,CFG]=await Promise.all([api('/api/me'),api('/api/config')]);
-  $('#me').innerHTML=`${esc(ME.name)} <span class="pill">${{admin:'Admin',manager:'Manager'}[ME.role]||'Staff'}</span>${ME.auth_enabled?' · <a href="/logout">Sign out</a>':''}`;
+  $('#me').innerHTML=`${esc(ME.name)} <span class="pill">${{admin:'Admin',manager:'Manager'}[ME.role]||'Staff'}</span>${ME.auth_enabled?'<span class="so"> · <a href="/logout">Sign out</a></span>':''}`;
   if(!isMgr())$('#pFilter').value='mine';
-  await refresh();renderHome();pollUnread();setInterval(pollUnread,60000);
+  await refresh();renderHome();pollUnread();pollEmails();setInterval(()=>{pollUnread();pollEmails();},60000);
   deepLink();window.addEventListener('hashchange',deepLink);
   const c=await api('/api/config');if(!c.simulator)$('#chatTab').remove();})();
 </script>
 <div id="navSheet" class="hidden"><div class="sheet"></div></div>
+<nav id="tabbar" aria-label="Main">
+  <button data-t="home" onclick="show('home')"><i>🏠</i>Home<span id="mBadgeM" class="nbadge hidden"></span></button>
+  <button data-t="tasks" onclick="openNavSheet(document.querySelector('.dd[data-g=tasks]'))"><i>✓</i>Tasks</button>
+  <button data-t="projects" onclick="openNavSheet(document.querySelector('.dd[data-g=projects]'))"><i>📁</i>Projects</button>
+  <button data-t="properties" onclick="openNavSheet(document.querySelector('.dd[data-g=properties]'))"><i>🏢</i>Properties<span id="emBadgeM" class="nbadge hidden"></span></button>
+  <button data-t="more" onclick="openMoreSheet()"><i>☰</i>More</button>
+</nav>
 </body></html>
