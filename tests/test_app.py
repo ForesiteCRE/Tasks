@@ -1505,3 +1505,23 @@ def test_property_photo(mgr, staff):
     ids(mgr.delete(f"/api/properties/{prop}/photo"))
     assert ids(mgr.get(f"/api/properties/{prop}"))["photo_file"] is None
     assert mgr.get(f"/api/properties/{prop}/photo").status_code == 404
+
+
+def test_home_layout_and_notes(mgr, staff):
+    h = ids(staff.get("/api/me/home"))
+    assert h["layout"] is None and h["notes"] == [] and isinstance(h["my_properties"], list)
+    ids(staff.put("/api/me/home/layout", json={"layout": {"top": ["kpis"], "left": ["notes", "agenda", "agenda", "bad id!"],
+                                                         "right": ["wins"], "hidden": ["today"]}}))
+    L = ids(staff.get("/api/me/home"))["layout"]
+    assert L == {"top": ["kpis"], "left": ["notes", "agenda"], "right": ["wins"], "hidden": ["today"]}
+    assert ids(mgr.get("/api/me/home"))["layout"] != L                       # per person
+    nid = ids(staff.post("/api/me/notes", json={"text": "call the roofer", "color": "pink"}))["id"]
+    ids(staff.patch(f"/api/me/notes/{nid}", json={"text": "call the roofer back", "color": "nope"}))
+    n = ids(staff.get("/api/me/home"))["notes"][0]
+    assert n["text"] == "call the roofer back" and n["color"] == "pink"
+    assert mgr.patch(f"/api/me/notes/{nid}", json={"text": "x"}).status_code == 404   # can't touch someone else's
+    assert mgr.delete(f"/api/me/notes/{nid}").status_code == 404
+    assert ids(mgr.get("/api/me/home"))["notes"] == [] or all(x["id"] != nid for x in ids(mgr.get("/api/me/home"))["notes"])
+    ids(staff.delete(f"/api/me/notes/{nid}"))
+    ids(staff.put("/api/me/home/layout", json={"layout": None}))
+    assert ids(staff.get("/api/me/home"))["layout"] is None

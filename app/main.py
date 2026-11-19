@@ -2030,6 +2030,41 @@ def week_ahead_preview(request: Request):
     uid = _me_id(request)
     return {"sent": extras.send_week_ahead(force=True, only_user=uid), "text": extras.build_week_ahead(uid)}
 
+# ---------- customizable Home: layout + sticky notes (per person) ----------
+@app.get("/api/me/home")
+def my_home(request: Request):
+    from . import home
+    return home.get(_me_id(request))
+
+@app.put("/api/me/home/layout")
+def my_home_layout(body: dict, request: Request):
+    from . import home
+    home.set_layout(_me_id(request), body.get("layout"))
+    return {"ok": True}
+
+@app.post("/api/me/notes")
+def my_note_add(body: dict, request: Request):
+    from . import home
+    try:
+        return {"id": home.add_note(_me_id(request), body.get("text") or "", body.get("color") or "yellow")}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+@app.patch("/api/me/notes/{nid}")
+def my_note_edit(nid: int, body: dict, request: Request):
+    from . import home
+    if not home.update_note(_me_id(request), nid, body):
+        raise HTTPException(404, "Note not found")
+    return {"ok": True}
+
+@app.delete("/api/me/notes/{nid}")
+def my_note_delete(nid: int, request: Request):
+    from . import home
+    if not home.delete_note(_me_id(request), nid):
+        raise HTTPException(404, "Note not found")
+    return {"ok": True}
+
+
 @app.get("/api/me/unread")
 def my_unread(request: Request):
     m = extras.unread_mentions(_me_id(request))

@@ -282,6 +282,18 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
 .tchip b{display:block;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tav{flex:none;width:26px;height:26px;border-radius:50%;background:#e3edf5;color:#2f6f99;font-size:10.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
 .tchip.own .tav{background:#fff1e6;color:#c25a00}
+.hw.cust{outline:2px dashed #b9cfe0;outline-offset:4px;border-radius:12px;margin-bottom:18px}
+.hwbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12.5px;margin:0 0 6px}.hwbar button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:3px 8px;cursor:pointer;font:inherit}
+.hwbar select{font-size:12px;padding:2px 4px}.hwbar .grow{flex:1}
+.hwtray{background:#eef5fb;border:1px solid #cfe0ee;border-radius:12px;padding:12px 14px;margin:0 0 14px}
+.notes{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.note{border-radius:4px 4px 4px 14px;padding:8px 8px 4px;box-shadow:0 2px 5px rgba(0,0,0,.08);display:flex;flex-direction:column;min-height:110px;transform:rotate(-.6deg)}
+.note:nth-child(2n){transform:rotate(.7deg)}.note textarea{flex:1;border:0;background:transparent;resize:none;font-family:inherit;font-size:14px;line-height:1.4;font-style:normal;color:#3a3326;outline:none;min-height:60px;padding:0}
+.note .nbar{display:flex;justify-content:space-between;align-items:center;font-size:11px}.note .nbar button{border:0;background:none;cursor:pointer;opacity:.6;padding:2px}.note .nbar button:hover{opacity:1}
+.note.yellow{background:#fff6b3}.note.pink{background:#ffd9e4}.note.blue{background:#d6ecff}.note.green{background:#dcf5d3}.note.purple{background:#eadcff}
+.note.add{background:none;border:2px dashed var(--line);color:var(--mute);box-shadow:none;transform:none;align-items:center;justify-content:center;cursor:pointer;font:inherit;font-size:13.5px}
+.note.add:hover{border-color:var(--acc);color:var(--acc)}
+.hwproj .pgrid{margin-bottom:14px}
 /* ---------- phones ---------- */
 @media (max-width:640px){
   html,body{overflow-x:hidden}
@@ -384,6 +396,7 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
       <div class="seg mgr" id="hSeg"><button class="on" data-s="me" onclick="homeScope('me')">My day</button><button data-s="team" onclick="homeScope('team')">Team</button></div>
       <button class="b ghost" onclick="openReminder()">⏰ Reminder</button>
       <button class="b ghost" onclick="openSettings()">⚙︎ My settings</button>
+      <button class="b ghost" id="hCustBtn" onclick="homeCustomize()" title="Choose, hide and rearrange the boxes on your Home page">✎ Customize</button>
     </div>
   </div>
   <div id="home"></div>
@@ -1461,6 +1474,56 @@ function taskList(who,status,group){show('tasks');$('#tSearch').value='';$('#tPr
 const panel=(title,cnt,body,extra='')=>`<div class="panel" id="pn-${slug(title)}"><header><h3>${title}</h3><span class="cnt">${extra||(cnt!=null?cnt:'')}</span></header><div class="body">${body}</div></div>`;
 function hello(){const h=new Date().getHours();return h<12?'Good morning':h<17?'Good afternoon':'Good evening';}
 let HTOK=0;
+/* ---------- customizable Home (widgets) ---------- */
+let HOME={layout:null,notes:[],my_properties:[]},HOME_W={},HCUST=false;
+const WIDGETS={today:'🎯 Today ring & streak',kpis:'📊 Numbers (overdue, due today…)',agenda:'📅 Agenda',notes:'📝 Notes',
+  nodate:'🗂 Tasks without a due date',projects:'📁 My projects',properties:'🏢 My properties',wins:'🙌 Team wins',
+  waiting:'⏳ Waiting on me',blocked:'⛔ Blocked for me',emails:'✉️ Emails ready to send',reminders:'⏰ Reminders',
+  comments:'💬 Comments & mentions',done:'✅ Done this week'};
+const HOME_DEFAULT={top:['today','kpis'],left:['agenda','nodate','projects','properties'],right:['notes','wins','waiting','blocked','emails','reminders','comments','done'],hidden:[]};
+function homeLayout(){const L=HOME.layout||HOME_DEFAULT,out={top:[],left:[],right:[],hidden:[]},seen=new Set();
+  for(const z of ['top','left','right','hidden'])for(const id of (L[z]||[]))if(WIDGETS[id]&&!seen.has(id)){seen.add(id);out[z].push(id);}
+  for(const z of ['top','left','right'])for(const id of HOME_DEFAULT[z])if(!seen.has(id)){seen.add(id);out[z].push(id);}   // widgets added later show up in their default spot
+  return out;}
+function homeLayoutHTML(W){const L=homeLayout(),zl={top:'Top (full width)',left:'Left column',right:'Right column'};
+  const wrap=(id,z)=>{const body=W[id];if(!HCUST&&!body)return '';
+    const bar=HCUST?`<div class="hwbar"><b>${WIDGETS[id]}</b><span class="grow"></span>
+      <button title="Move up" onclick="hwMove('${id}',-1)">↑</button><button title="Move down" onclick="hwMove('${id}',1)">↓</button>
+      <select title="Where" onchange="hwZone('${id}',this.value)">${['top','left','right'].map(k=>`<option value="${k}" ${k===z?'selected':''}>${zl[k]}</option>`).join('')}</select>
+      <button title="Hide" onclick="hwZone('${id}','hidden')">✕ Hide</button></div>`:'';
+    return `<div class="hw ${HCUST?'cust':''}" data-w="${id}">${bar}${body||`<div class="panel"><div class="body mute" style="font-size:12.5px">Nothing to show right now — it appears when there is.</div></div>`}</div>`;};
+  const tray=HCUST?`<div class="hwtray"><div class="row" style="justify-content:space-between;margin:0 0 6px"><b>✎ Customize your Home</b>
+      <span><button class="b ghost sm" onclick="homeReset()">Reset to default</button> <button class="b sm" onclick="homeCustomize()">Done</button></span></div>
+      <div class="mute" style="font-size:12.5px;margin-bottom:6px">Move boxes with ↑ ↓, pick a column, or hide them. Saved to your account — it follows you to your phone.</div>
+      ${L.hidden.length?`<div class="row" style="gap:6px;margin:0;flex-wrap:wrap"><span class="mute" style="font-size:12.5px">Add back:</span>${L.hidden.map(id=>`<button class="b ghost sm" onclick="hwZone('${id}','right')">＋ ${WIDGETS[id]}</button>`).join('')}</div>`:''}</div>`:'';
+  return tray+L.top.map(id=>wrap(id,'top')).join('')+`<div class="hgrid"><div>${L.left.map(id=>wrap(id,'left')).join('')}</div><div>${L.right.map(id=>wrap(id,'right')).join('')}</div></div>`;}
+function homeSave(L){HOME.layout=L;api('/api/me/home/layout',{method:'PUT',body:{layout:L}});renderHome();}
+function hwMove(id,d){const L=homeLayout();for(const z of ['top','left','right']){const i=L[z].indexOf(id);if(i<0)continue;const j=i+d;if(j<0||j>=L[z].length)return;[L[z][i],L[z][j]]=[L[z][j],L[z][i]];}homeSave(L);}
+function hwZone(id,z){const L=homeLayout();for(const k of ['top','left','right','hidden'])L[k]=L[k].filter(x=>x!==id);(z==='top'?L.top:L[z]).push(id);if(z!=='hidden'&&z!=='top')L[z].splice(L[z].length-1,1),L[z].unshift(id);homeSave(L);
+  if(z==='hidden')toast(`Hid ${WIDGETS[id]} — add it back from ✎ Customize`);}
+function homeCustomize(){HCUST=!HCUST;$('#hCustBtn').textContent=HCUST?'✓ Done':'✎ Customize';renderHome();if(HCUST)scrollTo({top:0,behavior:'smooth'});}
+function homeReset(){if(!confirm('Put your Home page back to the default layout? Your notes stay.'))return;HOME.layout=null;api('/api/me/home/layout',{method:'PUT',body:{layout:null}});renderHome();}
+/* 📝 notes */
+const NOTE_COLORS=['yellow','pink','blue','green','purple'];
+function renderNotes(){const el=$('#homeNotes');if(!el)return;const ns=HOME.notes||[];
+  el.innerHTML=panel('📝 Notes',null,`<div class="notes">${ns.map(n=>`<div class="note ${n.color}" data-id="${n.id}">
+      <textarea placeholder="Quick thought…" onblur="noteSave(${n.id},this.value)" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'">${esc(n.text)}</textarea>
+      <div class="nbar"><button title="Change color" onclick="noteColor(${n.id})">🎨</button><span class="mute">${fmtDate(n.updated_at.slice(0,10))}</span><button title="Delete" onclick="noteDel(${n.id})">✕</button></div></div>`).join('')}
+    <button class="note add" onclick="noteAdd()">＋ New note</button></div>`,`<span class="mute">only you see these</span>`);
+  el.querySelectorAll('.note textarea').forEach(t=>{t.style.height='auto';t.style.height=Math.max(60,t.scrollHeight)+'px';});}
+async function noteAdd(){const r=await api('/api/me/notes',{method:'POST',body:{color:NOTE_COLORS[(HOME.notes||[]).length%NOTE_COLORS.length]}});
+  HOME.notes=[{id:r.id,text:'',color:NOTE_COLORS[(HOME.notes||[]).length%NOTE_COLORS.length],updated_at:new Date().toISOString().replace('T',' ')},...(HOME.notes||[])];renderNotes();
+  const t=document.querySelector(`.note[data-id="${r.id}"] textarea`);if(t)t.focus();}
+async function noteSave(id,text){const n=HOME.notes.find(x=>x.id===id);if(!n||n.text===text)return;n.text=text;await api('/api/me/notes/'+id,{method:'PATCH',body:{text}});}
+async function noteColor(id){const n=HOME.notes.find(x=>x.id===id);n.color=NOTE_COLORS[(NOTE_COLORS.indexOf(n.color)+1)%NOTE_COLORS.length];renderNotes();api('/api/me/notes/'+id,{method:'PATCH',body:{color:n.color}});}
+async function noteDel(id){const n=HOME.notes.find(x=>x.id===id);if(n&&n.text.trim()&&!confirm('Delete this note?'))return;await api('/api/me/notes/'+id,{method:'DELETE'});HOME.notes=HOME.notes.filter(x=>x.id!==id);renderNotes();}
+/* 🏢 my properties */
+async function renderHomeProps(){const el=$('#homeProps');if(!el)return;if(!PROPS.length){try{PROPS=await api('/api/properties')}catch(e){return}}
+  const mine=PROPS.filter(p=>HOME.my_properties.includes(p.id)),list=mine.length?mine:(isMgr()?PROPS:[]);
+  el.innerHTML=panel('🏢 My properties',list.length,cap('hprops',list).map(p=>`<div class="row2" style="cursor:pointer" onclick="openProperty(${p.id})"><span class="pav" style="${pcVars(propColor({property_id:p.id}))};width:26px;height:26px;font-size:11px">${esc(propAbbr(p.name))}</span>
+      <div class="grow"><b>${esc(p.name)}</b><div class="sub">${p.projects} project${p.projects===1?'':'s'} · ${p.open_tasks} open task${p.open_tasks===1?'':'s'}${p.next_date?` · next: ${esc(p.next_date.title)} ${fmtDate(p.next_date.date)}`:''}</div></div>
+      ${p.overdue?`<span class="risk hi">${p.overdue} overdue</span>`:''}</div>`).join('')+moreLink('hprops',list.length,'renderHomeProps()')
+    ||'<div class="empty">You\'re not on any property team yet — a manager can add you on the property page.</div>',mine.length?'':(isMgr()&&list.length?'<span class="mute">all properties</span>':''));}
 const MORE={};   // which short lists are expanded ("Show more")
 const cap=(k,arr,n=5)=>MORE[k]?arr:arr.slice(0,n);
 const moreLink=(k,total,redraw,n=5)=>total>n?`<div style="text-align:center;margin-top:6px"><span class="tlink" onclick="MORE['${k}']=!MORE['${k}'];${redraw}">${MORE[k]?'Show fewer':`Show more (${total-n})`}</span></div>`:'';
@@ -1470,7 +1533,7 @@ async function renderHome(){const tok=++HTOK;
   $('#hDate').textContent=new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
   $('#hHello').textContent=`${hello()}, ${(ME.name||'').split(' ')[0]||'there'}`;
   if(HSCOPE==='team'&&isMgr()){const t=await api('/api/dashboard?scope=team');if(tok===HTOK)renderTeamHome(t);return;}
-  const [d,unread]=await Promise.all([api('/api/dashboard'),api('/api/me/unread')]),c=d.counts,newIds=new Set(unread.comment_ids);
+  const [d,unread,hp]=await Promise.all([api('/api/dashboard'),api('/api/me/unread'),fetch('/api/me/home').then(r=>r.ok?r.json():null).catch(()=>null)]),c=d.counts,newIds=new Set(unread.comment_ids);HOME=hp||{layout:null,notes:[],my_properties:[]};
   if(tok!==HTOK)return;  // a newer render (e.g. switched to Team) already started
   $('#hSub').innerHTML=c.overdue?`You have <b style="color:var(--bad)">${c.overdue} overdue</b> and ${c.due_today} due today.`:c.due_today?`${c.due_today} task${c.due_today>1?'s':''} due today — you're on track.`:c.open?`Nothing overdue — ${c.open} open task${c.open>1?'s':''}.`:'All clear 🎉';
   const AR=agRange(),until=AR?isoAdd(d.today,AR):'9999',ag=d.agenda.filter(a=>(a.kind==='task'&&a.overdue)||a.date<=until),hidden=d.agenda.length-ag.length;
@@ -1481,30 +1544,32 @@ async function renderHome(){const tok=++HTOK;
   const agenda=groups.map(([name,f,cls])=>{const items=ag.filter(a=>!used.has(a)&&f(a));items.forEach(a=>used.add(a));if(!items.length)return'';
     return `<div class="grp ${cls||''}" id="ag-${slug(name)}">${name}<span class="mute" style="font-weight:500">· ${items.length}</span></div>`+items.map(agendaRow).join('')}).join('');
   const reminders=d.reminders.filter(r=>!r.sent||r.remind_at>=d.today);
-  $('#home').innerHTML=`<div id="funToday"></div><div class="kpis">
+  const W={today:'<div id="funToday"></div>',
+    kpis:`<div class="kpis">
      ${kpi('red','Overdue',c.overdue,'',"taskList('me','open','Overdue')")}${kpi('blue','Due today',c.due_today,'',"taskList('me','open','Today')")}${kpi('violet','Next 7 days',c.due_week,'',"taskList('me','open','Next 7 days')")}
-     ${kpi('amber','Blocked for me',c.blocked,'',"jumpTo('pn-blocked-for-me')")}${kpi('amber','Waiting on me',c.waiting_on_me,c.waiting_on_me?'teammates need these':'',"jumpTo('pn-waiting-on-me')")}${kpi('green','Done this week',c.done_week,c.time_week?fmtMin(c.time_week)+' logged':'',"jumpTo('pn-done-this-week')")}</div>
-   <div class="hgrid"><div>
-     ${panel('Agenda',null,(agenda||`<div class="empty">Nothing due ${AR?'in the next '+AR+' days':'with a date'}. 🎉</div>`)+(hidden?`<div class="mute" style="font-size:12.5px;padding:8px 2px">+ ${hidden} more after ${fmtDate(until)} · <span class="tlink" onclick="agSet(${AR<30?30:AR<90?90:0})">show ${AR<30?'30 days':AR<90?'90 days':'everything'}</span></div>`:''),
-       `<label class="mute" style="font-size:12px" title="How far ahead the agenda looks (overdue always shows)">${ag.length} · showing <select style="font-size:12px;padding:2px 4px" onchange="agSet(+this.value)">${[[7,'next 7 days'],[14,'next 2 weeks'],[30,'next 30 days'],[90,'next 90 days'],[0,'everything']].map(([v,l])=>`<option value="${v}" ${v===AR?'selected':''}>${l}</option>`).join('')}</select></label>`)}
-     ${d.no_date.length?panel('Open tasks without a due date',d.no_date.length,d.no_date.map(t=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><span class="pill ${t.status}">${LBL[t.status]}</span><div class="grow">${esc(t.title)}<div class="sub">${esc(t.project_name)}</div></div></div>`).join('')):''}
-     <div class="grp" style="margin:6px 0 10px">My projects <span class="mute" style="font-weight:500">· ${d.projects.length}</span></div>
+     ${kpi('amber','Blocked for me',c.blocked,'',"jumpTo('pn-blocked-for-me')")}${kpi('amber','Waiting on me',c.waiting_on_me,c.waiting_on_me?'teammates need these':'',"jumpTo('pn-waiting-on-me')")}${kpi('green','Done this week',c.done_week,c.time_week?fmtMin(c.time_week)+' logged':'',"jumpTo('pn-done-this-week')")}</div>`,
+    agenda:`${panel('Agenda',null,(agenda||`<div class="empty">Nothing due ${AR?'in the next '+AR+' days':'with a date'}. 🎉</div>`)+(hidden?`<div class="mute" style="font-size:12.5px;padding:8px 2px">+ ${hidden} more after ${fmtDate(until)} · <span class="tlink" onclick="agSet(${AR<30?30:AR<90?90:0})">show ${AR<30?'30 days':AR<90?'90 days':'everything'}</span></div>`:''),
+       `<label class="mute" style="font-size:12px" title="How far ahead the agenda looks (overdue always shows)">${ag.length} · showing <select style="font-size:12px;padding:2px 4px" onchange="agSet(+this.value)">${[[7,'next 7 days'],[14,'next 2 weeks'],[30,'next 30 days'],[90,'next 90 days'],[0,'everything']].map(([v,l])=>`<option value="${v}" ${v===AR?'selected':''}>${l}</option>`).join('')}</select></label>`)}`,
+    nodate:`${d.no_date.length?panel('Open tasks without a due date',d.no_date.length,d.no_date.map(t=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><span class="pill ${t.status}">${LBL[t.status]}</span><div class="grow">${esc(t.title)}<div class="sub">${esc(t.project_name)}</div></div></div>`).join('')):''}`,
+    projects:`<div class="hwproj"><div class="grp" style="margin:6px 0 10px">My projects <span class="mute" style="font-weight:500">· ${d.projects.length}</span></div>
      <div class="pgrid">${d.projects.map(p=>{const pct=p.total?Math.round(100*p.done/p.total):0;const full=PROJECTS.find(x=>x.id===p.id)||p;return `<div class="pcard" style="padding:0;overflow:hidden" onclick="openProject(${p.id})">${projBanner(full,90,{map:false})}<div style="padding:12px 14px">
         <h4>${esc(p.name)}</h4><div class="sub">${esc([p.property,p.client].filter(Boolean).join(' · ')||'\u00a0')}</div>
         <div class="bar"><i style="width:${pct}%"></i></div>
         <div class="row" style="justify-content:space-between;margin:0;font-size:12px"><span class="mute">${p.done}/${p.total} done</span><span>${p.my_open?`<b>${p.my_open}</b> mine`:'<span class="mute">nothing on you</span>'}${p.my_next_due?` · next ${fmtDate(p.my_next_due)}`:''}</span></div>
-        <div class="chips">${p.roles.map(r=>`<span class="chip2">${esc(r)}</span>`).join('')}${p.overdue?`<span class="risk hi">${p.overdue} overdue</span>`:''}</div></div></div>`}).join('')||'<div class="empty">You\'re not on any active projects.</div>'}</div>
-   </div><div><div id="funTeam"></div>
-     ${panel('⏳ Waiting on me',d.waiting_on_me.length,cap('wait',d.waiting_on_me).map(w=>`<div class="row2" style="cursor:pointer" onclick="openTask(${w.my_task_id})"><span class="ico">▶️</span><div class="grow"><b>#${w.my_task_id} ${esc(w.my_task_title)}</b><div class="sub">${esc(w.assignee_name)} can't start <i>${esc(w.title)}</i> until this is done${w.my_due?` · due ${fmtDate(w.my_due)}`:''}</div></div></div>`).join('')+moreLink('wait',d.waiting_on_me.length,'renderHome()')||'<div class="empty">Nobody is waiting on you.</div>')}
-     ${panel('⛔ Blocked for me',d.blocked.length,cap('blocked',d.blocked).map(b=>`<div class="row2" style="cursor:pointer" onclick="openTask(${b.id})"><span class="ico">🔒</span><div class="grow">${esc(b.title)}<div class="sub">${blockText(b)?esc(blockText(b)):b.blockers.length?'Waiting on '+b.blockers.map(x=>`#${x.id} ${esc(x.title)} (${esc(x.assignee_name)})`).join(', '):b.last_note?`“${esc(b.last_note)}”`:''}${b.blocked_follow_up?` · follow up ${fmtDate(b.blocked_follow_up)}`:''}</div></div></div>`).join('')+moreLink('blocked',d.blocked.length,'renderHome()')||'<div class="empty">Nothing blocked. 👍</div>')}
-     <div id="homeEmails"></div>
-     ${panel('⏰ Reminders',reminders.length,(cap('rem',reminders).map(r=>`<div class="row2"><input type="checkbox" title="Done" onchange="remDone(${r.id})"><div class="grow">${esc(r.text)}<div class="sub">${new Date(r.remind_at).toLocaleString(undefined,{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}${r.sent?' · sent':''}</div></div><button class="x" style="border:0;background:none;color:var(--mute);cursor:pointer" onclick="remDel(${r.id})">✕</button></div>`).join('')+moreLink('rem',reminders.length,'renderHome()')||'<div class="empty">No reminders. Add one here or tell the bot in Blink: “remind me Friday 9am to call the owner”.</div>')
-        +`<div class="row" style="margin-top:8px"><input id="remText" placeholder="Remind me to…" style="flex:1;min-width:140px"><input id="remAt" type="datetime-local" style="width:190px"><button class="b ghost" onclick="remAdd()">Add</button></div>`)}
-     ${panel('💬 Comments &amp; mentions',d.activity.length,cap('cmt',d.activity).map(a=>`<div class="row2" style="cursor:pointer" onclick="openTask(${a.task_id})"><span class="ico">${a.mentioned?'＠':'💬'}</span><div class="grow"><b>${esc(a.who)}</b>${newIds.has(a.id)?'<span class="newtag">NEW</span>':''} <span class="sub">on ${esc(a.task_title)}</span><div class="sub" style="white-space:normal">${esc(a.body.length>140?a.body.slice(0,140)+'…':a.body)}</div></div></div>`).join('')+moreLink('cmt',d.activity.length,'renderHome()')||'<div class="empty">No new comments.</div>')}
-     ${panel('✅ Done this week',d.done_week.length,d.done_week.map(t=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><span class="ico">✓</span><div class="grow">${esc(t.title)}<div class="sub">${esc(t.project_name)}${t.actual_minutes?' · '+fmtMin(t.actual_minutes):' · <span class="over">log time</span>'}</div></div></div>`).join('')||'<div class="empty">Nothing yet this week.</div>')}
-   </div></div>`;
+        <div class="chips">${p.roles.map(r=>`<span class="chip2">${esc(r)}</span>`).join('')}${p.overdue?`<span class="risk hi">${p.overdue} overdue</span>`:''}</div></div></div>`}).join('')||'<div class="empty">You\'re not on any active projects.</div>'}</div></div>`,
+    properties:'<div id="homeProps"></div>',
+    notes:'<div id="homeNotes"></div>',
+    wins:'<div id="funTeam"></div>',
+    waiting:`${panel('⏳ Waiting on me',d.waiting_on_me.length,cap('wait',d.waiting_on_me).map(w=>`<div class="row2" style="cursor:pointer" onclick="openTask(${w.my_task_id})"><span class="ico">▶️</span><div class="grow"><b>#${w.my_task_id} ${esc(w.my_task_title)}</b><div class="sub">${esc(w.assignee_name)} can't start <i>${esc(w.title)}</i> until this is done${w.my_due?` · due ${fmtDate(w.my_due)}`:''}</div></div></div>`).join('')+moreLink('wait',d.waiting_on_me.length,'renderHome()')||'<div class="empty">Nobody is waiting on you.</div>')}`,
+    blocked:`${panel('⛔ Blocked for me',d.blocked.length,cap('blocked',d.blocked).map(b=>`<div class="row2" style="cursor:pointer" onclick="openTask(${b.id})"><span class="ico">🔒</span><div class="grow">${esc(b.title)}<div class="sub">${blockText(b)?esc(blockText(b)):b.blockers.length?'Waiting on '+b.blockers.map(x=>`#${x.id} ${esc(x.title)} (${esc(x.assignee_name)})`).join(', '):b.last_note?`“${esc(b.last_note)}”`:''}${b.blocked_follow_up?` · follow up ${fmtDate(b.blocked_follow_up)}`:''}</div></div></div>`).join('')+moreLink('blocked',d.blocked.length,'renderHome()')||'<div class="empty">Nothing blocked. 👍</div>')}`,
+    emails:'<div id="homeEmails"></div>',
+    reminders:`${panel('⏰ Reminders',reminders.length,(cap('rem',reminders).map(r=>`<div class="row2"><input type="checkbox" title="Done" onchange="remDone(${r.id})"><div class="grow">${esc(r.text)}<div class="sub">${new Date(r.remind_at).toLocaleString(undefined,{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}${r.sent?' · sent':''}</div></div><button class="x" style="border:0;background:none;color:var(--mute);cursor:pointer" onclick="remDel(${r.id})">✕</button></div>`).join('')+moreLink('rem',reminders.length,'renderHome()')||'<div class="empty">No reminders. Add one here or tell the bot in Blink: “remind me Friday 9am to call the owner”.</div>')
+        +`<div class="row" style="margin-top:8px"><input id="remText" placeholder="Remind me to…" style="flex:1;min-width:140px"><input id="remAt" type="datetime-local" style="width:190px"><button class="b ghost" onclick="remAdd()">Add</button></div>`)}`,
+    comments:`${panel('💬 Comments &amp; mentions',d.activity.length,cap('cmt',d.activity).map(a=>`<div class="row2" style="cursor:pointer" onclick="openTask(${a.task_id})"><span class="ico">${a.mentioned?'＠':'💬'}</span><div class="grow"><b>${esc(a.who)}</b>${newIds.has(a.id)?'<span class="newtag">NEW</span>':''} <span class="sub">on ${esc(a.task_title)}</span><div class="sub" style="white-space:normal">${esc(a.body.length>140?a.body.slice(0,140)+'…':a.body)}</div></div></div>`).join('')+moreLink('cmt',d.activity.length,'renderHome()')||'<div class="empty">No new comments.</div>')}`,
+    done:`${panel('✅ Done this week',d.done_week.length,d.done_week.map(t=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><span class="ico">✓</span><div class="grow">${esc(t.title)}<div class="sub">${esc(t.project_name)}${t.actual_minutes?' · '+fmtMin(t.actual_minutes):' · <span class="over">log time</span>'}</div></div></div>`).join('')||'<div class="empty">Nothing yet this week.</div>')}`};
+  HOME_W=W;$('#home').innerHTML=homeLayoutHTML(W);
   if(unread.mentions)api('/api/me/mentions-seen',{method:'POST'}).then(()=>setBadge(0));
-  loadFunToday();loadFunTeam();
+  loadFunToday();loadFunTeam();renderNotes();renderHomeProps();
   api('/api/emails').then(r=>{const el=$('#homeEmails');if(!el||!r.drafts.length)return;
     el.innerHTML=panel('✉️ Emails ready to send',r.drafts.length,cap('homeEm',r.drafts).map(d=>`<div class="row2" style="cursor:pointer" onclick="show('emails')"><span class="ico">✉️</span><div class="grow">${esc(d.subject)}<div class="sub">To ${esc(d.to_name||d.to_email||'?')}${d.gmail_draft_id?' · in your Gmail drafts':''}</div></div></div>`).join('')+moreLink('homeEm',r.drafts.length,'renderHome()'));});
 }

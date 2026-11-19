@@ -188,6 +188,8 @@ def _init_extras():
     fun.init()
     from . import ourcoi
     ourcoi.init()
+    from . import home
+    home.init()
 
 
 def get_setting(key: str) -> str | None:
