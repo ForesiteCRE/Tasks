@@ -31,6 +31,7 @@ dialog.wide{max-width:900px}
 .dd.open .ddm{display:block}.ddm button{display:block;width:100%;text-align:left;padding:8px 10px;border-radius:7px;color:var(--ink)}.ddm button:hover{background:#f3f5fa}.ddm button.on{background:#e6f2f8;color:var(--acc)}
 .ddm small{display:block;font-size:11.5px;color:var(--mute);font-weight:400}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.toolbar input[type=search]{flex:1;min-width:180px}
+.qtog{display:none}
 .qadd{display:grid;grid-template-columns:minmax(160px,2fr) minmax(120px,1fr) minmax(120px,1fr) minmax(110px,1fr) 140px 70px 130px auto;gap:8px;align-items:center}.qadd>*{min-width:0}
 @media (max-width:900px){.qadd{grid-template-columns:1fr 1fr}.qadd input:first-child{grid-column:1/-1}}
 .tl td{padding:7px 8px}.tl .proj{font-size:12px;color:var(--mute);max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tl tr.tgrp td{background:#fafbfc;font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);padding:8px}
@@ -341,6 +342,11 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
   .funcard{padding:10px 12px;gap:12px}.funh{font-size:15px}
   #lisaBtn{bottom:calc(76px + env(safe-area-inset-bottom,0px));right:12px;padding:12px}#lisaBtn span{display:none}
   #lisa{right:0;left:0;bottom:0;top:0;width:100vw;height:100dvh;border-radius:0;border:0;z-index:80}
+  .qcard .qtog{display:inline-flex;float:right;width:28px;height:28px;border-radius:50%;background:var(--acc);color:#fff;align-items:center;justify-content:center;font-size:18px}
+  .qcard h2{cursor:pointer;margin:0}.qcard:not(.open) .qadd,.qcard:not(.open) .qadd+p{display:none}.qcard.open .qtog{transform:rotate(45deg)}.qcard.open h2{margin-bottom:10px}
+  #closeTabs{flex-wrap:nowrap!important;overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}#closeTabs button{white-space:nowrap;flex:none}
+  .closegrid .prop{min-width:150px!important;max-width:170px!important}.closegrid .prop .sub{font-size:11.5px}
+  .toolbar>*{max-width:100%;min-width:0}.toolbar select{max-width:100%}
   dialog{width:100vw!important;max-width:100vw!important;margin:0;max-height:100dvh;border-radius:0}
 }
 </style>
@@ -384,7 +390,7 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
 
 <section id="v-tasks" class="hidden">
   <div class="pagehead"><div><h2>✓ All tasks</h2><div class="pagesub">Everything, with or without a project — filter by person, property, project or status.</div></div></div>
-  <div class="card"><h2>Add a task</h2>
+  <div class="card qcard" id="qCard"><h2 onclick="this.parentNode.classList.toggle('open')">Add a task<span class="qtog">＋</span></h2>
     <div class="qadd"><input id="qTitle" placeholder="What needs doing?" onkeydown="if(event.key==='Enter')quickAdd()">
       <select id="qProp" title="Property (optional)" onchange="qPropChanged()"></select><select id="qProj" title="Project (optional)" onchange="qProjChanged()"></select><select id="qWho"></select><input id="qDue" type="date"><input id="qEst" placeholder="Est. 1h"><select id="qRepeat" title="Repeat"><option value="">Doesn't repeat</option><option value="weekly">🔁 Every week</option><option value="biweekly">🔁 Every 2 weeks</option><option value="monthly">🔁 Every month</option><option value="quarterly">🔁 Every quarter</option><option value="yearly">🔁 Every year</option></select><button class="b" onclick="quickAdd()">Add</button></div>
     <p class="mute" style="margin:6px 0 0;font-size:12.5px">💡 Property and project are optional — pick a property to see its projects, or leave both blank for anything else (office errands, admin, follow-ups). <span class="mgronly">You can still assign it to anyone, and they get a Blink message.</span></p></div>
@@ -574,7 +580,9 @@ function embedUrl(u){if(!u)return null;let m;
 const hostOf=u=>{try{return new URL(u).hostname.replace(/^www\./,'')}catch(e){return 'link'}};
 const fmtMin=m=>{if(!m)return'';const h=Math.floor(m/60),r=m%60;return h&&r?`${h}h ${r}m`:h?`${h}h`:`${r}m`};
 const fmtDate=d=>d?new Date(d+'T12:00').toLocaleDateString(undefined,{month:'short',day:'numeric'}):'';
-function show(v){document.querySelectorAll('nav button[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+function show(v){const nb=document.querySelector(`#nav button[data-v="${v}"]`);
+  if(nb&&((nb.classList.contains('adm')&&!isAdmin())||(nb.classList.contains('mgr')&&!isMgr())))v='home';   // staff can't open manager/admin pages
+  document.querySelectorAll('nav button[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   document.querySelectorAll('.dd').forEach(d=>d.classList.remove('open'));markNav(v);
   if(v==='tasks')renderTasks();document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-'+v));
   if(v==='home')renderHome();if(v==='chat')loadChat();if(v==='admin')loadAdmin();if(v==='calendar')renderCalendar();if(v==='team')renderTeam();if(v==='properties')renderProperties(true);if(v==='history')renderHistory();if(v==='close')closeGo(CLOSE.period);if(v==='vendors')renderVendors(true);if(v==='emails')renderEmails();}
@@ -1038,7 +1046,7 @@ async function closeGo(period){const q=new URLSearchParams();if(period)q.set('pe
   $('#closeMissing').innerHTML=b.missing.length?`<div class="warnbox" style="margin-top:12px"><b>Had one last ${W} but not started this ${W}:</b> ${b.missing.map(m=>`<span class="tlink" onclick="openProperty(${m.property_id})">${esc(m.label)}</span>${isMgr()?` <button class="b ghost sm" onclick="startClose(${m.property_id})">Start</button>`:''}`).join(' · ')}</div>`:'';}
 async function propNewProject(){const p=PROP;openNewProject();$('#pProp').value=p.address;$('#pClient').value=p.client||'';
   await propTeamFill();renderPreview();}
-async function propAddTask(){const id=PROP.id;show('tasks');await qProps();$('#qProp').value=id;qFill();$('#qTitle').focus();
+async function propAddTask(){const id=PROP.id;show('tasks');$('#qCard').classList.add('open');await qProps();$('#qProp').value=id;qFill();$('#qTitle').focus();
   toast('Adding a task at '+PROP.name+' — pick one of its projects or leave “No project”');}
 async function startClose(propId){const p=await api('/api/properties/'+propId);openNewProject();
   $('#pTpl').value=CLOSE.template_id;$('#pProp').value=p.address;$('#pClient').value=p.client||'';$('#pStart').value=CLOSE.start_date;
