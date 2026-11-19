@@ -321,6 +321,11 @@ def delete_project(pid: int):
     with tx() as c:
         c.execute("DELETE FROM tasks WHERE project_id=?", (pid,))
         c.execute("DELETE FROM project_team WHERE project_id=?", (pid,))
+        # everything hanging off the project, so a future project that reuses this id starts clean
+        for table in ("project_vendors", "project_bids"):
+            c.execute(f"DELETE FROM {table} WHERE project_id=?", (pid,))   # bid files stay on disk for Recently deleted
+        c.execute("DELETE FROM approval_events WHERE approval_id IN (SELECT id FROM project_approvals WHERE project_id=?)", (pid,))
+        c.execute("DELETE FROM project_approvals WHERE project_id=?", (pid,))
         c.execute("DELETE FROM projects WHERE id=?", (pid,))
 
 

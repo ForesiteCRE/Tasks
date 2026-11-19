@@ -1545,14 +1545,20 @@ def patch_bid(bid_id: int, body: BidIn, request: Request):
             f["amount"] = float(str(f["amount"]).replace("$", "").replace(",", ""))
         except ValueError:
             raise HTTPException(400, "Amount must be a number.")
-    bids.update_bid(bid_id, f)
+    try:
+        bids.update_bid(bid_id, f)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     return {"ok": True}
 
 
 @app.delete("/api/bids/{bid_id}")
 def delete_bid(bid_id: int, request: Request):
     _need_project_team(request, _bid_project(bid_id))
-    bids.delete_bid(bid_id)
+    try:
+        bids.delete_bid(bid_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     return {"ok": True}
 
 
@@ -1614,12 +1620,15 @@ def _approval_page(a: dict, msg: str = "", status_code: int = 200):
     win = next((b for b in a["bids"] if b["id"] == a["decision_bid_id"]), None)
     result = (f"""<div class="done {a['status']}">{ {'approved': '✅ Approved', 'changes_requested': '✏️ Changes requested', 'declined': '❌ Declined'}[a['status']] }
                  by {h(a['decided_by'] or '')} on {h((a['decided_at'] or '')[:10])}{(' — ' + h(win['vendor']) + ' at ' + m(win['amount'])) if win else ''}
-                 {('<div class="note">“' + h(a['decision_note']) + '”</div>') if a['decision_note'] else ''}</div>""" if decided else
+                 {('<div class="note">“' + h(a['decision_note']) + '”</div>') if a['decision_note'] else ''}
+                 {f'<div class="note"><a href="/approve/{a["token"]}/receipt" target="_blank">View / print your receipt</a></div>' if a.get('evidence_hash') else ''}</div>""" if decided else
               '<div class="done">This request was replaced by a newer one — please use the latest link you received.</div>' if a["status"] == "superseded" else
               '<div class="done">This request has expired — please contact your property manager.</div>' if a["expired"] else "")
     form = "" if result else f"""
       <label class="lbl">Your name</label><input name="name" required placeholder="Full name">
+      <label class="lbl">Title (optional)</label><input name="title" placeholder="e.g. Managing Member" style="width:100%;font:inherit;padding:10px;border:1px solid #cfd6dc;border-radius:6px;font-size:16px">
       <label class="lbl">Comments (optional)</label><textarea name="note" rows="3" placeholder="Anything we should know?"></textarea>
+      <label class="consent"><input type="checkbox" name="consent" value="1" required> {h(bids.CONSENT_TEXT.format(owner=pj.get('client') or 'the property owner'))}</label>
       <div class="btns"><button name="decision" value="approved" class="ok">Approve selected bid</button>
       <button name="decision" value="changes_requested" class="mid">Request changes</button>
       <button name="decision" value="declined" class="no">Decline</button></div>"""
@@ -1639,6 +1648,7 @@ input[name=name],textarea{{width:100%;font:inherit;padding:10px;border:1px solid
 .btns{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}button{{font:inherit;font-weight:700;border:0;border-radius:6px;padding:12px 18px;cursor:pointer;font-size:15px}}
 .ok{{background:#3d8b3d;color:#fff}}.mid{{background:#e9eef2;color:#26323a}}.no{{background:#fff;border:1px solid #d9534f!important;color:#c0392b}}
 .done{{padding:14px;border-radius:8px;background:#eef6e4;font-weight:700}}.done.changes_requested{{background:#fdf6ea}}.done.declined{{background:#fdecec}}.note{{font-weight:400;margin-top:6px}}
+.consent{{display:flex;gap:10px;align-items:flex-start;font-size:13.5px;line-height:1.45;margin-top:14px;background:#f6f8fa;padding:10px;border-radius:6px}}.consent input{{margin-top:3px;width:18px;height:18px;flex:none}}
 .err{{background:#fdecec;color:#c0392b;padding:10px;border-radius:6px;margin:10px 0}}.warn{{font-size:13px;background:#fdf6ea;padding:8px 10px;border-radius:6px;margin-top:8px}}
 </style></head><body><header><img src="/brand/logo-white.png" alt="Foresite Commercial Real Estate"></header><main>
 <div class="sub">Owner approval requested by {h(a['requested_by_name'])} · Foresite Real Estate</div>
@@ -1652,12 +1662,75 @@ input[name=name],textarea{{width:100%;font:inherit;padding:10px;border:1px solid
 </main></body></html>""", status_code=status_code)
 
 
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")
+    return (fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "")) or ""
+
+
 @app.get("/approve/{token}")
-def approval_page(token: str):
+def approval_page(token: str, request: Request):
     a = bids.by_token(token)
     if not a:
         return auth.branded_page("Not found", '<p class="msg">This approval link isn\'t valid.</p>', 404)
+    staff = auth.current_user(request)   # Foresite staff previewing the page are logged separately from the owner
+    bids.log_event(token, f"viewed (preview by {staff['email']})" if staff else "viewed", _client_ip(request),
+                   request.headers.get("user-agent"))
     return _approval_page(a)
+
+
+def _certificate_html(cert: dict, for_owner: bool = False) -> HTMLResponse:
+    from html import escape as h
+    e = cert["evidence"]
+    m = lambda n: f"${n:,.2f}" if n is not None else "—"
+    chosen = next((b for b in e["bids_shown"] if b["bid_id"] == e["chosen_bid_id"]), None)
+    dec = {"approved": "APPROVED", "changes_requested": "CHANGES REQUESTED", "declined": "DECLINED"}.get(e["decision"], e["decision"])
+    v = cert["verify"]
+    rows_ = "".join(f"<tr><td>{h(b['vendor'] or '')}{' <b>(chosen)</b>' if chosen and b['bid_id'] == chosen['bid_id'] else ''}"
+                    f"{' (recommended)' if b['bid_id'] == e['recommended_bid_id'] else ''}</td><td>{m(b['amount'])}</td>"
+                    f"<td>{h(b['scope'] or '')}</td><td class='mono'>{h(b['file'] or '—')}<br>{h(b['file_sha256'] or '')}</td></tr>" for b in e["bids_shown"])
+    evs = "".join(f"<tr><td>{h(x['at'])}</td><td>{h(x['event'])}</td><td>{h(x['ip'] or '')}</td><td>{h((x['user_agent'] or '')[:120])}</td></tr>" for x in cert["events"])
+    return HTMLResponse(f"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Approval certificate · {h(e['project'])}</title><style>
+body{{font-family:Lato,Helvetica,Arial,sans-serif;color:#222;max-width:900px;margin:24px auto;padding:0 16px;font-size:14px}}
+h1{{font-size:20px;margin:0}}.k{{color:#666;width:200px;vertical-align:top}}table{{border-collapse:collapse;width:100%;margin:8px 0 16px}}
+td,th{{border:1px solid #ddd;padding:6px 8px;text-align:left;vertical-align:top}}th{{background:#f4f6f8}}.mono{{font-family:ui-monospace,Menlo,monospace;font-size:11px;word-break:break-all}}
+.big{{font-size:18px;font-weight:700}}.ok{{color:#2e7d32}}.bad{{color:#c62828}}.btn{{display:inline-block;margin:10px 0;padding:8px 14px;background:#3a4750;color:#fff;border-radius:4px;text-decoration:none}}
+@media print{{.noprint{{display:none}}}}</style></head><body>
+<img src="/brand/logo.png" alt="Foresite" style="height:40px"><h1>Owner approval certificate</h1>
+<p class="noprint"><a class="btn" href="#" onclick="print();return false">Print / Save as PDF</a></p>
+<p class="big">{dec}{' — ' + h(chosen['vendor']) + ' at ' + m(chosen['amount']) if chosen else ''}</p>
+<table><tr><td class="k">Project</td><td>{h(e['project'])}</td></tr><tr><td class="k">Property</td><td>{h(e.get('address') or e.get('property') or '')}</td></tr>
+<tr><td class="k">Owner</td><td>{h(e.get('owner_entity') or '')}</td></tr>
+<tr><td class="k">Signed by</td><td><b>{h(e['signed_name'])}</b>{', ' + h(e['signed_title']) if e.get('signed_title') else ''}</td></tr>
+<tr><td class="k">Signed at (UTC)</td><td>{h(e['decided_at_utc'])}</td></tr>
+<tr><td class="k">From</td><td>IP {h(e.get('decided_ip') or '—')}<br><span class="mono">{h(e.get('decided_user_agent') or '')}</span></td></tr>
+<tr><td class="k">Link sent to</td><td>{h((e['sent_to'] or {}).get('name') or '')} &lt;{h((e['sent_to'] or {}).get('email') or '—')}&gt; by {h(e['requested_by']['name'])} ({h(e['requested_by']['email'])}) on {h(e['requested_at'] or '')}</td></tr>
+<tr><td class="k">Comment</td><td>{h(e.get('comment') or '—')}</td></tr>
+<tr><td class="k">Electronic signature consent</td><td>☑ {h(e['consent'])} <span style="color:#888">(v{h(e['consent_version'])})</span></td></tr></table>
+<b>Bids shown to the signer</b><table><tr><th>Vendor</th><th>Amount</th><th>Scope</th><th>File &amp; SHA-256 fingerprint</th></tr>{rows_}</table>
+<b>Recommendation shown</b><p style="white-space:pre-wrap">{h(e.get('recommendation_shown') or '')}</p>
+<b>Link activity</b><table><tr><th>Time (UTC)</th><th>Event</th><th>IP</th><th>Device</th></tr>{evs}</table>
+<b>Record fingerprint (SHA-256)</b><p class="mono">{h(cert['hash'])}</p>
+<p class="{'ok' if v['ok'] else 'bad'}">{'✔ Verified: this record and the bid files are unchanged since signing.' if v['ok'] else '✖ Warning: the record or a bid file no longer matches its fingerprint.'}</p>
+<p style="color:#888;font-size:12px">{'Keep this receipt for your records.' if for_owner else 'Generated by Foresite Task Manager. The fingerprint is computed over the full signed record; any change to it (or to a bid file) changes the fingerprint.'}</p>
+</body></html>""")
+
+
+@app.get("/api/approvals/{aid}/certificate")
+def approval_certificate(aid: int):
+    cert = bids.certificate(aid)
+    if not cert:
+        raise HTTPException(404, "No signed record for this approval yet.")
+    return _certificate_html(cert)
+
+
+@app.get("/approve/{token}/receipt")
+def approval_receipt(token: str):
+    a = bids.by_token(token)
+    cert = bids.certificate(a["id"]) if a else None
+    if not cert:
+        raise HTTPException(404, "Not found")
+    return _certificate_html(cert, for_owner=True)
 
 
 @app.post("/approve/{token}")
@@ -1665,7 +1738,8 @@ async def approval_submit(token: str, request: Request):
     form = await request.form()
     try:
         bids.decide(token, form.get("decision", ""), int(form["bid_id"]) if form.get("bid_id") else None,
-                    form.get("name", ""), form.get("note", ""))
+                    form.get("name", ""), form.get("note", ""), title=form.get("title", ""), consent=bool(form.get("consent")),
+                    ip=_client_ip(request), ua=request.headers.get("user-agent"))
     except ValueError as e:
         a = bids.by_token(token)
         return _approval_page(a, str(e), 400) if a else auth.branded_page("Not found", '<p class="msg">Not found.</p>', 404)

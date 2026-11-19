@@ -94,6 +94,8 @@ def snapshot_project(project_id: int) -> dict:
         snap = _task_rows(c, [r[0] for r in c.execute("SELECT id FROM tasks WHERE project_id=?", (project_id,))])
         snap["projects"] = _all(c, "SELECT * FROM projects WHERE id=?", (project_id,))
         snap["project_team"] = _all(c, "SELECT * FROM project_team WHERE project_id=?", (project_id,))
+        snap["project_vendors"] = _all(c, "SELECT * FROM project_vendors WHERE project_id=?", (project_id,))
+        snap["project_bids"] = _all(c, "SELECT * FROM project_bids WHERE project_id=?", (project_id,))
     return snap
 
 
@@ -172,6 +174,9 @@ def restore(trash_id: int, user_id) -> dict:
                 c.execute("INSERT OR REPLACE INTO project_team(project_id, role_id, user_id) VALUES(?,?,?)",
                           (new_id, r["role_id"], r["user_id"]))
             _restore_tasks(c, snap, {p["id"]: new_id})
+            for table in ("project_vendors", "project_bids"):
+                for r in snap.get(table, []):
+                    _insert(c, table, {**r, "project_id": new_id})
         elif t["kind"] == "property":
             p = dict(snap["properties"][0])
             if c.execute("SELECT 1 FROM properties WHERE norm=?", (p["norm"],)).fetchone():

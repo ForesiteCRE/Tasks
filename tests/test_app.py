@@ -1157,17 +1157,36 @@ def test_bids_recommendation_and_owner_approval(mgr, staff):
         assert page.status_code == 200 and "Bid Blvd roof replacement" in page.text and "Recommended" in page.text
         assert owner.get(f"/approve/{token}/bid/{b1['id']}").content == b"%PDF bid one"
         assert owner.get(f"/approve/{token}/bid/999999").status_code == 404
-        bad = owner.post(f"/approve/{token}", data={"decision": "approved", "bid_id": str(b1["id"]), "name": ""})
+        bad = owner.post(f"/approve/{token}", data={"decision": "approved", "bid_id": str(b1["id"]), "name": "", "consent": "1"})
         assert bad.status_code == 400 and "your name" in bad.text
+        nocon = owner.post(f"/approve/{token}", data={"decision": "approved", "bid_id": str(b1["id"]), "name": "Olivia Owner"})
+        assert nocon.status_code == 400 and "electronic signature" in nocon.text
+        # while the owner is deciding, the bids they're looking at can't be removed
+        assert mgr.delete(f"/api/bids/{b2['id']}").status_code == 400
         before = len(SENT)
-        ok = owner.post(f"/approve/{token}", data={"decision": "approved", "bid_id": str(b1["id"]), "name": "Olivia Owner", "note": "Go ahead"})
-        assert ok.status_code == 200 and "Approved" in ok.text
+        ok = owner.post(f"/approve/{token}", data={"decision": "approved", "bid_id": str(b1["id"]), "name": "Olivia Owner",
+                                                    "title": "Managing Member", "note": "Go ahead", "consent": "1"},
+                        headers={"x-forwarded-for": "203.0.113.7", "user-agent": "OwnerPhone/1.0"})
+        assert ok.status_code == 200 and "Approved" in ok.text and "receipt" in ok.text
+        receipt = owner.get(f"/approve/{token}/receipt")
+        assert receipt.status_code == 200 and "203.0.113.7" in receipt.text and "Managing Member" in receipt.text
+        assert "Verified" in receipt.text and "OwnerPhone/1.0" in receipt.text
         assert any(b == "u-sam" and "Owner ✅" not in t and "approved" in t for b, t in SENT[before:])
         assert owner.post(f"/approve/{token}", data={"decision": "declined", "name": "X"}).status_code == 400   # once only
         assert owner.get("/approve/not-a-token").status_code == 404
     info = ids(mgr.get(f"/api/projects/{pj}/bids"))
     assert {b["vendor_label"]: b["status"] for b in info["bids"]} == {"Bid Good Roofing LLC": "selected", "Cheap Roof Co": "declined"}
     assert info["approvals"][0]["status"] == "approved" and info["approvals"][0]["decided_by"] == "Olivia Owner"
+    aid = info["approvals"][0]["id"]
+    from app import bids as B
+    v = B.verify(aid)
+    assert v["ok"] and v["files"][0]["match"] in (True, None)
+    cert = mgr.get(f"/api/approvals/{aid}/certificate")
+    assert cert.status_code == 200 and v["hash"] in cert.text and "viewed" in cert.text      # link opened, then signed
+    with tx() as c:   # tampering with the stored record is detectable
+        c.execute("UPDATE project_approvals SET evidence=replace(evidence, '48500', '4850') WHERE id=?", (aid,))
+    assert not B.verify(aid)["ok"]
+    assert mgr.delete(f"/api/bids/{b1['id']}").status_code == 400                               # approved bids are locked
     proj = [p for p in ids(mgr.get("/api/projects")) if p["id"] == pj][0]
     assert any(v["vendor_id"] == good for v in proj["vendors"])                              # winner added to the project
     # staff not on the team can't add bids elsewhere

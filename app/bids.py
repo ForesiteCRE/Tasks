@@ -32,6 +32,13 @@ def init():
             recommended_bid_id INTEGER, recommendation TEXT, bid_ids TEXT, owner_name TEXT, owner_email TEXT,
             requested_by INTEGER, requested_at TEXT NOT NULL DEFAULT (datetime('now')), expires_at TEXT,
             decided_at TEXT, decided_by TEXT, decision_bid_id INTEGER, decision_note TEXT, email_draft_id INTEGER)""")
+        acols = {r[1] for r in c.execute("PRAGMA table_info(project_approvals)")}
+        for col in ("approver_title", "evidence", "evidence_hash", "decided_ip", "decided_ua"):
+            if col not in acols:
+                c.execute(f"ALTER TABLE project_approvals ADD COLUMN {col} TEXT")
+        c.execute("""CREATE TABLE IF NOT EXISTS approval_events(
+            id INTEGER PRIMARY KEY, approval_id INTEGER NOT NULL, event TEXT NOT NULL, at TEXT NOT NULL,
+            ip TEXT, user_agent TEXT)""")
         cols = {r[1] for r in c.execute("PRAGMA table_info(projects)")}
         for col, typ in [("recommended_bid_id", "INTEGER"), ("recommendation", "TEXT")]:
             if col not in cols:
@@ -158,7 +165,16 @@ def add_bid(project_id: int, fields: dict, user_id=None, file: tuple | None = No
     return {"id": bid_id, "read": read}
 
 
+def _project_of_bid(bid_id: int):
+    with tx() as c:
+        r = c.execute("SELECT project_id FROM project_bids WHERE id=?", (bid_id,)).fetchone()
+    return r["project_id"] if r else None
+
+
 def update_bid(bid_id: int, fields: dict):
+    pid = _project_of_bid(bid_id)
+    if pid and bids_locked(pid) and set(fields) - {"notes", "status"}:
+        raise ValueError("These bids were sent to the owner for approval, so they can't be changed. Add a new bid instead.")
     sets = {k: fields[k] for k in ("vendor_id", "vendor_name", "amount", "scope", "exclusions", "timeline", "warranty",
                                    "notes", "submitted_on", "status") if k in fields}
     if "status" in sets and sets["status"] not in ("received", "selected", "declined"):
@@ -169,6 +185,9 @@ def update_bid(bid_id: int, fields: dict):
 
 
 def delete_bid(bid_id: int):
+    pid = _project_of_bid(bid_id)
+    if pid and bids_locked(pid):
+        raise ValueError("These bids were sent to the owner for approval, so they can't be removed.")
     with tx() as c:
         b = c.execute("SELECT path, project_id FROM project_bids WHERE id=?", (bid_id,)).fetchone()
         c.execute("DELETE FROM project_bids WHERE id=?", (bid_id,))
@@ -335,8 +354,58 @@ def by_token(token: str) -> dict | None:
     return a
 
 
-def decide(token: str, decision: str, bid_id: int | None, name: str, note: str | None) -> dict:
-    """Owner's answer from the approval page."""
+CONSENT_TEXT = ("By checking this box and clicking a button below, I confirm that I am authorized to make this decision on "
+                "behalf of {owner}, that I have reviewed the bids and recommendation shown on this page, and that my typed name "
+                "is my electronic signature for this decision.")
+CONSENT_VERSION = "2026-11-19"
+
+
+def _sha256_file(path: str | None) -> str | None:
+    import hashlib
+    if not path:
+        return None
+    p = os.path.join(_dir(), os.path.basename(path))
+    if not os.path.exists(p):
+        return None
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _now_utc() -> str:
+    from datetime import timezone
+    return datetime.now(timezone.utc).replace(microsecond=0, tzinfo=None).isoformat() + "Z"
+
+
+def log_event(token: str, event: str, ip: str | None, ua: str | None):
+    """Who opened the approval page, when, from where (evidence if a decision is ever contested)."""
+    with tx() as c:
+        a = c.execute("SELECT id FROM project_approvals WHERE token=?", (token,)).fetchone()
+        if a:
+            c.execute("INSERT INTO approval_events(approval_id, event, at, ip, user_agent) VALUES(?,?,?,?,?)",
+                      (a["id"], event, _now_utc(), (ip or "")[:64], (ua or "")[:400]))
+
+
+def events(approval_id: int) -> list[dict]:
+    with tx() as c:
+        return rows(c.execute("SELECT event, at, ip, user_agent FROM approval_events WHERE approval_id=? ORDER BY id", (approval_id,)))
+
+
+def bids_locked(project_id: int) -> bool:
+    """Once bids are with the owner (pending) or approved, they can't be changed or removed — the record must match
+    what the owner saw. After 'changes requested' / 'declined' you can revise and send a new request."""
+    with tx() as c:
+        r = c.execute("SELECT status FROM project_approvals WHERE project_id=? AND status!='superseded' ORDER BY id DESC LIMIT 1",
+                      (project_id,)).fetchone()
+    return bool(r and r["status"] in ("pending", "approved"))
+
+
+def decide(token: str, decision: str, bid_id: int | None, name: str, note: str | None, *, title: str = "",
+           consent: bool = False, ip: str | None = None, ua: str | None = None) -> dict:
+    """Owner's answer from the approval page — recorded with a tamper-evident evidence record."""
+    import hashlib
     a = by_token(token)
     if not a:
         raise ValueError("This approval link isn't valid.")
@@ -346,15 +415,44 @@ def decide(token: str, decision: str, bid_id: int | None, name: str, note: str |
         raise ValueError("Unknown decision.")
     if not (name or "").strip():
         raise ValueError("Please add your name.")
+    if not consent:
+        raise ValueError("Please check the box confirming you're authorized and that this is your electronic signature.")
     if decision == "approved":
         bid_id = bid_id or a["recommended_bid_id"]
         if bid_id not in [b["id"] for b in a["bids"]]:
             raise ValueError("Pick one of the bids.")
     else:
         bid_id = None
+    at = _now_utc()
+    pj = a["project"]
     with tx() as c:
-        c.execute("""UPDATE project_approvals SET status=?, decided_at=datetime('now'), decided_by=?, decision_bid_id=?, decision_note=?
-                     WHERE id=?""", (decision, name.strip()[:120], bid_id, (note or "").strip()[:2000] or None, a["id"]))
+        req_at = a["requested_at"]
+        opened = c.execute("SELECT at, ip, user_agent FROM approval_events WHERE approval_id=? AND event='viewed' ORDER BY id LIMIT 1",
+                           (a["id"],)).fetchone()
+    evidence = {
+        "record": "Foresite Task Manager — owner approval", "approval_id": a["id"], "project_id": pj["id"],
+        "project": pj["name"], "property": pj.get("property"), "address": pj.get("address"), "owner_entity": pj.get("client"),
+        "requested_by": {"name": a["requested_by_name"], "email": a["requested_by_email"]}, "requested_at": req_at,
+        "sent_to": {"name": a["owner_name"], "email": a["owner_email"]},
+        "bids_shown": [{"bid_id": b["id"], "vendor": b["vendor"], "amount": b["amount"], "scope": b["scope"],
+                        "exclusions": b["exclusions"], "file": b["filename"], "file_sha256": _sha256_file(b["path"])} for b in a["bids"]],
+        "recommended_bid_id": a["recommended_bid_id"], "recommendation_shown": a["recommendation"],
+        "spend_limit": pj.get("spend_limit"),
+        "decision": decision, "chosen_bid_id": bid_id, "comment": (note or "").strip() or None,
+        "signed_name": name.strip(), "signed_title": (title or "").strip() or None,
+        "consent": CONSENT_TEXT.format(owner=pj.get("client") or "the property owner"), "consent_version": CONSENT_VERSION,
+        "first_opened": dict(opened) if opened else None,
+        "decided_at_utc": at, "decided_ip": ip, "decided_user_agent": ua,
+    }
+    canon = json.dumps(evidence, sort_keys=True, separators=(",", ":"), default=str)
+    digest = hashlib.sha256(canon.encode()).hexdigest()
+    with tx() as c:
+        c.execute("""UPDATE project_approvals SET status=?, decided_at=?, decided_by=?, decision_bid_id=?, decision_note=?,
+                     approver_title=?, evidence=?, evidence_hash=?, decided_ip=?, decided_ua=? WHERE id=?""",
+                  (decision, at, name.strip()[:120], bid_id, (note or "").strip()[:2000] or None, (title or "").strip()[:120] or None,
+                   canon, digest, (ip or "")[:64], (ua or "")[:400], a["id"]))
+        c.execute("INSERT INTO approval_events(approval_id, event, at, ip, user_agent) VALUES(?,?,?,?,?)",
+                  (a["id"], f"decided:{decision}", at, (ip or "")[:64], (ua or "")[:400]))
         if decision == "approved":
             c.execute("UPDATE project_bids SET status=CASE WHEN id=? THEN 'selected' ELSE 'declined' END WHERE project_id=?",
                       (bid_id, a["project_id"]))
@@ -372,5 +470,34 @@ def decide(token: str, decision: str, bid_id: int | None, name: str, note: str |
     if req and req["blink_user_id"]:
         automations._send([req["blink_user_id"]], text)
     audit.log(None, f"owner {decision.replace('_', ' ')}", "project", a["project_id"], a["project"]["name"],
-              f"{name.strip()}" + (f": {winner['vendor']} {_money(winner['amount'])}" if winner else "") + (f" — {note.strip()}" if note else ""))
-    return {"status": decision, "bid": winner}
+              f"{name.strip()}" + (f": {winner['vendor']} {_money(winner['amount'])}" if winner else "") + (f" — {note.strip()}" if note else "")
+              + f" · record fingerprint {digest[:16]}…")
+    return {"status": decision, "bid": winner, "evidence_hash": digest}
+
+
+def verify(approval_id: int) -> dict:
+    """Recompute the fingerprint and re-hash the bid files: proves the record (and the bids) weren't changed."""
+    import hashlib
+    with tx() as c:
+        a = c.execute("SELECT evidence, evidence_hash FROM project_approvals WHERE id=?", (approval_id,)).fetchone()
+    if not a or not a["evidence"]:
+        return {"ok": False, "reason": "No signed record."}
+    record_ok = hashlib.sha256(a["evidence"].encode()).hexdigest() == a["evidence_hash"]
+    ev = json.loads(a["evidence"])
+    files = []
+    with tx() as c:
+        for b in ev["bids_shown"]:
+            r = c.execute("SELECT path FROM project_bids WHERE id=?", (b["bid_id"],)).fetchone()
+            now = _sha256_file(r["path"]) if r else None
+            files.append({"file": b["file"], "match": (now == b["file_sha256"]) if b["file_sha256"] else None})
+    return {"ok": record_ok and all(f["match"] is not False for f in files), "record_ok": record_ok, "files": files,
+            "hash": a["evidence_hash"]}
+
+
+def certificate(approval_id: int) -> dict | None:
+    with tx() as c:
+        a = c.execute("SELECT * FROM project_approvals WHERE id=?", (approval_id,)).fetchone()
+    if not a or not a["evidence"]:
+        return None
+    return {"evidence": json.loads(a["evidence"]), "hash": a["evidence_hash"], "events": events(approval_id),
+            "verify": verify(approval_id), "token": a["token"]}

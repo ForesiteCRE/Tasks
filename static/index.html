@@ -1022,7 +1022,7 @@ async function renderEmailsQuiet(){const r=await api('/api/emails');EMAILS=r.dra
 let BIDS=null;
 async function loadBids(pid){const box=$('#bidsBox');if(!box)return;BIDS=await api(`/api/projects/${pid}/bids`);if(!VENDORS.length)await loadVendors();
   const p=PROJECTS.find(x=>x.id===pid)||{team:[]},can=isMgr()||p.team.some(m=>m.user_id===ME.id),B=BIDS,money=n=>n==null?'—':'$'+Number(n).toLocaleString(undefined,{maximumFractionDigits:0});
-  const ap=B.approvals[0],locked=ap&&ap.status==='approved';
+  const ap=B.approvals[0],locked=ap&&ap.status==='approved',frozen=ap&&['pending','approved'].includes(ap.status);
   box.innerHTML=`<h3 style="margin:0 0 6px">💰 Bids &amp; owner approval</h3>
     ${B.bids.map(b=>`<div class="bidrow ${b.status} ${b.id===B.recommended_bid_id?'rec':''}">
       ${can&&!locked?`<input type="radio" name="recbid" title="Recommend this bid" ${b.id===B.recommended_bid_id?'checked':''} onchange="recSet(${pid},{bid_id:${b.id}})">`:''}
@@ -1030,7 +1030,7 @@ async function loadBids(pid){const box=$('#bidsBox');if(!box)return;BIDS=await a
         ${b.reviews?`<span class="stars sm">${starStr(b.avg)}</span>`:''} ${priceTag(b)} ${vbadge(b)} ${b.id===B.recommended_bid_id?'<span class="chip2">⭐ recommended</span>':''}${b.status==='selected'?' <span class="vbadge good">✅ approved</span>':b.status==='declined'?' <span class="mute" style="font-size:12px">not selected</span>':''}</div>
         <div class="sub">${[b.scope,b.exclusions?'Excludes: '+b.exclusions:'',b.timeline?'Timeline: '+b.timeline:'',b.warranty?'Warranty: '+b.warranty:''].filter(Boolean).map(esc).join(' · ')}</div>
         <div class="sub">${b.submitted_on?'Received '+fmtDate(b.submitted_on):''}${b.filename?` · <a href="/api/bids/${b.id}/file" target="_blank" rel="noopener">📄 ${esc(b.filename)}</a>`:''}${b.notes?' · '+esc(b.notes):''}</div></div>
-      <div class="bidamt">${money(b.amount)}${b.amount&&b.amount===B.low&&B.bids.length>1?'<div class="sub">lowest</div>':''}${can&&!locked?`<div><span class="tlink sm" style="color:var(--bad)" onclick="bidDel(${b.id},${pid})">remove</span></div>`:''}</div></div>`).join('')
+      <div class="bidamt">${money(b.amount)}${b.amount&&b.amount===B.low&&B.bids.length>1?'<div class="sub">lowest</div>':''}${can&&!frozen?`<div><span class="tlink sm" style="color:var(--bad)" onclick="bidDel(${b.id},${pid})">remove</span></div>`:''}</div></div>`).join('')
       ||'<div class="mute" style="font-size:13px">No bids yet.</div>'}
     ${can&&!locked?`<details class="bidadd"${B.bids.length?'':' open'}><summary class="tlink">+ Add a bid</summary>
       <div class="cdform"><label class="lbl">Bid document <span class="mute">(PDF or photo — Claude fills in the rest)</span></label><input type="file" id="bidFile" accept=".pdf,image/*,.doc,.docx">
@@ -1044,7 +1044,7 @@ async function loadBids(pid){const box=$('#bidsBox');if(!box)return;BIDS=await a
       ${can&&!locked?`<div class="row" style="justify-content:flex-end;gap:6px"><button class="b ghost" onclick="recDraft(${pid})">✨ Draft with Claude</button><button class="b ghost" onclick="recSet(${pid},{text:$('#recText').value})">Save</button></div>`:''}</div>`:''}
     ${ap?`<div class="apbox ${ap.status}">${{pending:'⏳ Waiting for owner approval',approved:'✅ Owner approved',changes_requested:'✏️ Owner asked for changes',declined:'❌ Owner declined',superseded:'Replaced by a newer request'}[ap.status]||ap.status}
       <div class="sub">${ap.status==='pending'?`Requested ${fmtDate(ap.requested_at.slice(0,10))} by ${esc(ap.requested_by_name||'')}${ap.owner_email?' · to '+esc(ap.owner_name||'')+' &lt;'+esc(ap.owner_email)+'&gt;':''} · <span class="tlink" onclick="navigator.clipboard.writeText('${ap.link}');toast('Approval link copied')">copy approval link</span> · <a href="${ap.link}" target="_blank" rel="noopener">preview what the owner sees</a>${ap.email_draft_id?' · <span class="tlink" onclick="show(\'emails\');taskDlg.close()">✉️ email draft</span>':''}`
-        :`${esc(ap.decided_by||'')} · ${fmtDate((ap.decided_at||'').slice(0,10))}${ap.decision_note?` — “${esc(ap.decision_note)}”`:''}`}</div></div>`:''}
+        :`${esc(ap.decided_by||'')}${ap.approver_title?', '+esc(ap.approver_title):''} · ${fmtDate((ap.decided_at||'').slice(0,10))}${ap.decision_note?` — “${esc(ap.decision_note)}”`:''}${ap.evidence_hash?` · <a href="/api/approvals/${ap.id}/certificate" target="_blank" rel="noopener">📜 Approval certificate</a>`:''}`}</div></div>`:''}
     ${can&&B.bids.length&&!locked?`<div class="row" style="margin-top:8px"><button class="b" onclick="askOwner(${pid})">📨 ${ap&&ap.status==='pending'?'Send a new approval request':'Request owner approval'}</button></div>`:''}`;}
 async function bidAdd(pid){const f=$('#bidFile').files[0],btn=$('#bidAddBtn');const body={vendor_id:+$('#bidVendor').value||null,vendor_name:$('#bidVName').value||null,amount:$('#bidAmt').value||null,scope:$('#bidScope').value||null,notes:$('#bidNotes').value||null};
   if(f){if(f.size>25e6){alert('That file is over 25 MB.');return;}btn.disabled=true;btn.textContent='Reading the bid…';
