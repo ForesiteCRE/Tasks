@@ -1818,7 +1818,7 @@ async function runReminders(){const r=await api('/api/reminders/run',{method:'PO
 <div id="navSheet" class="hidden"><div class="sheet"></div></div>
 <button id="lisaBtn" onclick="lisaToggle()" aria-label="Ask LJ, the help assistant" title="Ask LJ">💬<span>Ask LJ</span></button>
 <div id="lisa" class="hidden" role="dialog" aria-label="LJ help assistant">
-  <div class="lisahd"><div class="lisaav">LJ</div><div class="grow"><b>LJ</b><div class="sub">Your Task Manager assistant — how-tos &amp; look-ups</div></div>
+  <div class="lisahd"><div class="lisaav">LJ</div><div class="grow"><b>LJ</b><div class="sub">Here to help! How-Tos &amp; look-ups</div></div>
     <button class="xs" onclick="lisaNew()" title="New conversation">↺</button><button class="xs" onclick="lisaToggle(false)" aria-label="Close">✕</button></div>
   <div id="lisaMsgs"></div>
   <div class="lisain"><textarea id="lisaQ" rows="1" placeholder="Ask how to do something, or look something up…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();lisaSend()}"></textarea><button class="b" onclick="lisaSend()">Send</button></div>
