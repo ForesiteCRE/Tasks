@@ -203,6 +203,8 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 /* ---------- phones ---------- */
 @media (max-width:640px){
   html,body{overflow-x:hidden}
+  .ddm{max-height:calc(100dvh - 120px);overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+  .ddm button{padding:11px 14px}.ddm button small{display:none}
   #nav{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}#nav::-webkit-scrollbar{display:none}
   nav button,.ddb{padding:10px 8px;letter-spacing:.04em}
   main .row{flex-wrap:wrap}main .row>*{min-width:0;max-width:100%}

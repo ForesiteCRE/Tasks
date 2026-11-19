@@ -78,7 +78,8 @@ def healthz():
 
 @app.get("/")
 def index():
-    return FileResponse(os.path.join(STATIC, "index.html"))
+    # always re-check for a new version (phones / Blink's in-app browser otherwise keep showing an old page)
+    return FileResponse(os.path.join(STATIC, "index.html"), headers={"Cache-Control": "no-cache, must-revalidate"})
 
 
 # ---------- models ----------
