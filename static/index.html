@@ -268,6 +268,7 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
 .lisain{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line);background:#fff}.lisain textarea{flex:1;resize:none;font:inherit;font-size:15px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;max-height:110px}
 .typing span{display:inline-block;width:7px;height:7px;margin:0 2px;border-radius:50%;background:#9fb1bd;animation:blink 1.2s infinite}.typing span:nth-child(2){animation-delay:.2s}.typing span:nth-child(3){animation-delay:.4s}
 @keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
+#templates .card{overflow-x:auto}
 /* ---------- phones ---------- */
 @media (max-width:640px){
   html,body{overflow-x:hidden}
@@ -1687,7 +1688,7 @@ function renderTemplates(){
     <input value="${esc(t.description||'')}" placeholder="Description (when to use this template)" style="width:100%;border-color:transparent;color:var(--mute)" onchange="api('/api/templates/${t.id}',{method:'PATCH',body:{description:this.value}})">
     <label class="row mute" style="margin:2px 0 6px;gap:6px;font-size:13px" title="Show this template's projects on Tasks ▾ → Tracking boards (properties down the side, steps across the top)">📊 Tracking board
      <select onchange="api('/api/templates/${t.id}',{method:'PATCH',body:{board_period:this.value||null}}).then(refresh)">${[['','Off'],['month','On · monthly'],['quarter','On · quarterly'],['year','On · yearly'],['none','On · ongoing (no periods)']].map(([v,l])=>`<option value="${v}" ${(t.board_period||'')===v?'selected':''}>${l}</option>`).join('')}</select></label>
-    <table><tr><th>Item</th><th style="width:190px">Assign to</th><th style="width:120px">Due (days after start)</th><th style="width:90px">Estimate</th><th style="width:230px"></th></tr>
+    <table><tr><th>Item</th><th style="width:160px">Assign to</th><th style="width:120px">Due (days after start)</th><th style="width:90px">Estimate</th><th style="width:180px"></th></tr>
     ${t.items.map(i=>`<tr><td style="padding-left:${8+i.depth*24}px">${i.depth?'<span class="mute">↳</span> ':''}<input value="${esc(i.title)}" style="width:calc(100% - 24px);border-color:transparent" onchange="tiPatch(${i.id},{title:this.value})">
       <div class="badges" style="margin:2px 0 0 ${i.depth?18:0}px;flex-wrap:wrap">
        ${i.repeat?`<span class="pill">🔁 ${esc(i.repeat)} <a style="cursor:pointer" title="Stop repeating" onclick="tiPatch(${i.id},{repeat:''}).then(refresh)">✕</a></span>`:''}
@@ -1695,9 +1696,9 @@ function renderTemplates(){
        ${i.checklist.map(k=>`<span class="pill">☑ ${esc(k.text)} <a style="cursor:pointer" onclick="tcDel(${k.id})">✕</a></span>`).join('')}
        ${i.waiting_on.map(w=>`<span class="pill lock">🔒 after “${esc((byId[w]||{}).title||'#'+w)}” <a style="cursor:pointer" onclick="tdDel(${i.id},${w})">✕</a></span>`).join('')}</div></td>
      <td><select onchange="tiPatch(${i.id},whoVal(this.value))">${whoOpts(i)}</select></td>
-     <td>+<input type="number" min="0" value="${i.due_offset_days||0}" style="width:64px" onchange="tiPatch(${i.id},{due_offset_days:+this.value||0})"></td>
+     <td style="white-space:nowrap">+<input type="number" min="0" value="${i.due_offset_days||0}" style="width:64px" onchange="tiPatch(${i.id},{due_offset_days:+this.value||0})"></td>
      <td><input placeholder="2h" value="${fmtMin(i.estimate_minutes)}" style="width:76px" onchange="tiEst(${i.id},this)"></td>
-     <td style="white-space:nowrap"><button class="b ghost" title="Move up" style="padding:4px 7px" onclick="tiMove(${i.id},-1)">↑</button><button class="b ghost" title="Move down" style="padding:4px 7px" onclick="tiMove(${i.id},1)">↓</button> <select title="More" onchange="tiAction(this,${t.id},${i.id})"><option value="">More…</option><option value="tut">🎓 ${i.tutorial_url?'Change':'Add'} tutorial link</option>
+     <td style="white-space:nowrap"><button class="b ghost" title="Move up" style="padding:4px 7px" onclick="tiMove(${i.id},-1)">↑</button><button class="b ghost" title="Move down" style="padding:4px 7px" onclick="tiMove(${i.id},1)">↓</button> <select title="More" style="width:104px" onchange="tiAction(this,${t.id},${i.id})"><option value="">More…</option><option value="tut">🎓 ${i.tutorial_url?'Change':'Add'} tutorial link</option>
        <optgroup label="Repeats (task re-created when done)"><option value="rep:weekly">🔁 Every week</option><option value="rep:biweekly">🔁 Every 2 weeks</option><option value="rep:monthly">🔁 Every month</option><option value="rep:quarterly">🔁 Every quarter</option><option value="rep:yearly">🔁 Every year</option>${i.repeat?'<option value="rep:">Stop repeating</option>':''}</optgroup><option value="check">+ Checklist item</option><option value="sub">+ Subtask</option>
        <optgroup label="Can't start until…">${t.items.filter(o=>o.id!==i.id&&!i.waiting_on.includes(o.id)).map(o=>`<option value="dep:${o.id}">🔒 ${esc(o.title)}</option>`).join('')}</optgroup>
        <option value="del">🗑 Delete item</option></select></td></tr>`).join('')||'<tr><td colspan="4" class="mute">No items yet.</td></tr>'}
