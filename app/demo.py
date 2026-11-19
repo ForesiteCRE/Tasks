@@ -154,6 +154,27 @@ def refresh_wins():
     set_setting("demo.wins_day", date.today().isoformat())
 
 
+def fill(me_id: int | None = None) -> dict:
+    """Admin button: add whatever an older demo is missing, re-date the wins so they're recent, report counts."""
+    m = manifest()
+    if not m:
+        return {"loaded": False, "wins": 0, "contacts": 0}
+    if me_id and not m.get("loaded_by"):
+        m["loaded_by"] = me_id
+        set_setting("demo.manifest", json.dumps(m))
+    backfill_contacts()
+    m = manifest()
+    with tx() as c:   # wins someone deleted by hand: add them again
+        alive = [w for w in m.get("sample_wins", []) if c.execute("SELECT 1 FROM wins WHERE id=?", (w,)).fetchone()]
+    if not alive:
+        m["sample_wins"] = []
+        add_sample_wins(m, m.get("loaded_by") or me_id)
+        set_setting("demo.manifest", json.dumps(m))
+    set_setting("demo.wins_day", "")
+    refresh_wins()
+    return {"loaded": True, "wins": len(manifest().get("sample_wins", [])), "contacts": len(m.get("contacts", []))}
+
+
 def backfill_contacts():
     """Demo data loaded before sample contacts existed gets them once."""
     m = manifest()

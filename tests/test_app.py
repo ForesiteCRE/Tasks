@@ -588,6 +588,11 @@ def test_demo_data_load_and_remove(mgr, staff):
     set_setting("demo.manifest", _json.dumps(m))
     _demo.backfill_contacts()
     assert len(_demo.manifest()["sample_wins"]) == len(_demo.SAMPLE_WINS)
+    with tx() as c:   # someone deleted them by hand → the admin button puts them back
+        c.execute("DELETE FROM wins WHERE kind='shoutout'")
+    assert staff.post("/api/demo/fill").status_code == 403
+    r = ids(mgr.post("/api/demo/fill"))
+    assert r["wins"] == len(_demo.SAMPLE_WINS) and r["contacts"] > 0
     assert sum(w["kind"] == "shoutout" for w in ids(mgr.get("/api/fun/team"))["wins"]) >= 1
     ids(mgr.delete("/api/demo"))
     with tx() as c:

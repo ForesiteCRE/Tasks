@@ -67,7 +67,7 @@ def feed(limit: int = 30, me: int | None = None) -> list[dict]:
                                       (SELECT GROUP_CONCAT(ku.name, ', ') FROM win_kudos k JOIN users ku ON ku.id=k.user_id WHERE k.win_id=w.id) AS kudos_from,
                                       EXISTS(SELECT 1 FROM win_kudos k WHERE k.win_id=w.id AND k.user_id=?) AS mine_kudo
                                FROM wins w LEFT JOIN users u ON u.id=w.user_id
-                               WHERE w.at >= datetime('now','-7 days') ORDER BY w.at DESC, w.id DESC LIMIT ?""", (me, limit)))
+                               WHERE w.at >= datetime('now','-7 days') ORDER BY (w.kind='task'), w.at DESC, w.id DESC LIMIT ?""", (me, limit)))
     for w in ws:
         if w["kind"] == "badge":
             ico, name, _ = BADGES.get(w["title"], ("🏅", w["title"], ""))

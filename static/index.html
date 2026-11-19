@@ -519,7 +519,7 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
   <div class="pagehead"><div><h2>📊 Reports &amp; automations</h2><div class="pagesub">Insights, Blink automations, backups and demo data.</div></div></div>
   <div class="card" style="background:linear-gradient(90deg,#fff8e6,#fff);border-color:#f5e3a3"><div class="row" style="justify-content:space-between;margin:0;gap:12px">
     <div style="flex:1;min-width:260px"><h2 style="margin:0">🧪 Demo data</h2><div class="mute" id="demoInfo">Load a realistic sample week to try every feature: 4 demo teammates, starter templates, 9 sample projects (incl. onboarding 777 E Sonterra Blvd), blocked tasks, @mentions, logged time, reminders and more. No Blink messages are sent while loading.</div></div>
-    <div class="row" style="margin:0"><button class="b" id="demoLoad" onclick="demoLoad()">Load demo data</button><button class="b ghost hidden" id="demoRemove" style="color:var(--bad);border-color:#f3c4c4" onclick="demoRemove()">Remove demo data</button></div></div></div>
+    <div class="row" style="margin:0"><button class="b" id="demoLoad" onclick="demoLoad()">Load demo data</button><button class="b ghost hidden" id="demoFill" onclick="demoFill()" title="Adds anything a demo loaded earlier is missing: sample contacts, backup PMs/assistants, team wins">Add missing sample data</button><button class="b ghost hidden" id="demoRemove" style="color:var(--bad);border-color:#f3c4c4" onclick="demoRemove()">Remove demo data</button></div></div></div>
   <div class="card"><h2>📊 Weekly summary</h2>
     <p class="mute">Sent in Blink every Monday morning to anyone ticked “Weekly summary” on the People tab: overdue, blocked and due-this-week tasks across the team.</p>
     <div class="row"><button class="b ghost" onclick="previewSummary()">Preview</button><button class="b" onclick="sendSummary()">Send now</button><span id="sumInfo" class="mute"></span></div>
@@ -1343,7 +1343,9 @@ function showBadges(fresh){if(!FUN)return;
   if(!taskDlg.open)taskDlg.showModal();}
 const ago2=ts=>{const d=new Date(ts.replace(' ','T')+'Z'),m=Math.round((Date.now()-d)/6e4);return m<1?'just now':m<60?m+' min ago':m<1440?Math.round(m/60)+' h ago':Math.round(m/1440)+' d ago';};
 let WINS_ALL=false;
-async function loadFunTeam(){const el=$('#funTeam');if(!el)return;const r=await api('/api/fun/team');const more=r.wins.length>8&&!WINS_ALL;if(more)r.wins=r.wins.slice(0,8);
+async function loadFunTeam(){const el=$('#funTeam');if(!el)return;const r=await api('/api/fun/team');
+  r.wins=[...r.wins.filter(w=>w.kind!=='task'),...r.wins.filter(w=>w.kind==='task')];   // highlights (🏆 🎉 badges 🔥) before routine task check-offs
+  const more=r.wins.length>8&&!WINS_ALL;if(more)r.wins=r.wins.slice(0,8);
   const strip=r.today.length?`<div class="teamstrip">${r.today.map(u=>`<div class="tsp" title="${esc(u.name)}: ${u.total?u.done+' of '+u.total+' due today done':u.done_today+' done today'}${u.streak?' · '+u.streak+'-day streak':''}">
       <div class="ringwrap sm">${ringSvg(u.pct,52,u.cleared)}<div class="ringtxt">${esc((u.name.split(' ')[0]||'?').slice(0,1))}${esc((u.name.split(' ')[1]||'').slice(0,1))}</div></div>
       <div class="tsn">${esc(u.name.replace(' (demo)','').split(' ')[0])} ${esc((u.name.replace(' (demo)','').split(' ')[1]||'').slice(0,1))}</div><div class="tss">${u.total?u.done+'/'+u.total:u.done_today+' ✓'}${u.streak?' · 🔥'+u.streak:''}</div></div>`).join('')}</div>`:'';
@@ -1875,7 +1877,9 @@ async function loadInsights(){const r=await api('/api/insights/time?days='+$('#t
      <td>${t.count}</td><td>${fmtMin(t.avg_estimate)||'—'}</td><td><b>${fmtMin(t.avg_actual)||'—'}</b></td><td class="mute">${t.min_actual?fmtMin(t.min_actual)+' – '+fmtMin(t.max_actual):'—'}</td><td>${v(t.variance_pct)}</td><td>${t.avg_turnaround_days!=null?t.avg_turnaround_days+' d':'—'}</td></tr>`).join('')}</table>
    <h3 style="margin-top:14px">By person</h3><table><tr><th>Person</th><th>Done</th><th>With time logged</th><th>Avg actual</th><th>vs. est.</th><th>Turnaround</th></tr>
    ${r.people.map(p=>`<tr><td>${esc(p.name)}</td><td>${p.count}</td><td>${p.with_actual}</td><td>${fmtMin(p.avg_actual)||'—'}</td><td>${v(p.variance_pct)}</td><td>${p.avg_turnaround_days!=null?p.avg_turnaround_days+' d':'—'}</td></tr>`).join('')}</table>`;}
-async function loadDemo(){const d=await api('/api/demo');$('#demoLoad').classList.toggle('hidden',d.loaded);$('#demoRemove').classList.toggle('hidden',!d.loaded);
+async function demoFill(){const r=await api('/api/demo/fill',{method:'POST'});await refresh();loadDemo();
+  toast(`Demo updated — ${r.wins} team wins, ${r.contacts} sample contacts on file`);}
+async function loadDemo(){const d=await api('/api/demo');$('#demoLoad').classList.toggle('hidden',d.loaded);$('#demoRemove').classList.toggle('hidden',!d.loaded);$('#demoFill').classList.toggle('hidden',!d.loaded);
   if(d.loaded)$('#demoInfo').innerHTML=`Demo data loaded${d.loaded_at?' on '+fmtDate(d.loaded_at):''} — ${d.projects} sample projects with “(demo)” teammates. Remove it any time; your real data isn't touched.`;}
 async function demoLoad(){$('#demoLoad').disabled=true;$('#demoLoad').textContent='Loading…';
   try{const r=await api('/api/demo/load',{method:'POST'});await refresh();toast(`Loaded ${r.projects} projects, ${r.people} demo teammates`);show('home');}

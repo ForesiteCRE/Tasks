@@ -2077,6 +2077,12 @@ def demo_load(request: Request):
     except ValueError as e:
         raise HTTPException(400, str(e))
 
+@app.post("/api/demo/fill")
+def demo_fill(request: Request):
+    if not auth.is_admin(request):
+        raise HTTPException(403, "Only the admin can do that.")
+    return demo.fill(_me_id(request))
+
 @app.delete("/api/demo")
 def demo_remove():
     return demo.remove()
