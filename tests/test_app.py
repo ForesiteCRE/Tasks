@@ -575,6 +575,20 @@ def test_demo_data_load_and_remove(mgr, staff):
     assert any(w["kind"] == "shoutout" and w["icon"] == "🏆" for w in feed)
     from app import demo as _demo
     _demo.refresh_wins()
+    # a demo loaded before sample wins existed (or where the first try found nobody) gets them on startup
+    import json as _json
+    from app.db import get_setting, set_setting
+    m = _json.loads(get_setting("demo.manifest"))
+    with tx() as c:
+        for wid in m["sample_wins"]:
+            c.execute("DELETE FROM win_kudos WHERE win_id=?", (wid,))
+            c.execute("DELETE FROM wins WHERE id=?", (wid,))
+    m["sample_wins"] = []
+    m.pop("loaded_by", None)
+    set_setting("demo.manifest", _json.dumps(m))
+    _demo.backfill_contacts()
+    assert len(_demo.manifest()["sample_wins"]) == len(_demo.SAMPLE_WINS)
+    assert sum(w["kind"] == "shoutout" for w in ids(mgr.get("/api/fun/team"))["wins"]) >= 1
     ids(mgr.delete("/api/demo"))
     with tx() as c:
         assert not c.execute("SELECT 1 FROM property_contacts WHERE name='Margaret Ellison'").fetchone()

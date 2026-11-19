@@ -126,13 +126,15 @@ def add_sample_wins(m: dict, me_id: int):
     m.setdefault("sample_wins", [])
     with tx() as c:
         users = {r["email"]: r["id"] for r in c.execute("SELECT id, email FROM users")}
-        everyone = list(m["users"]) + [me_id]
+        everyone = list(m["users"]) + ([me_id] if me_id else [])
         for who, title, detail in SAMPLE_WINS:
             uid = me_id if who == "me" else users.get(f"{handles[who]}@{DEMO_DOMAIN}")
+            if who == "me" and not me_id:
+                continue
             if not uid:
                 continue
             wid = c.execute("INSERT INTO wins(user_id, kind, ref_id, title, detail, at) VALUES(?,?,?,?,?,datetime('now', ?))",
-                            (uid, "shoutout", None, title, detail, f"-{rnd.randint(30, 3 * 24 * 60)} minutes")).lastrowid
+                            (uid, "shoutout", None, title, detail, f"-{rnd.randint(20, 36 * 60)} minutes")).lastrowid
             m["sample_wins"].append(wid)
             for k in rnd.sample(everyone, k=rnd.randint(1, 4)):
                 if k != uid:
@@ -148,24 +150,28 @@ def refresh_wins():
     rnd = _r.Random(date.today().toordinal())
     with tx() as c:
         for wid in m["sample_wins"]:
-            c.execute("UPDATE wins SET at=datetime('now', ?) WHERE id=?", (f"-{rnd.randint(30, 3 * 24 * 60)} minutes", wid))
+            c.execute("UPDATE wins SET at=datetime('now', ?) WHERE id=?", (f"-{rnd.randint(20, 36 * 60)} minutes", wid))
     set_setting("demo.wins_day", date.today().isoformat())
 
 
 def backfill_contacts():
     """Demo data loaded before sample contacts existed gets them once."""
     m = manifest()
-    if m and ("contacts" not in m or "extra_team" not in m or "sample_wins" not in m):
+    if m and ("contacts" not in m or "extra_team" not in m or not m.get("sample_wins")):
         if "contacts" not in m:
             add_sample_contacts(m)
-        if "sample_wins" not in m:
-            with tx() as c:
-                me = c.execute("SELECT user_id FROM property_team WHERE role_id=(SELECT id FROM project_roles WHERE name='Property Manager') "
-                               "AND user_id NOT IN (SELECT id FROM users WHERE email LIKE ?) LIMIT 1", (f"%@{DEMO_DOMAIN}",)).fetchone()
-            if me:
-                add_sample_wins(m, me[0])
-            else:
-                m["sample_wins"] = []
+        if not m.get("sample_wins"):
+            me = m.get("loaded_by")
+            if not me:   # who loaded the demo: the non-demo property manager, else the first admin
+                with tx() as c:
+                    r = c.execute("""SELECT user_id FROM property_team WHERE role_id=(SELECT id FROM project_roles WHERE name='Property Manager')
+                                     AND user_id NOT IN (SELECT id FROM users WHERE email LIKE ?) LIMIT 1""", (f"%@{DEMO_DOMAIN}",)).fetchone() \
+                        or c.execute("SELECT id FROM users WHERE role='admin' AND email NOT LIKE ? ORDER BY id LIMIT 1",
+                                     (f"%@{DEMO_DOMAIN}",)).fetchone() \
+                        or c.execute("SELECT id FROM users WHERE email NOT LIKE ? ORDER BY id LIMIT 1", (f"%@{DEMO_DOMAIN}",)).fetchone()
+                me = r[0] if r else None
+            m["sample_wins"] = []
+            add_sample_wins(m, me)
         with blink.quiet():
             add_extra_team(m)
         set_setting("demo.manifest", json.dumps(m))
@@ -443,6 +449,7 @@ def load(me_id: int) -> dict:
                 m["recurrences"].append(rid)
 
     m["loaded_at"] = date.today().isoformat()
+    m["loaded_by"] = me_id
     set_setting("demo.manifest", json.dumps(m))
     return {"people": len(m["users"]), "projects": len(m["projects"]), "loose_tasks": len(m["tasks"]),
             "reminders": len(m["reminders"]), "emails": len(m.get("emails", []))}
