@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS project_team (
 );
 """
 DEFAULT_ROLES = ["Property Manager", "Head of Accounting", "AP", "AR", "Leasing", "Asset Manager"]
+# The property team card shows these (plus the owner contact); added once if missing.
+CORE_ROLES = ["Asset Manager", "Property Manager", "Backup Property Manager", "AR", "AP", "Property Assistant"]
 
 
 def init():
@@ -37,6 +39,11 @@ def init():
         if not c.execute("SELECT 1 FROM project_roles").fetchone():
             c.executemany("INSERT INTO project_roles(name, position) VALUES(?,?)",
                           [(n, i) for i, n in enumerate(DEFAULT_ROLES)])
+        have = {r[0].lower() for r in c.execute("SELECT name FROM project_roles")}
+        for n in CORE_ROLES:
+            if n.lower() not in have:
+                pos = c.execute("SELECT COALESCE(MAX(position),0)+1 FROM project_roles").fetchone()[0]
+                c.execute("INSERT INTO project_roles(name, position) VALUES(?,?)", (n, pos))
 
 
 # ---------- tasks without a project ----------

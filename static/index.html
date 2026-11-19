@@ -274,6 +274,12 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
 .typing span{display:inline-block;width:7px;height:7px;margin:0 2px;border-radius:50%;background:#9fb1bd;animation:blink 1.2s infinite}.typing span:nth-child(2){animation-delay:.2s}.typing span:nth-child(3){animation-delay:.4s}
 @keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
 #templates .card{overflow-x:auto}
+.tchips{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;padding:10px 12px!important}
+.tchip{display:flex;gap:7px;align-items:center;min-width:0}.tchip>div{min-width:0;line-height:1.15}
+.tchip small{display:block;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tchip b{display:block;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tav{flex:none;width:26px;height:26px;border-radius:50%;background:#e3edf5;color:#2f6f99;font-size:10.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
+.tchip.own .tav{background:#fff1e6;color:#c25a00}
 /* ---------- phones ---------- */
 @media (max-width:640px){
   html,body{overflow-x:hidden}
@@ -840,7 +846,7 @@ function addPropertyForm(){$('#propAdd').innerHTML=`<div class="card"><h3 style=
   <button class="b" onclick="addProperty()">Add</button><button class="b ghost" onclick="$('#propAdd').innerHTML=''">Cancel</button></div></div>`;$('#npAddr').focus();}
 async function addProperty(){const r=await api('/api/properties',{method:'POST',body:{address:$('#npAddr').value,name:$('#npName').value||null,client:$('#npClient').value||null}});
   $('#propAdd').innerHTML='';PROPS=[];openProperty(r.id);}
-async function openProperty(id){const same=PROP&&PROP.id===id;PROP=await api('/api/properties/'+id);LEASE=null;if(!same)PROP_ALL=false;
+async function openProperty(id){const same=PROP&&PROP.id===id;PROP=await api('/api/properties/'+id);LEASE=null;if(!same){PROP_ALL=false;PROP_TEAM_EDIT=false;}
   document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-property'));
   markNav('property');
   if(taskDlg.open)taskDlg.close();renderProperty();scrollTo(0,0);}
@@ -867,9 +873,7 @@ function renderProperty(){const p=PROP,mg=isMgr(),dis=mg?'':'disabled',open=p.da
       ${done.length?`<details style="margin-top:8px"><summary class="mute">Handled · ${done.length}</summary>${done.map(cdRow).join('')}</details>`:''}</div></div>
     ${propVendorsPanel(p)}
   </div><div>
-    <div class="panel"><header><h3>👥 Property team</h3><span class="cnt">${p.roles.filter(r=>r.user_id).length}/${p.roles.length}</span></header><div class="body">
-      <p class="mute" style="margin:4px 0 8px;font-size:12.5px">Every project at this address uses these people. Change someone here and their open tasks in all of this property's projects move over (they get a Blink message).</p>
-      <div class="team-grid">${p.roles.map(r=>{const n=p.tasks.filter(t=>t.role_id===r.role_id).length;return `<label>${esc(r.role)}${n?` <span class="via">· ${n} open task${n>1?'s':''}</span>`:''}<select ${mg?'':'disabled'} onchange="propTeamSet(${r.role_id},this.value)">${userOpts(r.user_id,'—')}</select></label>`}).join('')}</div></div></div>
+    ${propTeamCard(p,mg)}
     <div class="panel"><header><h3>📋 Owner requirements</h3></header><div class="body">
       <label class="lbl">Owner approval threshold</label>
       <div class="row" style="margin:2px 0 10px"><span style="font-size:18px">$</span><input ${dis} type="number" min="0" step="100" value="${p.spend_limit||''}" placeholder="e.g. 5000" style="width:150px" onchange="propPatch({spend_limit:+this.value||null})"><span class="mute" style="font-size:12.5px">capital expenditures &amp; non-emergency repairs</span></div>
@@ -935,6 +939,22 @@ async function saveDate(id){const b={kind:$('#cdKind').value,date:$('#cdDate').v
 async function cdPatch(id,b){const d=PROP.dates.find(x=>x.id===id);await api('/api/critical-dates/'+id,{method:'PATCH',body:b});await refresh();
   if(b.status==='handled'&&d&&d.repeat)toast('Handled — next one scheduled 🔁');openProperty(PROP.id);}
 async function cdDel(id){if(!confirm('Remove this critical date? (Its task, if any, stays.)'))return;await api('/api/critical-dates/'+id,{method:'DELETE'});openProperty(PROP.id);}
+let PROP_TEAM_EDIT=false;
+const TEAM_CORE=['Asset Manager','Property Manager','Backup Property Manager','AR','AP','Property Assistant'];
+const ROLE_LABEL={AR:'Accounts Receivable',AP:'Accounts Payable'};
+const roleLabel=r=>ROLE_LABEL[r]||r;
+function propTeamCard(p,mg){
+  const by=Object.fromEntries(p.roles.map(r=>[r.role.toLowerCase(),r]));
+  const core=TEAM_CORE.map(n=>by[n.toLowerCase()]).filter(Boolean);
+  const extra=p.roles.filter(r=>!TEAM_CORE.some(n=>n.toLowerCase()===r.role.toLowerCase())&&r.user_id);
+  const owner=p.contacts.find(c=>c.role==='Owner contact');
+  const chip=(label,name,sub,cls='')=>`<div class="tchip ${cls}" title="${esc(label)}: ${esc(name||'not set')}${sub?' · '+esc(sub):''}"><span class="tav">${name?esc(initials(name)):'?'}</span><div><small>${esc(label)}</small><b>${name?esc(name.replace(/ \(demo\)$/,'')):'<i class="mute">not set</i>'}</b></div></div>`;
+  const filled=p.roles.filter(r=>r.user_id).length;
+  if(PROP_TEAM_EDIT&&mg)return `<div class="panel" id="propTeam"><header><h3>👥 Property team</h3><span class="cnt"><button class="b sm" onclick="PROP_TEAM_EDIT=false;renderProperty()">Done</button></span></header><div class="body">
+      <p class="mute" style="margin:4px 0 8px;font-size:12px">Every project here uses these people. Change someone and their open tasks at this property move over (they get a Blink message). The owner is the “Owner contact” under Contacts.</p>
+      <div class="team-grid">${[...core,...p.roles.filter(r=>!core.includes(r))].map(r=>{const n=p.tasks.filter(t=>t.role_id===r.role_id).length;return `<label>${esc(roleLabel(r.role))}${n?` <span class="via">· ${n} open</span>`:''}<select onchange="propTeamSet(${r.role_id},this.value)">${userOpts(r.user_id,'—')}</select></label>`}).join('')}</div></div></div>`;
+  return `<div class="panel" id="propTeam"><header><h3>👥 Property team</h3><span class="cnt">${filled}/${p.roles.length}${mg?` <button class="b ghost sm" style="margin-left:6px" onclick="PROP_TEAM_EDIT=true;renderProperty()">✎ Edit</button>`:''}</span></header>
+    <div class="body tchips">${chip('Owner',owner&&(owner.name||owner.company),owner&&owner.company,'own')}${core.map(r=>chip(roleLabel(r.role),r.user_name)).join('')}${extra.map(r=>chip(roleLabel(r.role),r.user_name)).join('')}</div></div>`;}
 async function propTeamSet(rid,uid){const r=await api(`/api/properties/${PROP.id}/team/${rid}`,{method:'PUT',body:{user_id:+uid||null}});
   toast(r.moved?`Updated — ${r.moved} open task${r.moved>1?'s':''} moved`:'Updated');await refresh();openProperty(PROP.id);}
 async function propPatch(b){await api('/api/properties/'+PROP.id,{method:'PATCH',body:b});PROPS=[];await refresh();openProperty(PROP.id);toast('Saved');}

@@ -78,11 +78,41 @@ def add_sample_contacts(m: dict):
                                                                "email": email, "phone": phone, "notes": notes or ""}))
 
 
+# Backup property managers and property assistants for the sample properties (demo people)
+EXTRA_TEAM = {"777 E Sonterra Blvd, San Antonio, TX 78258": {"Backup Property Manager": "Alex Rivera", "Property Assistant": "Priya Shah"},
+              "4500 Fredericksburg Rd, San Antonio, TX": {"Backup Property Manager": "Priya Shah", "Property Assistant": "Dana Whitfield"},
+              "8800 Research Blvd, Austin, TX": {"Backup Property Manager": "Alex Rivera", "Property Assistant": "Dana Whitfield",
+                                                 "Asset Manager": "Sam Patel"},
+              "1200 Broadway St, San Antonio, TX": {"Backup Property Manager": "Priya Shah", "Property Assistant": "Dana Whitfield",
+                                                    "Asset Manager": "Sam Patel"}}
+
+
+def add_extra_team(m: dict):
+    from . import properties
+    handles = dict(PEOPLE)
+    with tx() as c:
+        roles = {r["name"]: r["id"] for r in c.execute("SELECT id, name FROM project_roles")}
+        users = {r["email"]: r["id"] for r in c.execute("SELECT id, email FROM users")}
+    for addr, team_ in EXTRA_TEAM.items():
+        pid = properties.property_for_address(addr)
+        if not pid:
+            continue
+        have = properties.team_map(pid)
+        for role, name in team_.items():
+            uid = users.get(f"{handles[name]}@{DEMO_DOMAIN}")
+            if role in roles and uid and not have.get(roles[role]):
+                properties.set_member(pid, roles[role], uid)
+    m["extra_team"] = True
+
+
 def backfill_contacts():
     """Demo data loaded before sample contacts existed gets them once."""
     m = manifest()
-    if m and "contacts" not in m:
-        add_sample_contacts(m)
+    if m and ("contacts" not in m or "extra_team" not in m):
+        if "contacts" not in m:
+            add_sample_contacts(m)
+        with blink.quiet():
+            add_extra_team(m)
         set_setting("demo.manifest", json.dumps(m))
 
 
@@ -402,6 +432,7 @@ def _showcase(m: dict, me_id: int, ids: dict, hq_id):
             for role, uid in team_.items():
                 if role in roles:
                     properties.set_member(prop, roles[role], uid)
+    add_extra_team(m)
     # blocked tasks that say what they're waiting on
     with tx() as c:
         open_tasks = [dict(r) for r in c.execute(
