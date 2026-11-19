@@ -805,7 +805,8 @@ function projTaskPreview(p){const ts=orderTasks(p.tasks),done=p.tasks.filter(t=>
       :'<p class="mute" style="margin:0">No tasks yet.</p>'}</div>`;}
 
 /* ---------- properties & critical dates ---------- */
-let PROPS=[],PROP=null,LEASE=null;
+let PROPS=[],PROP=null,LEASE=null,PROP_ALL=false;const PROP_TASKS_N=20;
+function propTasksToggle(){PROP_ALL=!PROP_ALL;renderProperty();$('#propTasks').scrollIntoView({block:'nearest'});}
 const daysBadge=n=>n<0?`<span class="dl red">${-n} day${n===-1?'':'s'} late</span>`:n===0?'<span class="dl red">today</span>':`<span class="dl ${n<=30?'red':n<=90?'amber':''}">in ${n} day${n===1?'':'s'}</span>`;
 function propBanner(p,h){
   const map=`<iframe loading="lazy" tabindex="-1" src="https://maps.google.com/maps?q=${encodeURIComponent(p.address)}&z=16&output=embed"></iframe>`;
@@ -828,7 +829,7 @@ function addPropertyForm(){$('#propAdd').innerHTML=`<div class="card"><h3 style=
   <button class="b" onclick="addProperty()">Add</button><button class="b ghost" onclick="$('#propAdd').innerHTML=''">Cancel</button></div></div>`;$('#npAddr').focus();}
 async function addProperty(){const r=await api('/api/properties',{method:'POST',body:{address:$('#npAddr').value,name:$('#npName').value||null,client:$('#npClient').value||null}});
   $('#propAdd').innerHTML='';PROPS=[];openProperty(r.id);}
-async function openProperty(id){PROP=await api('/api/properties/'+id);LEASE=null;
+async function openProperty(id){const same=PROP&&PROP.id===id;PROP=await api('/api/properties/'+id);LEASE=null;if(!same)PROP_ALL=false;
   document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-property'));
   markNav('property');
   if(taskDlg.open)taskDlg.close();renderProperty();scrollTo(0,0);}
@@ -844,13 +845,14 @@ function renderProperty(){const p=PROP,mg=isMgr(),dis=mg?'':'disabled',open=p.da
       <label>Owner / client<input ${dis} value="${esc(p.client||'')}" onchange="propPatch({client:this.value})"></label></div></div></div>
   ${mg?`<div class="row" style="margin:0 0 12px"><button class="b" onclick="docPick()">📄 Upload &amp; read a document</button><span class="mute" style="font-size:12.5px">Management agreement, insurance policy, tax notice… Claude pulls out dates, the spend limit, reporting requirements and contacts, and checks the insurance.</span></div><div id="leaseBox"></div>`:''}
   <div class="hgrid"><div>
+    <div class="panel" id="propTasks"><header><h3>✅ Open tasks</h3><span class="cnt">${p.tasks.length}${p.tasks.filter(isOver).length?` · <span class="over">${p.tasks.filter(isOver).length} overdue</span>`:''}</span></header><div class="body">
+      ${(PROP_ALL?p.tasks:p.tasks.slice(0,PROP_TASKS_N)).map(t=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><span class="pill ${t.status}">${LBL[t.status]}</span><div class="grow">${esc(t.title)}<div class="sub">${esc(t.assignee_name)} · ${esc(t.project_name)}</div></div><span class="${isOver(t)?'over':'mute'}" style="white-space:nowrap">${fmtDate(t.due_date)||'—'}</span></div>`).join('')||'<div class="empty">Nothing open.</div>'}
+      ${p.tasks.length>PROP_TASKS_N?`<div class="row" style="justify-content:center;margin:8px 0 2px"><button class="b ghost sm" onclick="propTasksToggle()">${PROP_ALL?'Show fewer':`View all ${p.tasks.length} tasks`}</button></div>`:''}</div></div>
     <div class="panel"><header><h3>⚑ Critical dates</h3><span class="cnt">${open.length} upcoming</span></header><div class="body">
       ${mg?`<div class="row" style="margin:4px 0 8px"><button class="b ghost" onclick="dateForm()">+ Add a date</button></div><div id="cdForm"></div>`:''}
       ${open.map(cdRow).join('')||'<div class="empty">No critical dates yet.'+(mg?' Upload the management agreement or insurance policy, or add one by hand.':'')+'</div>'}
       ${done.length?`<details style="margin-top:8px"><summary class="mute">Handled · ${done.length}</summary>${done.map(cdRow).join('')}</details>`:''}</div></div>
     ${propVendorsPanel(p)}
-    <div class="panel"><header><h3>✅ Open tasks</h3><span class="cnt">${p.tasks.length}</span></header><div class="body">
-      ${p.tasks.map(t=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><span class="pill ${t.status}">${LBL[t.status]}</span><div class="grow">${esc(t.title)}<div class="sub">${esc(t.assignee_name)} · ${esc(t.project_name)}</div></div><span class="${isOver(t)?'over':'mute'}" style="white-space:nowrap">${fmtDate(t.due_date)||'—'}</span></div>`).join('')||'<div class="empty">Nothing open.</div>'}</div></div>
   </div><div>
     <div class="panel"><header><h3>👥 Property team</h3><span class="cnt">${p.roles.filter(r=>r.user_id).length}/${p.roles.length}</span></header><div class="body">
       <p class="mute" style="margin:4px 0 8px;font-size:12.5px">Every project at this address uses these people. Change someone here and their open tasks in all of this property's projects move over (they get a Blink message).</p>
