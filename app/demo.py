@@ -221,7 +221,9 @@ def load(me_id: int) -> dict:
                     r = c.execute("SELECT id FROM vendors WHERE lower(name)=lower(?)", (name,)).fetchone()
                 if r:
                     return r["id"]
-                vid = V.create({"name": name, "trades": trades, "contact_name": contact, "phone": phone, "notes": notes}, me_id)
+                slug = "".join(ch for ch in name.lower() if ch.isalnum())[:18]
+                vid = V.create({"name": name, "trades": trades, "contact_name": contact, "phone": phone, "notes": notes,
+                                "email": f"office@{slug}.example.com"}, me_id)
                 m["vendors"].append(vid)
                 return vid
             green = vend("Green Leaf Landscaping", ["Landscaping"], "Marco Ruiz", "(210) 555-0301", "Weekly service; irrigation checks included.")

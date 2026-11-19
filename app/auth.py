@@ -110,7 +110,7 @@ def _staff_allowed(request: Request) -> bool:
             re.fullmatch(r"/api/properties/\d+/vendors/\d+/coi", path):
         return True   # vendor endpoints check property/project team membership themselves
     return path.startswith(("/api/tasks", "/api/checklist/", "/api/reminders", "/api/me/", "/api/critical-dates/",
-                             "/api/vendors", "/api/vendor-reviews/", "/api/property-vendors/", "/api/project-vendors/",
+                             "/api/vendors", "/api/vendor-reviews/", "/api/property-vendors/", "/api/project-vendors/", "/api/emails",
                              "/api/vendor-cois/"))
 
 
@@ -214,9 +214,45 @@ def login(request: Request, go: int = 0):
     return RedirectResponse("https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params))
 
 
+@router.get("/gmail/connect")
+def gmail_connect(request: Request):
+    """Let the app put drafts in this person's Gmail Drafts folder (gmail.compose: create/edit drafts, send nothing
+    on its own). Uses the same OAuth client and redirect URI as sign-in."""
+    me = current_user(request)
+    if not ENABLED or not me:
+        return RedirectResponse("/")
+    from .emails import GMAIL_SCOPE
+    state = "gmail:" + secrets.token_urlsafe(24)
+    request.session["oauth_state"] = state
+    return RedirectResponse("https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({
+        "client_id": CLIENT_ID, "redirect_uri": _redirect_uri(request), "response_type": "code",
+        "scope": "openid email " + GMAIL_SCOPE, "state": state, "access_type": "offline", "prompt": "consent",
+        "include_granted_scopes": "true", "login_hint": me["email"], "hd": DOMAIN}))
+
+
+def _gmail_callback(request: Request, code: str):
+    me = current_user(request)
+    r = httpx.post("https://oauth2.googleapis.com/token", timeout=15, data={
+        "code": code, "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
+        "redirect_uri": _redirect_uri(request), "grant_type": "authorization_code"})
+    if not me or r.status_code != 200:
+        return RedirectResponse("/#emails?gmail=failed")
+    tok = r.json()
+    payload = tok.get("id_token", "..").split(".")[1]
+    claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)) or b"{}")
+    if (claims.get("email") or "").lower() != me["email"].lower() or not tok.get("refresh_token"):
+        return RedirectResponse("/#emails?gmail=wrong-account")   # must connect your own mailbox
+    from . import emails
+    emails.save_gmail_token(me["id"], tok["refresh_token"])
+    return RedirectResponse("/#emails?gmail=connected")
+
+
 @router.get("/auth/callback")
 def callback(request: Request, code: str = "", state: str = "", error: str = ""):
-    if error or not code or state != request.session.pop("oauth_state", None):
+    expected = request.session.pop("oauth_state", None)
+    if expected and expected.startswith("gmail:") and state == expected:
+        return _gmail_callback(request, code) if code and not error else RedirectResponse("/#emails?gmail=cancelled")
+    if error or not code or state != expected:
         return _denied("Sign-in was cancelled or expired. Please try again.")
     r = httpx.post("https://oauth2.googleapis.com/token", timeout=15, data={
         "code": code, "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,

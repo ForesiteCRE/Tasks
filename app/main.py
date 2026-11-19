@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import (audit, auth, automations, blink, chat, closeboard, departments, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
+from . import (audit, auth, automations, blink, chat, closeboard, departments, emails, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
                starter_templates, team, timing, tpl)
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
@@ -34,7 +34,7 @@ async def scheduler_loop():
                 logging.exception("scheduler job %s failed", job.__name__)
         if datetime.now().hour >= REMINDER_HOUR:
             for job in (services.send_reminders, maintenance.send_weekly_summary, automations.overdue_escalation,
-                        extras.send_week_ahead, properties.run_alerts, audit.purge, departments.run_escalations):
+                        extras.send_week_ahead, properties.run_alerts, audit.purge, departments.run_escalations, emails.run):
                 try:
                     job()
                 except Exception:
@@ -1341,6 +1341,8 @@ def upload_vendor_coi(pid: int, vid: int, body: DocIn, request: Request):
     if not vendors.get(vid) or not properties.get(pid):
         raise HTTPException(404, "Not found")
     out = vendors.save_coi(pid, vid, data, body.filename, body.content_type, _me_id(request))
+    if out["status"]["state"] in ("not_named", "expired", "expiring"):
+        out["email_draft_id"] = emails.draft_for_vendor(pid, vid)   # drafted for the PM + Blink heads-up
     audit.log(_me_id(request), "vendor COI uploaded", "property", pid, vendors.get(vid)["name"], out["status"]["label"])
     return out
 
@@ -1414,6 +1416,59 @@ def remove_project_vendor(pvid: int, request: Request):
     if not r or not _can_assign(request, project_id=r["project_id"]):
         raise HTTPException(403, "Only managers or people on this project's team can change its vendors.")
     vendors.remove_project_vendor(pvid)
+    return {"ok": True}
+
+
+# ---------- insurance follow-up emails ----------
+
+class EmailNew(BaseModel):
+    property_id: int
+    vendor_id: int | None = None
+
+class EmailPatch(BaseModel):
+    to_email: str | None = None
+    to_name: str | None = None
+    subject: str | None = None
+    body: str | None = None
+    status: str | None = None
+
+
+@app.get("/api/emails")
+def list_emails(request: Request, all: bool = False, closed: bool = False):
+    me = auth.current_user(request) or {}
+    everyone = all and auth.at_least(me, "manager")
+    return {"drafts": emails.list_drafts(None if everyone else me.get("id"), closed),
+            "gmail_connected": emails.gmail_connected(me.get("id"))}
+
+
+@app.post("/api/emails")
+def new_email(body: EmailNew, request: Request):
+    """Draft one now (✉️ button next to a COI / insurance problem)."""
+    if not _can_assign(request, property_id=body.property_id):
+        raise HTTPException(403, "Only managers or people on this property's team can draft these.")
+    did = (emails.draft_for_vendor(body.property_id, body.vendor_id, _me_id(request), manual=True) if body.vendor_id
+           else emails.draft_for_property(body.property_id, _me_id(request), manual=True))
+    if not did:
+        raise HTTPException(400, "Couldn't draft that — set a Property Manager on the property first.")
+    audit.log(_me_id(request), "drafted insurance email", "property", body.property_id, emails.get(did)["subject"])
+    return emails.get(did)
+
+
+@app.patch("/api/emails/{did}")
+def patch_email(did: int, body: EmailPatch, request: Request):
+    me = auth.current_user(request) or {}
+    d = emails.get(did)
+    if not d:
+        raise HTTPException(404, "Draft not found")
+    if d["user_id"] != me.get("id") and not auth.at_least(me, "manager"):
+        raise HTTPException(403, "That draft belongs to someone else.")
+    in_gmail = emails.update(did, body.model_dump(exclude_unset=True))
+    return {"ok": True, "in_gmail": in_gmail}
+
+
+@app.delete("/api/me/gmail")
+def disconnect_gmail(request: Request):
+    emails.disconnect_gmail(_me_id(request))
     return {"ok": True}
 
 

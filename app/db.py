@@ -178,6 +178,8 @@ def _init_extras():
     vendors.init()
     from . import departments
     departments.init()
+    from . import emails
+    emails.init()
 
 
 def get_setting(key: str) -> str | None:

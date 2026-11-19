@@ -1054,3 +1054,67 @@ def test_sample_vendors_load_and_remove(mgr, staff):
     assert {t for v in vs["vendors"] for t in v["trades"]} >= {"Plumbing", "Electrical", "Janitorial", "Elevator", "Security"}
     assert ids(mgr.delete("/api/vendors/samples"))["removed"] == vs["samples"]
     assert ids(mgr.get("/api/vendors"))["samples"] == 0
+
+
+def test_insurance_emails_drafted_for_property_manager(mgr, staff, monkeypatch):
+    import base64 as b64
+    from datetime import date, timedelta
+    from app import emails
+    with tx() as c:
+        sam = c.execute("SELECT id FROM users WHERE blink_user_id='u-sam'").fetchone()["id"]
+        c.execute("UPDATE email_drafts SET status='dismissed'")
+    pid = ids(mgr.post("/api/properties", json={"address": "80 Mail St, San Antonio, TX", "client": "Mail Street Owner LLC"}))["id"]
+    ids(mgr.put(f"/api/properties/{pid}/team/{S['pm']}", json={"user_id": sam}))
+    v = ids(mgr.post("/api/vendors", json={"name": "Mail Test Roofing", "trades": ["Roofing"], "email": "office@mailroof.test",
+                                          "contact_name": "Pat Jones"}))["id"]
+    ids(mgr.put(f"/api/properties/{pid}/vendors", json={"trade": "Roofing", "vendor_id": v}))
+    ids(mgr.post(f"/api/properties/{pid}/contacts", json={"role": "Insurance agent", "name": "Lee Agent", "email": "lee@agency.test"}))
+    before = len(SENT)
+    emails.run()
+    mine = ids(staff.get("/api/emails"))["drafts"]
+    coi = [d for d in mine if d["vendor_id"] == v][0]
+    assert coi["to_email"] == "office@mailroof.test" and "Mail Street Owner LLC" in coi["body"] and "Foresite Real Estate" in coi["body"]
+    assert coi["body"].startswith("Hi Pat,") and "80 Mail St" in coi["body"] and coi["compose_url"].startswith("https://mail.google.com/")
+    ins = [d for d in mine if d["kind"] == "property_insurance" and d["property_id"] == pid][0]
+    assert ins["to_email"] == "lee@agency.test" and "additional insured" in ins["body"]
+    assert sum(1 for b, t in SENT[before:] if b == "u-sam" and "Email drafted" in t and "80 Mail St" in t) == 2   # PM told
+    n = len(ids(staff.get("/api/emails"))["drafts"])
+    emails.run()
+    assert len(ids(staff.get("/api/emails"))["drafts"]) == n                                    # once per issue
+    # a valid COI resolves the vendor draft
+    CLAUDE.append({"is_coi": True, "named_insured": "x", "carrier": "x", "expires": (date.today() + timedelta(days=300)).isoformat(),
+                   "property_additional_insured": "yes", "foresite_additional_insured": "yes", "evidence": ""})
+    doc = {"filename": "coi.pdf", "content_type": "application/pdf", "data_b64": b64.b64encode(b"%PDF").decode()}
+    ids(mgr.post(f"/api/properties/{pid}/vendors/{v}/coi", json=doc))
+    emails.run()
+    assert not [d for d in ids(staff.get("/api/emails"))["drafts"] if d["vendor_id"] == v]
+    # a COI that doesn't name the owner → drafted right away
+    CLAUDE.append({"is_coi": True, "named_insured": "x", "carrier": "x", "expires": (date.today() + timedelta(days=400)).isoformat(),
+                   "property_additional_insured": "no", "foresite_additional_insured": "no", "evidence": "holder only"})
+    out = ids(mgr.post(f"/api/properties/{pid}/vendors/{v}/coi", json=doc))
+    d = [x for x in ids(staff.get("/api/emails"))["drafts"] if x["id"] == out["email_draft_id"]][0]
+    assert "doesn't name Mail Street Owner LLC as additional insured" in d["body"]
+    # PM edits and marks sent; other staff can't touch it
+    ids(staff.patch(f"/api/emails/{d['id']}", json={"body": d["body"] + "\nP.S. thanks!", "status": "sent"}))
+    assert not [x for x in ids(staff.get("/api/emails"))["drafts"] if x["id"] == d["id"]]
+    # manual draft button
+    m = ids(mgr.post("/api/emails", json={"property_id": pid, "vendor_id": v}))
+    assert m["subject"] and m["status"] == "open"
+    # with Gmail connected the draft also goes into the PM's Gmail Drafts
+    calls = []
+    class R:
+        def __init__(self, code, data): self.status_code, self._d, self.text = code, data, ""
+        def json(self): return self._d
+    def fake_post(url, **kw):
+        calls.append(url)
+        return R(200, {"access_token": "at"}) if "oauth2" in url else R(200, {"id": "gmail-draft-1"})
+    monkeypatch.setattr(emails.httpx, "post", fake_post)
+    monkeypatch.setattr(emails.httpx, "put", lambda url, **kw: (calls.append(url), R(200, {"id": "gmail-draft-1"}))[1])
+    emails.save_gmail_token(sam, "refresh-xyz")
+    assert ids(staff.get("/api/emails"))["gmail_connected"]
+    before = len(SENT)
+    did = emails.draft_for_property(pid, sam, manual=True)
+    assert emails.get(did)["gmail_draft_id"] == "gmail-draft-1" and any("gmail.googleapis.com" in u for u in calls)
+    assert ids(staff.patch(f"/api/emails/{did}", json={"subject": "Updated"}))["in_gmail"]
+    ids(staff.delete("/api/me/gmail"))
+    assert not ids(staff.get("/api/emails"))["gmail_connected"]

@@ -534,8 +534,10 @@ def load_samples(user_id=None) -> dict:
         with tx() as c:
             if c.execute("SELECT 1 FROM vendors WHERE lower(name)=lower(?)", (name,)).fetchone():
                 continue
-            vid = c.execute("""INSERT INTO vendors(name, trades, contact_name, phone, notes, created_by, is_sample)
-                               VALUES(?,?,?,?,?,?,1)""", (name, _clean_trades(trades), contact, phone, notes or None, user_id)).lastrowid
+            slug = "".join(ch for ch in name.lower() if ch.isalnum())[:18]
+            vid = c.execute("""INSERT INTO vendors(name, trades, contact_name, phone, email, notes, created_by, is_sample)
+                               VALUES(?,?,?,?,?,?,?,1)""", (name, _clean_trades(trades), contact, phone, f"office@{slug}.example.com",
+                                                            notes or None, user_id)).lastrowid
         for stars, price, note in reviews:
             add_review(vid, user_id, stars, (note + " (sample review)") if note else "(sample review)", price=price)
         added += 1
