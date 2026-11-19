@@ -248,6 +248,24 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
 .win{display:flex;gap:10px;align-items:flex-start;padding:9px 2px;border-bottom:1px solid var(--line)}.win:last-child{border-bottom:0}.wico{font-size:18px}
 .kudo{border:1px solid var(--line);background:#fff;border-radius:99px;padding:3px 10px;cursor:pointer;font:inherit;font-size:13px;white-space:nowrap}
 .kudo.on{background:#fff6dc;border-color:#f0d58a}.kudo.own{border:0;color:var(--mute);font-size:12px}.kudo.pop{animation:pop .45s ease}
+#lisaBtn{position:fixed;right:18px;bottom:18px;z-index:60;display:flex;align-items:center;gap:8px;border:0;border-radius:99px;padding:10px 16px 10px 12px;
+  background:linear-gradient(135deg,#549FC5,#3A4750);color:#fff;font:inherit;font-weight:700;font-size:14px;box-shadow:0 8px 24px rgba(30,50,70,.28);cursor:pointer}
+#lisaBtn:hover{transform:translateY(-1px)}#lisaBtn.hidden{display:none}
+#lisa{position:fixed;right:18px;bottom:18px;z-index:61;width:min(400px,calc(100vw - 24px));height:min(600px,calc(100vh - 100px));background:#fff;border-radius:16px;
+  box-shadow:0 18px 50px rgba(20,35,50,.3);display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--line)}
+.lisahd{display:flex;gap:10px;align-items:center;padding:12px 12px 10px;background:linear-gradient(135deg,#549FC5,#3A4750);color:#fff}.lisahd .sub{color:#d9ecf5;font-size:11.5px}
+.lisahd .xs{background:rgba(255,255,255,.18);color:#fff;border:0;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:14px}
+.lisaav{width:36px;height:36px;border-radius:50%;background:#A5D172;color:#2d3a20;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;flex:none}
+#lisaMsgs{flex:1;overflow-y:auto;padding:12px;background:#f6f8fa}
+.lmsg{max-width:88%;margin:0 0 10px;padding:9px 12px;border-radius:14px;font-size:14px;line-height:1.45}.lmsg p{margin:0 0 6px}.lmsg p:last-child{margin:0}
+.lmsg ul{margin:4px 0 4px 18px;padding:0}.lmsg li{margin:2px 0}.lmsg code{background:#eef1f4;padding:0 4px;border-radius:4px}
+.lmsg.bot{background:#fff;border:1px solid var(--line);border-bottom-left-radius:4px}.lmsg.me{background:var(--acc);color:#fff;margin-left:auto;border-bottom-right-radius:4px}
+.lisalink{color:var(--acc);font-weight:700;text-decoration:none;border-bottom:1px dashed}
+.lsugg{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px}.lsugg button{border:1px solid var(--line);background:#fff;border-radius:99px;padding:6px 11px;font:inherit;font-size:12.5px;cursor:pointer;color:var(--ink)}
+.lsugg button:hover{border-color:var(--acc)}
+.lisain{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line);background:#fff}.lisain textarea{flex:1;resize:none;font:inherit;font-size:15px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;max-height:110px}
+.typing span{display:inline-block;width:7px;height:7px;margin:0 2px;border-radius:50%;background:#9fb1bd;animation:blink 1.2s infinite}.typing span:nth-child(2){animation-delay:.2s}.typing span:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
 /* ---------- phones ---------- */
 @media (max-width:640px){
   html,body{overflow-x:hidden}
@@ -307,6 +325,8 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
   .prow{grid-template-columns:1fr auto;gap:4px 10px}.prow .pp{grid-column:1/-1;order:3}.prow .pd{grid-column:1/-1;order:4;font-size:13px}.prow .pf{justify-content:flex-start;order:2}.prow.ph{display:none}
   .board{grid-template-columns:repeat(4,78vw);scroll-snap-type:x mandatory}.bcol{scroll-snap-align:start}
   .funcard{padding:10px 12px;gap:12px}.funh{font-size:15px}
+  #lisaBtn{bottom:calc(76px + env(safe-area-inset-bottom,0px));right:12px;padding:12px}#lisaBtn span{display:none}
+  #lisa{right:0;left:0;bottom:0;top:0;width:100vw;height:100dvh;border-radius:0;border:0;z-index:80}
   dialog{width:100vw!important;max-width:100vw!important;margin:0;max-height:100dvh;border-radius:0}
 }
 </style>
@@ -1295,6 +1315,33 @@ async function ourAgent(){const a=await api('/api/our-coi/agent');
     <div class="team-grid"><label>Name<input id="agN" value="${esc(a.name)}"></label><label>Agency<input id="agC" value="${esc(a.company)}"></label><label>Email<input id="agE" type="email" value="${esc(a.email)}"></label></div>
     <div class="row" style="justify-content:flex-end"><button class="b ghost" onclick="taskDlg.close()">Cancel</button><button class="b" onclick="api('/api/our-coi/agent',{method:'PUT',body:{name:$('#agN').value,company:$('#agC').value,email:$('#agE').value}}).then(()=>{taskDlg.close();openProperty(PROP.id);toast('Saved')})">Save</button></div>`;
   if(!taskDlg.open)taskDlg.showModal();}
+
+/* ---------- L.I.S.A. — in-app help assistant ---------- */
+let LISA=(()=>{try{return JSON.parse(sessionStorage.getItem('lisa')||'[]')}catch(e){return[]}})(),LISA_BUSY=false;
+const LISA_SUGGEST=["How do I start a project?","What's overdue for me?","Who's the property manager at 777 E Sonterra?","Which landscapers are recommended?","How do owner approvals work?","What does Blocked by what? do?"];
+function lisaSave(){try{sessionStorage.setItem('lisa',JSON.stringify(LISA.slice(-20)))}catch(e){}}
+function lisaToggle(open){const el=$('#lisa');const o=open===undefined?el.classList.contains('hidden'):open;el.classList.toggle('hidden',!o);$('#lisaBtn').classList.toggle('hidden',o);
+  if(o){lisaRender();setTimeout(()=>$('#lisaQ').focus(),50);}}
+function lisaNew(){LISA=[];lisaSave();lisaRender();}
+function lisaMd(t){let h=esc(t).replace(/\[([^\]]+)\]\((#[a-z]+-[\w-]+)\)/g,'<a href="$2" class="lisalink" onclick="return lisaGo(\'$2\')">$1</a>')
+  .replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>');
+  return h.split('\n').map(l=>/^\s*[-•]\s+/.test(l)?`<li>${l.replace(/^\s*[-•]\s+/,'')}</li>`:l?`<p>${l}</p>`:'').join('').replace(/(<li>.*?<\/li>)+/gs,m=>`<ul>${m}</ul>`);}
+function lisaGo(h){const m=h.match(/^#(task|project|property|vendor|view)-(.+)$/);if(!m)return false;
+  if(innerWidth<760)lisaToggle(false);
+  ({task:()=>openTask(+m[2]),project:()=>openProject(+m[2]),property:()=>openProperty(+m[2]),vendor:()=>openVendor(+m[2]),view:()=>show(m[2])})[m[1]]();return false;}
+function lisaRender(){const box=$('#lisaMsgs');
+  box.innerHTML=(LISA.length?'':`<div class="lmsg bot"><p>Hi ${esc((ME.name||'').split(' ')[0])}! I'm <b>L.I.S.A.</b> 👋 Ask me how to do anything in the Task Manager — or ask me to look something up (tasks, properties, vendors, projects).</p></div>
+      <div class="lsugg">${LISA_SUGGEST.map(q=>`<button onclick="lisaSend(${esc(JSON.stringify(q))})">${esc(q)}</button>`).join('')}</div>`)
+    +LISA.map(m=>`<div class="lmsg ${m.role==='user'?'me':'bot'}">${m.role==='user'?`<p>${esc(m.content)}</p>`:lisaMd(m.content)}</div>`).join('')
+    +(LISA_BUSY?'<div class="lmsg bot typing"><span></span><span></span><span></span></div>':'');
+  box.scrollTop=box.scrollHeight;}
+async function lisaSend(q){q=(q||$('#lisaQ').value).trim();if(!q||LISA_BUSY)return;$('#lisaQ').value='';
+  LISA.push({role:'user',content:q});LISA_BUSY=true;lisaRender();
+  const page=[...document.querySelectorAll('main>section')].find(s=>!s.classList.contains('hidden'))?.id?.replace('v-','')||'home';
+  try{const r=await fetch('/api/help',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:LISA.slice(-12),page})}).then(x=>x.json());
+    LISA.push({role:'assistant',content:r.reply||'Sorry, I\'m not sure.'});}
+  catch(e){LISA.push({role:'assistant',content:'Sorry — I couldn\'t reach the server. Try again?'});}
+  LISA_BUSY=false;lisaSave();lisaRender();}
 async function delProject(pid){const typed=$('#delConfirm').value;
   const r=await api(`/api/projects/${pid}?confirm=${encodeURIComponent(typed)}`,{method:'DELETE'});taskDlg.close();await refresh();toast('Project deleted',()=>restoreTrash(r.trash_id),'Undo');}
 async function removeSamples(){if(!confirm('Remove all sample projects and their tasks? Your real projects are not affected.'))return;
@@ -1767,6 +1814,13 @@ async function runReminders(){const r=await api('/api/reminders/run',{method:'PO
   const c=await api('/api/config');if(!c.simulator)$('#chatTab').remove();})();
 </script>
 <div id="navSheet" class="hidden"><div class="sheet"></div></div>
+<button id="lisaBtn" onclick="lisaToggle()" aria-label="Ask L.I.S.A., the help assistant" title="Ask L.I.S.A.">💬<span>Ask L.I.S.A.</span></button>
+<div id="lisa" class="hidden" role="dialog" aria-label="L.I.S.A. help assistant">
+  <div class="lisahd"><div class="lisaav">L</div><div class="grow"><b>L.I.S.A.</b><div class="sub">Look-up &amp; Info Smart Assistant · named after the person everyone asks</div></div>
+    <button class="xs" onclick="lisaNew()" title="New conversation">↺</button><button class="xs" onclick="lisaToggle(false)" aria-label="Close">✕</button></div>
+  <div id="lisaMsgs"></div>
+  <div class="lisain"><textarea id="lisaQ" rows="1" placeholder="Ask how to do something, or look something up…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();lisaSend()}"></textarea><button class="b" onclick="lisaSend()">Send</button></div>
+</div>
 <nav id="tabbar" aria-label="Main">
   <button data-t="home" onclick="show('home')"><i>🏠</i>Home<span id="mBadgeM" class="nbadge hidden"></span></button>
   <button data-t="tasks" onclick="openNavSheet(document.querySelector('.dd[data-g=tasks]'))"><i>✓</i>Tasks</button>

@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import (audit, auth, automations, bids, blink, blockers, fun, ourcoi, chat, closeboard, departments, emails, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
+from . import (audit, auth, automations, bids, blink, blockers, fun, helpbot, ourcoi, chat, closeboard, departments, emails, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
                starter_templates, team, timing, tpl)
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
@@ -1877,6 +1877,20 @@ def put_agent(body: AgentIn, request: Request):
     _require_manager(request)
     ourcoi.set_agent(body.model_dump())
     return ourcoi.agent()
+
+
+# ---------- in-app help assistant ----------
+
+class HelpIn(BaseModel):
+    messages: list[dict]
+    page: str | None = None
+
+@app.post("/api/help")
+def help_ask(body: HelpIn, request: Request):
+    me = auth.current_user(request) or {}
+    with tx() as c:
+        u = c.execute("SELECT id, name, role FROM users WHERE id=?", (me.get("id"),)).fetchone()
+    return helpbot.ask(body.messages, dict(u) if u else {"id": None, "name": "", "role": "staff"}, body.page)
 
 
 # ---------- month-end close board ----------

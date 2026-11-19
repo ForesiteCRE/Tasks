@@ -1339,3 +1339,28 @@ def test_our_own_coi_per_property(mgr, staff):
     r = ids(mgr.post(f"/api/properties/{pid}/read-document", json={"filename": "pma.pdf", "content_type": "application/pdf",
                                                                     "data_b64": base64.b64encode(b"%PDF pma").decode()}))
     assert "E&O $1M" in r["manager_insurance"]
+
+
+def test_help_assistant(mgr, staff):
+    from app import helpbot
+    CLAUDE.append("Go to Projects ▾ → Projects and click + New project.")
+    r = ids(staff.post("/api/help", json={"messages": [{"role": "user", "content": "How do I start a project?"}], "page": "home"}))
+    assert "New project" in r["reply"]
+    sent = CLAUDE_CALLS[-1]
+    assert "tools" in sent and "Foresite" in sent["system"] and "role: staff" in sent["system"]
+    # the read-only lookups respect permissions
+    with tx() as c:
+        sam = dict(c.execute("SELECT id, name, role FROM users WHERE blink_user_id='u-sam'").fetchone())
+        boss = dict(c.execute("SELECT id, name, role FROM users WHERE email='boss@foresitecre.com'").fetchone())
+    pid = ids(mgr.post("/api/properties", json={"address": "13 Help Ln, Austin, TX"}))["id"]
+    ids(mgr.patch(f"/api/properties/{pid}", json={"bank_name": "Help Bank", "bank_accounts": "Operating 123456789"}))
+    as_staff = helpbot.run_tool("property_info", {"name": "13 Help"}, sam)
+    as_mgr = helpbot.run_tool("property_info", {"name": "13 Help"}, boss)
+    assert as_staff["bank"] == "Help Bank" and "bank_accounts" not in as_staff and as_mgr["bank_accounts"] == "Operating ••6789"
+    assert as_staff["link"] == f"#property-{pid}"
+    t = ids(mgr.post("/api/tasks", json={"title": "Help lookup task", "assignee_id": sam["id"], "due_date": "2020-01-01"}))["id"]
+    found = helpbot.run_tool("find_tasks", {"person": "me", "overdue_only": True}, sam)
+    assert any(x["id"] == t and x["link"] == f"#task-{t}" for x in found["tasks"])
+    assert helpbot.run_tool("my_day", {}, sam)["overdue"]
+    assert "vendors" in helpbot.run_tool("find_vendors", {"trade": "landscaper"}, sam)
+    assert helpbot.run_tool("project_info", {"name": "zzz no such"}, sam)["error"]
