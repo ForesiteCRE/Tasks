@@ -218,6 +218,7 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 .sheetme{padding:4px 12px 10px;font-weight:600}.sheetbtn{display:block;width:100%;text-align:left;border:0;background:none;padding:13px 12px;border-radius:8px;font:inherit;font-size:16px;color:var(--ink);cursor:pointer;text-decoration:none}
 .sheetbtn small{display:block;font-size:12.5px;color:var(--mute);margin-top:2px}
 .ddb .nbadge,#tabbar .nbadge{margin-left:4px}
+.nbadge.mail{background:var(--acc);font-weight:600}
 .ptool{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 10px}.ptool input[type=search]{flex:1;min-width:180px}.ptool select{width:auto}
 .pchips{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px}.pchipf{border:1px solid var(--line);background:#fff;border-radius:99px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer;color:var(--ink)}
 .pchipf span{color:var(--mute);font-size:12px;margin-left:2px}.pchipf.on{background:var(--acc);border-color:var(--acc);color:#fff}.pchipf.on span{color:#e6f2f8}
@@ -355,10 +356,10 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
 <header><h1 class="brand"><img src="/brand/logo.png" alt="Foresite Commercial Real Estate"><span class="app">Task Manager</span></h1>
 <nav id="nav">
   <button data-v="home" class="on">Home<span id="mBadge" class="nbadge hidden" title="Unread @mentions"></span></button>
-  <div class="dd" data-g="properties" data-icon="🏢"><button class="ddb">Properties<span id="emBadge" class="nbadge hidden" title="Emails ready to send"></span> <span class="car">▾</span></button><div class="ddm">
+  <div class="dd" data-g="properties" data-icon="🏢"><button class="ddb">Properties<span id="emBadge" class="nbadge mail hidden" title="Emails ready to send"></span> <span class="car">▾</span></button><div class="ddm">
     <button data-v="properties">🏢 Properties<small>critical dates, vendors, insurance, team</small></button>
     <button data-v="vendors">🧰 Vendors<small>who we've used — ratings, prices &amp; notes</small></button>
-    <button data-v="emails">✉️ Emails to send <span id="emBadge2" class="nbadge hidden"></span><small>insurance &amp; approval emails drafted for you</small></button></div></div>
+    <button data-v="emails">✉️ Emails to send <span id="emBadge2" class="nbadge mail hidden"></span><small>insurance &amp; approval emails drafted for you</small></button></div></div>
   <div class="dd" data-g="projects" data-icon="📁"><button class="ddb">Projects <span class="car">▾</span></button><div class="ddm">
     <button data-v="projects">📁 Projects<small>start a project, progress, bids &amp; approvals</small></button>
     <button data-v="templates" class="mgr">📋 Templates<small>reusable checklists projects are built from</small></button></div></div>
@@ -607,7 +608,7 @@ function markNav(v){const g=groupOf(v);
   document.querySelectorAll('#nav>button[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   document.querySelectorAll('#tabbar button').forEach(b=>b.classList.toggle('on',b.dataset.t===g||(b.dataset.t==='more'&&g==='admin')));}
 async function pollEmails(){try{const r=await api('/api/emails');const n=r.drafts.length;
-  ['#emBadge','#emBadge2','#emBadgeM'].forEach(id=>{const b=$(id);if(b){b.textContent=n>9?'9+':n;b.classList.toggle('hidden',!n);}});}catch(e){}}
+  ['#emBadge','#emBadge2','#emBadgeM'].forEach(id=>{const b=$(id);if(b){b.textContent=(id==='#emBadge2'?'':'✉ ')+(n>9?'9+':n);b.title=`${n} email${n===1?'':'s'} drafted and ready to send (Properties ▾ → Emails to send)`;b.classList.toggle('hidden',!n);}});}catch(e){}}
 function openNavSheet(dd){const sh=$('#navSheet');
   sh.querySelector('.sheet').innerHTML=`<div class="sheethd">${esc(dd.querySelector('.ddb').textContent.replace('▾','').trim())}<button class="xs" aria-label="Close" onclick="closeNavSheet()">✕</button></div>`+dd.querySelector('.ddm').innerHTML;
   sh.classList.remove('hidden');}
@@ -1917,7 +1918,7 @@ async function runReminders(){const r=await api('/api/reminders/run',{method:'PO
 </div>
 <nav id="tabbar" aria-label="Main">
   <button data-t="home" onclick="show('home')"><i>🏠</i>Home<span id="mBadgeM" class="nbadge hidden"></span></button>
-  <button data-t="properties" onclick="openNavSheet(document.querySelector('.dd[data-g=properties]'))"><i>🏢</i>Properties<span id="emBadgeM" class="nbadge hidden"></span></button>
+  <button data-t="properties" onclick="openNavSheet(document.querySelector('.dd[data-g=properties]'))"><i>🏢</i>Properties<span id="emBadgeM" class="nbadge mail hidden"></span></button>
   <button data-t="projects" onclick="openNavSheet(document.querySelector('.dd[data-g=projects]'))"><i>📁</i>Projects</button>
   <button data-t="tasks" onclick="openNavSheet(document.querySelector('.dd[data-g=tasks]'))"><i>✓</i>Tasks</button>
   <button data-t="more" onclick="openMoreSheet()"><i>☰</i>More</button>
