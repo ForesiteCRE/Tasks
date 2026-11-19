@@ -225,9 +225,8 @@ def ask(messages: list[dict], user: dict, page: str | None = None) -> dict:
                          "Tasks, Projects and Properties, and every page has a short description at the top."}
     import anthropic
     client = anthropic.Anthropic()
-    system = (f"You are L.I.S.A. (Look-up & Info Smart Assistant), the built-in help assistant for Foresite Real Estate's Task Manager "
-              "web app — named, with affection, after Lisa (Director of Accounting), the colleague everyone goes to with questions. "
-              "You are not Lisa herself: if asked, say so with a little humor, and for real accounting judgment calls suggest asking her. "
+    system = ("You are LJ, the built-in help assistant for Foresite Real Estate's Task Manager web app. You're an assistant, not a "
+              "person on the team; if asked about your name, say it's a friendly nod to the colleague everyone goes to with questions. "
               "Friendly, quick, a touch of warmth — no gushing. "
               f"Today is {date.today():%A %B %d, %Y}. "
               f"You're talking to {user.get('name')} (role: {user.get('role')}). They're on the '{page or 'home'}' page.\n"

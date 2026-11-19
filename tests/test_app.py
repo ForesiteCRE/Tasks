@@ -1366,17 +1366,18 @@ def test_help_assistant(mgr, staff):
     assert helpbot.run_tool("project_info", {"name": "zzz no such"}, sam)["error"]
 
 
-def test_lisa_answers_questions_in_blink():
+def test_lj_answers_questions_in_blink():
     from app import services as sv
-    assert sv.helpbot_wanted("How do I start a project?") and sv.helpbot_wanted("Lisa, where are vendors?")
+    assert sv.helpbot_wanted("How do I start a project?") and sv.helpbot_wanted("LJ, where are vendors?")
+    assert sv.helpbot_wanted("@LJ vendors for roofing") and sv.helpbot_wanted("hey lj show my day")
     assert sv.helpbot_wanted("what's overdue for me") and sv.helpbot_wanted("who is the PM at 777?")
     assert not sv.helpbot_wanted("done 12") and not sv.helpbot_wanted("finished the rent roll")
     assert not sv.helpbot_wanted("12 is blocked waiting on the owner") and not sv.helpbot_wanted("list")
     assert "http://testserver/#task-12" in sv.blink_links("See [Open task #12](#task-12).")
     CLAUDE.append("Go to Projects ▾ → [Projects](#view-projects) and click + New project.")
     r = services.handle_inbound("u-sam", "How do I start a project?")
-    assert r.startswith("🙋 **L.I.S.A.:**") and "http://testserver/#view-projects" in r
-    assert any(b == "u-sam" and "L.I.S.A." in t for b, t in SENT[-2:])
+    assert r.startswith("🙋 **LJ:**") and "http://testserver/#view-projects" in r
+    assert any(b == "u-sam" and "LJ" in t for b, t in SENT[-2:])
     assert "role: staff" in CLAUDE_CALLS[-1]["system"] and CLAUDE_CALLS[-1]["tools"]
     # updates still go to the task parser
     assert "Comment added" in services.handle_inbound("u-sam", "comment 5 thanks")

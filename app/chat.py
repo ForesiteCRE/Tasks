@@ -30,7 +30,7 @@ HELP = (
 
 def help_text() -> str:
     return HELP + ("\nOr just tell me in plain English what you got done — and ask me anything about the Task Manager "
-                   "(“how do I…?”, “what's overdue for me?”); L.I.S.A. will answer." if ai_enabled() else "")
+                   "(“how do I…?”, “what's overdue for me?”); LJ, the help assistant, will answer." if ai_enabled() else "")
 
 _STATUS_RE = "|".join(sorted(map(re.escape, STATUS_WORDS), key=len, reverse=True))
 CMD_A = re.compile(rf"^\s*({_STATUS_RE})\s*#?(\d+)\s*[:\-]?\s*(.*)$", re.I)  # done 12 note

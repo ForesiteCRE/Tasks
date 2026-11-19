@@ -197,7 +197,7 @@ def handle_inbound(blink_user_id: str, text: str, files: list[dict] | None = Non
         blink.send_dm(blink_user_id, reply)
         return reply
 
-    # Questions about the app or the data → L.I.S.A. (updates like "done 12" keep going to the task parser)
+    # Questions about the app or the data → LJ, the help assistant (updates like "done 12" keep going to the task parser)
     if rule is None and helpbot_wanted(text or "") and chat.ai_enabled():
         from . import helpbot
         hist = []
@@ -205,7 +205,7 @@ def handle_inbound(blink_user_id: str, text: str, files: list[dict] | None = Non
             if h["user_text"]:
                 hist += [{"role": "user", "content": h["user_text"]}, {"role": "assistant", "content": h["reply"] or ""}]
         ans = helpbot.ask(hist + [{"role": "user", "content": text}], dict(u), "blink")["reply"]
-        reply = "🙋 **L.I.S.A.:** " + blink_links(ans)
+        reply = "🙋 **LJ:** " + blink_links(ans)
         chat.remember(u["id"], text, reply)
         blink.send_dm(blink_user_id, reply)
         return reply
@@ -302,12 +302,12 @@ _UPDATE_WORDS = re.compile(r"\b(done|finished|completed|complete|blocked|started
 
 
 def helpbot_wanted(text: str) -> bool:
-    """Is this a question for L.I.S.A. rather than a task update?"""
+    """Is this a question for LJ (the help assistant) rather than a task update?"""
     t = (text or "").strip()
     if not t:
         return False
-    if re.match(r"^\s*@?lisa\b|^\s*l\.i\.s\.a\b", t, re.I):
-        return True                                   # "Lisa, how do I…" always goes to her
+    if re.match(r"^\s*(hey\s+|hi\s+)?@?l\.?j\.?\b", t, re.I):
+        return True                                   # "LJ, how do I…" always goes to the assistant
     if re.search(r"#\d+|^\s*\d+\b", t) and not t.endswith("?"):
         return False                                  # mentions a task number → an update
     if _UPDATE_WORDS.search(t) and not t.endswith("?"):
@@ -318,7 +318,7 @@ def helpbot_wanted(text: str) -> bool:
 
 
 def blink_links(text: str) -> str:
-    """L.I.S.A.'s in-app links (#task-12) → web links people can tap in Blink."""
+    """LJ's in-app links (#task-12) → web links people can tap in Blink."""
     url = os.getenv("PUBLIC_URL", "").rstrip("/")
     def sub(m):
         return f"{m.group(1)} ({url}/{m.group(2)})" if url else m.group(1)

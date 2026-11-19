@@ -255,7 +255,7 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
   box-shadow:0 18px 50px rgba(20,35,50,.3);display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--line)}
 .lisahd{display:flex;gap:10px;align-items:center;padding:12px 12px 10px;background:linear-gradient(135deg,#549FC5,#3A4750);color:#fff}.lisahd .sub{color:#d9ecf5;font-size:11.5px}
 .lisahd .xs{background:rgba(255,255,255,.18);color:#fff;border:0;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:14px}
-.lisaav{width:36px;height:36px;border-radius:50%;background:#A5D172;color:#2d3a20;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;flex:none}
+.lisaav{width:36px;height:36px;border-radius:50%;background:#A5D172;color:#2d3a20;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex:none}
 #lisaMsgs{flex:1;overflow-y:auto;padding:12px;background:#f6f8fa}
 .lmsg{max-width:88%;margin:0 0 10px;padding:9px 12px;border-radius:14px;font-size:14px;line-height:1.45}.lmsg p{margin:0 0 6px}.lmsg p:last-child{margin:0}
 .lmsg ul{margin:4px 0 4px 18px;padding:0}.lmsg li{margin:2px 0}.lmsg code{background:#eef1f4;padding:0 4px;border-radius:4px}
@@ -1318,7 +1318,7 @@ async function ourAgent(){const a=await api('/api/our-coi/agent');
     <div class="row" style="justify-content:flex-end"><button class="b ghost" onclick="taskDlg.close()">Cancel</button><button class="b" onclick="api('/api/our-coi/agent',{method:'PUT',body:{name:$('#agN').value,company:$('#agC').value,email:$('#agE').value}}).then(()=>{taskDlg.close();openProperty(PROP.id);toast('Saved')})">Save</button></div>`;
   if(!taskDlg.open)taskDlg.showModal();}
 
-/* ---------- L.I.S.A. — in-app help assistant ---------- */
+/* ---------- LJ — in-app help assistant ---------- */
 let LISA=(()=>{try{return JSON.parse(sessionStorage.getItem('lisa')||'[]')}catch(e){return[]}})(),LISA_BUSY=false;
 const LISA_SUGGEST=["How do I start a project?","What's overdue for me?","Who's the property manager at 777 E Sonterra?","Which landscapers are recommended?","How do owner approvals work?","What does Blocked by what? do?"];
 function lisaSave(){try{sessionStorage.setItem('lisa',JSON.stringify(LISA.slice(-20)))}catch(e){}}
@@ -1332,7 +1332,7 @@ function lisaGo(h){const m=h.match(/^#(task|project|property|vendor|view)-(.+)$/
   if(innerWidth<760)lisaToggle(false);
   ({task:()=>openTask(+m[2]),project:()=>openProject(+m[2]),property:()=>openProperty(+m[2]),vendor:()=>openVendor(+m[2]),view:()=>show(m[2])})[m[1]]();return false;}
 function lisaRender(){const box=$('#lisaMsgs');
-  box.innerHTML=(LISA.length?'':`<div class="lmsg bot"><p>Hi ${esc((ME.name||'').split(' ')[0])}! I'm <b>L.I.S.A.</b> 👋 Ask me how to do anything in the Task Manager — or ask me to look something up (tasks, properties, vendors, projects).</p></div>
+  box.innerHTML=(LISA.length?'':`<div class="lmsg bot"><p>Hi ${esc((ME.name||'').split(' ')[0])}! I'm <b>LJ</b> 👋 Ask me how to do anything in the Task Manager — or ask me to look something up (tasks, properties, vendors, projects).</p></div>
       <div class="lsugg">${LISA_SUGGEST.map(q=>`<button onclick="lisaSend(${esc(JSON.stringify(q))})">${esc(q)}</button>`).join('')}</div>`)
     +LISA.map(m=>`<div class="lmsg ${m.role==='user'?'me':'bot'}">${m.role==='user'?`<p>${esc(m.content)}</p>`:lisaMd(m.content)}</div>`).join('')
     +(LISA_BUSY?'<div class="lmsg bot typing"><span></span><span></span><span></span></div>':'');
@@ -1816,9 +1816,9 @@ async function runReminders(){const r=await api('/api/reminders/run',{method:'PO
   const c=await api('/api/config');if(!c.simulator)$('#chatTab').remove();})();
 </script>
 <div id="navSheet" class="hidden"><div class="sheet"></div></div>
-<button id="lisaBtn" onclick="lisaToggle()" aria-label="Ask L.I.S.A., the help assistant" title="Ask L.I.S.A.">💬<span>Ask L.I.S.A.</span></button>
-<div id="lisa" class="hidden" role="dialog" aria-label="L.I.S.A. help assistant">
-  <div class="lisahd"><div class="lisaav">L</div><div class="grow"><b>L.I.S.A.</b><div class="sub">Look-up &amp; Info Smart Assistant · named after the person everyone asks</div></div>
+<button id="lisaBtn" onclick="lisaToggle()" aria-label="Ask LJ, the help assistant" title="Ask LJ">💬<span>Ask LJ</span></button>
+<div id="lisa" class="hidden" role="dialog" aria-label="LJ help assistant">
+  <div class="lisahd"><div class="lisaav">LJ</div><div class="grow"><b>LJ</b><div class="sub">Your Task Manager assistant — how-tos &amp; look-ups</div></div>
     <button class="xs" onclick="lisaNew()" title="New conversation">↺</button><button class="xs" onclick="lisaToggle(false)" aria-label="Close">✕</button></div>
   <div id="lisaMsgs"></div>
   <div class="lisain"><textarea id="lisaQ" rows="1" placeholder="Ask how to do something, or look something up…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();lisaSend()}"></textarea><button class="b" onclick="lisaSend()">Send</button></div>
