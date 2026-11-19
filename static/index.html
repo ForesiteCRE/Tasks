@@ -36,7 +36,7 @@ dialog.wide{max-width:900px}
 .tl td{padding:7px 8px}.tl .proj{font-size:12px;color:var(--mute);max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tl tr.tgrp td{background:#fafbfc;font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);padding:8px}
 .tl tr.tgrp.red td{color:var(--bad)}.tl tr.done td{opacity:.6}
 #me{white-space:nowrap;font-size:13px}
-@media (max-width:760px){body>header{flex-wrap:wrap;gap:6px;padding:10px 12px}body>header h1 .mute{display:none}#me{margin-left:auto}#nav{order:3;flex-basis:100%}.ddm{position:fixed;left:12px;right:12px;top:auto}}
+@media (max-width:760px){body>header{flex-wrap:wrap;gap:6px;padding:10px 12px}body>header h1 .mute{display:none}#me{margin-left:auto}#nav{order:3;flex-basis:100%}.dd.open .ddm{display:none}}
 header h1{font-size:17px;margin:0}nav button{background:none;border:0;padding:8px 12px;border-radius:6px;cursor:pointer;font:inherit;color:var(--mute)}
 nav button.on{background:#e6f2f8;color:var(--acc);font-weight:600}
 main{max-width:1200px;margin:0 auto;padding:20px 16px}.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
@@ -200,11 +200,15 @@ details.danger p{margin:8px 0}details.danger input{display:block;width:100%;marg
 .crow .tt{font-size:14.5px}.crow.od .tt{color:var(--bad)}.crow.isdone .tt{text-decoration:line-through;color:var(--mute)}
 #calList .grp{margin:16px 0 4px;font-weight:700;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink)}#calList .grp.red{color:var(--bad)}#calList .grp.tday{color:var(--acc)}
 #calMode{margin-left:8px}
+#navSheet{position:fixed;inset:0;z-index:70;background:rgba(20,30,40,.38)}
+#navSheet .sheet{position:absolute;left:10px;right:10px;top:calc(env(safe-area-inset-top,0px) + 64px);max-height:calc(100% - 84px);overflow-y:auto;-webkit-overflow-scrolling:touch;background:#fff;border-radius:12px;padding:6px 6px 10px;box-shadow:0 12px 40px rgba(0,0,0,.25)}
+#navSheet .sheethd{display:flex;justify-content:space-between;align-items:center;padding:8px 10px 6px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+#navSheet .xs{border:0;background:#eef1f4;border-radius:50%;width:30px;height:30px;font-size:14px;cursor:pointer}
+#navSheet button[data-v]{display:block;width:100%;text-align:left;border:0;background:none;padding:13px 12px;border-radius:8px;font:inherit;font-size:16px;color:var(--ink);cursor:pointer}
+#navSheet button[data-v]:active,#navSheet button[data-v].on{background:#e6f2f8}#navSheet button small{display:block;font-size:12.5px;color:var(--mute);margin-top:2px}
 /* ---------- phones ---------- */
 @media (max-width:640px){
   html,body{overflow-x:hidden}
-  .ddm{max-height:calc(100dvh - 120px);overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
-  .ddm button{padding:11px 14px}.ddm button small{display:none}
   #nav{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}#nav::-webkit-scrollbar{display:none}
   nav button,.ddb{padding:10px 8px;letter-spacing:.04em}
   main .row{flex-wrap:wrap}main .row>*{min-width:0;max-width:100%}
@@ -466,8 +470,18 @@ function show(v){document.querySelectorAll('nav button[data-v]').forEach(b=>b.cl
   if(v==='tasks')renderTasks();document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-'+v));
   if(v==='home')renderHome();if(v==='chat')loadChat();if(v==='admin')loadAdmin();if(v==='calendar')renderCalendar();if(v==='team')renderTeam();if(v==='properties')renderProperties(true);if(v==='history')renderHistory();if(v==='close')closeGo(CLOSE.month);if(v==='vendors')renderVendors(true);}
 $('#nav').onclick=e=>{const b=e.target.closest('button');if(!b)return;
+  if(b.classList.contains('ddb')&&matchMedia('(max-width:760px)').matches){openNavSheet(b.parentElement);return;}
   if(b.classList.contains('ddb')){const d=b.parentElement,o=!d.classList.contains('open');document.querySelectorAll('.dd').forEach(x=>x.classList.remove('open'));d.classList.toggle('open',o);return;}
   if(b.dataset.v)show(b.dataset.v)};
+/* Phones: menus open as a panel attached to the page (not inside the swipeable menu bar, which iPhone's
+   browser clips — so the dropdown never appeared there). */
+function openNavSheet(dd){const sh=$('#navSheet');
+  sh.querySelector('.sheet').innerHTML=`<div class="sheethd">${esc(dd.querySelector('.ddb').textContent.replace('▾','').trim())}<button class="xs" aria-label="Close" onclick="closeNavSheet()">✕</button></div>`+dd.querySelector('.ddm').innerHTML;
+  sh.classList.remove('hidden');}
+function closeNavSheet(){$('#navSheet').classList.add('hidden');}
+document.addEventListener('click',e=>{const sh=$('#navSheet');if(!sh||sh.classList.contains('hidden'))return;
+  const b=e.target.closest('#navSheet button[data-v]');if(b){closeNavSheet();show(b.dataset.v);return;}
+  if(e.target===sh)closeNavSheet();});
 document.addEventListener('click',e=>{if(!e.target.closest('.dd'))document.querySelectorAll('.dd').forEach(x=>x.classList.remove('open'))});
 const userOpts=(sel,blank='Unassigned')=>`<option value="">${blank}</option>`+USERS.map(u=>`<option value="${u.id}" ${u.id==sel?'selected':''}>${esc(u.name)}</option>`).join('');
 const statusSel=(t)=>`<select class="pill ${t.status}" ${canEdit(t)?'':'disabled'} onchange="setStatus(${t.id},this.value)">${Object.keys(LBL).map(s=>`<option value="${s}" ${s===t.status?'selected':''}>${LBL[s]}</option>`).join('')}</select>`;
@@ -1408,4 +1422,5 @@ async function runReminders(){const r=await api('/api/reminders/run',{method:'PO
   await refresh();renderHome();pollUnread();setInterval(pollUnread,60000);
   const c=await api('/api/config');if(!c.simulator)$('#chatTab').remove();})();
 </script>
+<div id="navSheet" class="hidden"><div class="sheet"></div></div>
 </body></html>
