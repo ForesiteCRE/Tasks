@@ -122,6 +122,7 @@ class ProjectIn(BaseModel):
     template_id: int | None = None
     start_date: date | None = None
     property: str | None = None
+    property_id: int | None = None              # pick an existing property page (preferred over typing an address)
     client: str | None = None
     description: str | None = None
     team: dict[str, int | None] | None = None   # role_id -> user_id
@@ -490,6 +491,13 @@ def create_project(p: ProjectIn, request: Request):
 
 def _create_project(p: ProjectIn) -> int:
     start = p.start_date or date.today()
+    if p.property_id:
+        with tx() as c:
+            pr = c.execute("SELECT address, client, owner_entity FROM properties WHERE id=? AND archived_at IS NULL", (p.property_id,)).fetchone()
+        if not pr:
+            raise HTTPException(400, "That property isn't on the property list (it may be archived).")
+        p.property = pr["address"]
+        p.client = p.client or pr["client"] or pr["owner_entity"]
     details = {"property": p.property, "client": p.client, "description": p.description}
     every = {"monthly": 1, "quarterly": 3, "yearly": 12}.get((p.repeat or "").lower())
     if p.repeat and not every:

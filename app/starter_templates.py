@@ -320,6 +320,9 @@ def create_samples(keys: list[str]) -> list[str]:
         if s["key"] not in keys or s["key"] not in SAMPLE_PROJECTS:
             continue
         name, prop, client, start_offset = SAMPLE_PROJECTS[s["key"]]
+        if prop:   # sample projects bring their (sample) property page with them
+            from . import properties
+            properties.find_or_create(prop, client)
         if name in have or s["name"] not in tpl_ids:
             continue
         pid = services.create_project_from_template(

@@ -575,7 +575,9 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
       <select id="pTpl" onchange="renderPreview();repeatHint()"></select><label class="mute">Start <input id="pStart" type="date" onchange="renderPreview()"></label>
       <select id="pRepeat" onchange="repeatHint()" title="Repeat this project"><option value="">Doesn't repeat</option><option value="monthly">🔁 Every month</option><option value="quarterly">🔁 Every quarter</option><option value="yearly">🔁 Every year</option></select></div>
     <p id="pRepeatHint" class="mute hidden" style="margin:2px 0 6px;font-size:12.5px"></p>
-    <div class="row"><input id="pProp" placeholder="Property / address" style="flex:1;min-width:200px" oninput="clearTimeout(window._pp);window._pp=setTimeout(propTeamFill,450)"><input id="pClient" placeholder="Client / owner" style="flex:1;min-width:200px"></div>
+    <div class="row"><div style="flex:1;min-width:200px;position:relative"><input id="pPropQ" list="pPropList" placeholder="🏢 Property — type to search (optional)" autocomplete="off" style="width:100%" oninput="pPropPick()" onchange="pPropPick(true)"><datalist id="pPropList"></datalist>
+      <input type="hidden" id="pProp"><input type="hidden" id="pPropId"><div id="pPropHint" class="mute" style="font-size:12px;margin-top:3px">No property — leave blank for work that isn't tied to a building.</div></div>
+      <input id="pClient" placeholder="Client / owner" style="flex:1;min-width:200px"></div>
     <textarea id="pNotes" rows="2" placeholder="Summary / key terms (optional)"></textarea>
     <details id="pTeamBox"><summary class="mute" style="cursor:pointer">👥 Team <span id="pTeamSum"></span></summary><div id="pTeam" class="team-grid"></div></details>
     <div id="pPreview"></div>
@@ -1093,12 +1095,12 @@ async function closeGo(period){const q=new URLSearchParams();if(period)q.set('pe
     <tfoot><tr><td class="prop mute">Done</td>${b.columns.map(c=>`<td class="cl mute">${b.totals[c]}/${b.rows.length}</td>`).join('')}</tr></tfoot>`
     :`<tbody><tr><td class="empty" style="padding:18px">No projects from this template ${W?'this '+W:'right now'}.${b.periods.length?` Other ${W}s: ${b.periods.slice(0,6).map(m=>`<span class="tlink" onclick="closeGo('${m}')">${m}</span>`).join(', ')}`:' Start one with “+ New project” using this template.'}</td></tr></tbody>`;
   $('#closeMissing').innerHTML=b.missing.length?`<div class="warnbox" style="margin-top:12px"><b>Had one last ${W} but not started this ${W}:</b> ${b.missing.map(m=>`<span class="tlink" onclick="openProperty(${m.property_id})">${esc(m.label)}</span>${isMgr()?` <button class="b ghost sm" onclick="startClose(${m.property_id})">Start</button>`:''}`).join(' · ')}</div>`:'';}
-async function propNewProject(){const p=PROP;openNewProject();$('#pProp').value=p.address;$('#pClient').value=p.client||'';
+async function propNewProject(){const p=PROP;openNewProject();await pPropList();pPropByAddress(p.address);$('#pClient').value=p.client||'';
   await propTeamFill();renderPreview();}
 async function propAddTask(){const id=PROP.id;show('tasks');$('#qCard').classList.add('open');await qProps();$('#qProp').value=id;qFill();$('#qTitle').focus();
   toast('Adding a task at '+PROP.name+' — pick one of its projects or leave “No project”');}
 async function startClose(propId){const p=await api('/api/properties/'+propId);openNewProject();
-  $('#pTpl').value=CLOSE.template_id;$('#pProp').value=p.address;$('#pClient').value=p.client||'';$('#pStart').value=CLOSE.start_date;
+  await pPropList();pPropByAddress(p.address);$('#pTpl').value=CLOSE.template_id;$('#pClient').value=p.client||'';$('#pStart').value=CLOSE.start_date;
   const tn=(CLOSE.templates.find(x=>x.id===CLOSE.template_id)||{}).name||'';$('#pName').value=`${CLOSE.period_kind==='none'?'':CLOSE.label+' – '}${tn} (${p.name})`;
   await propTeamFill();renderPreview();}
 
@@ -2063,16 +2065,33 @@ async function delTpl(id){if(confirm('Delete template?')){await api('/api/templa
 function repeatHint(){const v=$('#pRepeat').value,h=$('#pRepeatHint');h.classList.toggle('hidden',!v);if(!v)return;
   const d=$('#pStart').value?new Date($('#pStart').value+'T12:00'):new Date(),n=$('#pName').value||'Project name';
   h.innerHTML=$('#pTpl').value?`A fresh copy is created ${({monthly:'every month',quarterly:'every 3 months',yearly:'every year'})[v]} on day ${d.getDate()}, named like “${esc(n)} – ${d.toLocaleString(undefined,{month:'long'})} ${d.getFullYear()}”.`:'<span class="over">Choose a template — each repeat is built from it.</span>';}
-function openNewProject(fromDoc){renderNewTeam();renderPreview();newProjDlg.showModal();setTimeout(()=>fromDoc?$('#pDoc').click():$('#pName').focus(),50);}
+/* new project: choose from the property list (no new pages from here) */
+const pPropLabel=p=>`${p.name} — ${p.address}`;
+async function pPropList(){if(!PROPS.length){try{PROPS=await api('/api/properties')}catch(e){}}
+  $('#pPropList').innerHTML=PROPS.map(p=>`<option value="${esc(pPropLabel(p))}"></option>`).join('');}
+function pPropSet(p){$('#pPropQ').value=p?pPropLabel(p):'';$('#pProp').value=p?p.address:'';$('#pPropId').value=p?p.id:'';
+  $('#pPropHint').innerHTML=p?`Linked to <b>${esc(p.name)}</b> — its team fills in below.`:'No property — leave blank for work that isn\'t tied to a building.';
+  if(p&&!$('#pClient').value)$('#pClient').value=p.client||p.owner_entity||'';propTeamFill();}
+function pPropPick(final){const q=$('#pPropQ').value.trim(),ql=q.toLowerCase();
+  const p=PROPS.find(x=>pPropLabel(x)===q)||(final?PROPS.find(x=>x.name.toLowerCase()===ql||x.address.toLowerCase()===ql):null);
+  if(p){pPropSet(p);return;}
+  $('#pProp').value='';$('#pPropId').value='';
+  if(!q){pPropSet(null);return;}
+  if(final){const n=PROPS.filter(x=>(x.name+' '+x.address).toLowerCase().includes(ql)).length;
+    $('#pPropHint').innerHTML=`<span class="over">“${esc(q)}” isn't on the property list.</span> Pick one from the suggestions${n?` (${n} match${n>1?'es':''})`:''}, leave it blank for no property, or add it first under Properties → + Add property.`;}}
+function pPropByAddress(a){const n=s=>(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');const p=PROPS.find(x=>n(x.address)===n(a)||n(x.name)===n(a));
+  if(p)pPropSet(p);else{pPropSet(null);if(a){$('#pPropQ').value=a;pPropPick(true);}}}
+function openNewProject(fromDoc){renderNewTeam();pPropList();renderPreview();newProjDlg.showModal();setTimeout(()=>fromDoc?$('#pDoc').click():$('#pName').focus(),50);}
 async function newProject(){const name=$('#pName').value.trim();if(!name){alert('Give the project a name.');return;}
-  await api('/api/projects',{method:'POST',body:{name,template_id:+$('#pTpl').value||null,start_date:$('#pStart').value||null,property:$('#pProp').value||null,client:$('#pClient').value||null,description:$('#pNotes').value||null,team:newTeam(),repeat:$('#pRepeat').value||null}});
-  ['#pName','#pProp','#pClient','#pNotes','#pRepeat'].forEach(x=>$(x).value='');window.PTEAM_FROM=null;repeatHint();$('#pDocInfo').textContent='';$('#pTpl').value='';$('#pTeam').innerHTML='';newProjDlg.close();await refresh();toast('Project created');show('projects');}
+  if($('#pPropQ').value.trim()&&!$('#pPropId').value){alert('Pick the property from the list (or clear it for no property). New properties are added on the Properties page.');return;}
+  await api('/api/projects',{method:'POST',body:{name,template_id:+$('#pTpl').value||null,start_date:$('#pStart').value||null,property:$('#pProp').value||null,property_id:+$('#pPropId').value||null,client:$('#pClient').value||null,description:$('#pNotes').value||null,team:newTeam(),repeat:$('#pRepeat').value||null}});
+  ['#pName','#pProp','#pClient','#pNotes','#pRepeat'].forEach(x=>$(x).value='');pPropSet(null);window.PTEAM_FROM=null;repeatHint();$('#pDocInfo').textContent='';$('#pTpl').value='';$('#pTeam').innerHTML='';newProjDlg.close();await refresh();toast('Project created');show('projects');}
 async function fromDoc(inp){const f=inp.files[0];inp.value='';if(!f)return;
   if(f.size>25e6){alert('That file is over 25 MB.');return;}
   $('#pDocInfo').textContent=`⏳ Reading ${f.name}… (can take ~30 seconds)`;
   const b64=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result.split(',')[1]);fr.readAsDataURL(f)});
   let r;try{r=await api('/api/intake/extract',{method:'POST',body:{filename:f.name,content_type:f.type,data_b64:b64}})}catch(e){$('#pDocInfo').textContent='';return;}
-  const d=r.draft;$('#pName').value=d.project_name||'';$('#pProp').value=d.property||'';$('#pClient').value=d.client||'';$('#pNotes').value=d.notes||'';
+  const d=r.draft;$('#pName').value=d.project_name||'';await pPropList();pPropByAddress(d.property||'');$('#pClient').value=d.client||'';$('#pNotes').value=d.notes||'';
   if(d.start_date)$('#pStart').value=d.start_date;$('#pTpl').value=d.template_id||'';await propTeamFill();
   $('#pTeam').querySelectorAll('select').forEach(x=>{const m=d.team.find(m=>m.role_id==x.dataset.role);if(m)x.value=m.user_id});teamSum();
   $('#pTeamBox').open=true;renderPreview();

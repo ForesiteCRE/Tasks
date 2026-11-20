@@ -142,15 +142,22 @@ def find_or_create(address: str, client: str | None = None, c=None) -> int | Non
         return go(c2)
 
 
-def link_all(quiet: bool = False):
-    """Attach every project that has an address but no property yet (cheap; safe to call often).
-    A newly attached project takes on the property's team."""
+def link_all(quiet: bool = False, create: bool = False):
+    """Attach every project that has an address but no property yet to the matching property page (cheap; safe to
+    call often). Only existing, active pages are matched — new pages are made on the Properties page (or by imports);
+    create=True is used by the demo/sample loaders. A newly attached project takes on the property's team."""
     with tx() as c:
         linked = []
         for p in c.execute("""SELECT id, property, client FROM projects WHERE property_id IS NULL AND is_general=0
                               AND COALESCE(property_detached,0)=0 AND COALESCE(TRIM(property),'')!=''""").fetchall():
-            c.execute("UPDATE projects SET property_id=? WHERE id=?", (find_or_create(p["property"], p["client"], c), p["id"]))
-            linked.append(p["id"])
+            if create:
+                prop = find_or_create(p["property"], p["client"], c)
+            else:
+                r = c.execute("SELECT id FROM properties WHERE norm=? AND archived_at IS NULL", (norm(p["property"]),)).fetchone()
+                prop = r[0] if r else None
+            if prop:
+                c.execute("UPDATE projects SET property_id=? WHERE id=?", (prop, p["id"]))
+                linked.append(p["id"])
     for pid in linked:
         if quiet:
             with blink.quiet():

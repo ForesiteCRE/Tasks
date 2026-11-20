@@ -1848,3 +1848,17 @@ def test_vendor_directory_import(mgr, staff):
     assert again["created"] == 0 and again["updated"] == 3                       # no duplicates
     names = [v["name"] for v in ids(mgr.get("/api/vendors"))["vendors"]]
     assert "A Tenant LLC" not in names and names.count("Zeta Drafting") == 1
+
+
+def test_projects_only_link_to_existing_properties(mgr):
+    # typing an unknown address no longer creates a property page
+    pid = ids(mgr.raw_post("/api/projects", json={"name": "Loose address", "property": "999 Nowhere Pkwy, Austin, TX"}))["id"]
+    assert "999 Nowhere Pkwy, Austin, TX" not in [p["address"] for p in ids(mgr.get("/api/properties"))]
+    assert next(p for p in ids(mgr.get("/api/projects")) if p["id"] == pid)["property_id"] is None
+    # picking a property from the list links it and fills the address
+    prop = ids(mgr.post("/api/properties", json={"address": "31 Picked Pl, San Antonio, TX", "client": "Picked LLC"}))["id"]
+    pj = ids(mgr.raw_post("/api/projects", json={"name": "Picked", "property_id": prop}))["id"]
+    p = next(x for x in ids(mgr.get("/api/projects")) if x["id"] == pj)
+    assert p["property_id"] == prop and p["property"] == "31 Picked Pl, San Antonio, TX" and p["client"] == "Picked LLC"
+    # no property is fine
+    ids(mgr.raw_post("/api/projects", json={"name": "No property at all"}))

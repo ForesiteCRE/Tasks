@@ -319,7 +319,7 @@ def load(me_id: int) -> dict:
         from . import properties
         with tx() as c:
             before = {r[0] for r in c.execute("SELECT id FROM properties")}
-        properties.link_all()
+        properties.link_all(create=True)
         with tx() as c:
             m["properties"] = [r[0] for r in c.execute("SELECT id FROM properties") if r[0] not in before]
             hq = c.execute("SELECT property_id FROM projects WHERE id=?", (onb,)).fetchone() if onb else None
@@ -392,7 +392,7 @@ def load(me_id: int) -> dict:
                     t = _task(pid, blocked)
                     if t:
                         services.apply_update(t, ids["Maria Garza"], "web", "blocked", "Waiting on owner to approve the roof invoice")
-            properties.link_all()
+            properties.link_all(create=True)
             with tx() as c:
                 m["properties"] += [r[0] for r in c.execute("SELECT id FROM properties") if r[0] not in before and r[0] not in m["properties"]]
 

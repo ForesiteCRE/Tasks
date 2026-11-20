@@ -74,6 +74,15 @@ def login(client: TestClient, email: str, name: str) -> dict:
 def mgr():
     with TestClient(app) as c:
         c.me = login(c, "boss@foresitecre.com", "Bethany Boss")
+        # Projects only link to property pages that already exist; most tests start a project at a new address,
+        # so (like a manager would) add the property first.
+        raw_post = c.post
+        def post(url, *a, **kw):
+            body = kw.get("json") or {}
+            if url == "/api/projects" and body.get("property") and not body.get("property_id"):
+                raw_post("/api/properties", json={"address": body["property"]})
+            return raw_post(url, *a, **kw)
+        c.post, c.raw_post = post, raw_post
         yield c
 
 
