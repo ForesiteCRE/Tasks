@@ -889,7 +889,7 @@ function insChip(ins){const m={ok:['ok','🛡 '],not_named:['bad','⚠️ '],unv
   return `<span class="pchip ${m[0]}">${m[1]}${esc(ins.label)}${ins.expires&&ins.state!=='missing'?` · exp. ${fmtDate(ins.expires)}`:''}</span>`;}
 const money=n=>'$'+Number(n).toLocaleString(undefined,{maximumFractionDigits:0});
 function renderProperty(){const p=PROP,mg=isMgr(),dis=mg?'':'disabled',open=p.dates.filter(d=>d.status==='open'),done=p.dates.filter(d=>d.status!=='open');
-  $('#propPage').innerHTML=`<div class="row" style="margin:0 0 10px;justify-content:space-between"><button class="b ghost" onclick="show('properties')">← All properties</button>${mg&&!p.archived_at?`<button class="b ghost" onclick="propArchive(${p.id})">🗄 Archive property</button>`:''}</div>
+  $('#propPage').innerHTML=`<div class="row" style="margin:0 0 10px;justify-content:space-between"><button class="b ghost" onclick="show('properties')">← All properties</button></div>
   ${p.archived_at?`<div class="warnbox" style="margin:0 0 12px">🗄 <b>Archived property</b> — hidden from the Properties page and pickers, and its critical-date reminders are paused.${mg?` <button class="b sm" style="margin-left:6px" onclick="propArchive(${p.id},true)">Unarchive</button>`:''}</div>`:''}
   <div class="card" style="padding:0;overflow:hidden">${propBanner(p,190,true)}<div style="padding:14px 16px">
     <h2 style="margin:0 0 8px">${mg?`<input value="${esc(p.name)}" style="font:inherit;font-weight:600;width:100%" onchange="propPatch({name:this.value})">`:esc(p.name)}</h2>
@@ -946,6 +946,7 @@ function renderProperty(){const p=PROP,mg=isMgr(),dis=mg?'':'disabled',open=p.da
         <label>Company<input id="ctCompany"></label><label>Email<input id="ctEmail" type="email"></label><label>Phone<input id="ctPhone" type="tel"></label><label>Notes<input id="ctNotes"></label></div>
         <div class="row" style="justify-content:flex-end"><button class="b" onclick="ctAdd()">Add contact</button></div></details>`:''}</div></div>
   </div></div>
+  ${mg&&!p.archived_at?`<div class="row" style="margin:18px 0 0;gap:8px;align-items:center"><button class="b ghost" onclick="propArchive(${p.id})">🗄 Archive property</button><span class="mute" style="font-size:12px">Keeps everything; hides it and its projects from day-to-day lists. Unarchive any time.</span></div>`:''}
   ${mg?`<details class="danger"><summary>Danger zone</summary><p>Deleting removes this property page with its critical dates, contacts and documents. Projects and tasks are kept (just unlinked).</p>
     <label>Type the property name <b>${esc(p.name)}</b> to confirm<input id="propDelConfirm" autocomplete="off"></label>
     <button class="b" style="background:var(--bad);border-color:var(--bad);margin-top:8px" onclick="delProperty()">Delete property page</button></details>`:''}`;
