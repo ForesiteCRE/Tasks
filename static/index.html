@@ -301,6 +301,10 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
 .rpkgtab td{border-top:1px solid var(--line);padding:7px 8px;vertical-align:top}.rpkgtab td:nth-child(2){width:90px;white-space:nowrap}.rpkgtab td:nth-child(3){width:45%}
 .rpkg{display:flex;flex-wrap:wrap;gap:5px}.rpkg label{display:inline-flex;gap:5px;align-items:center;font-size:12.5px;padding:4px 9px;border:1px solid var(--line);border-radius:99px;background:#fff;cursor:pointer}
 .rpkg label.on{background:#e8f2fa;border-color:#b6d4ea;color:#1f5f8a;font-weight:600}.rpkg input{margin:0}
+.psugg{position:absolute;left:0;right:0;top:100%;z-index:60;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.14);margin-top:4px;max-height:320px;overflow:auto}
+.psugg .ps{padding:8px 12px;cursor:pointer;border-bottom:1px solid #f0f2f4;font-size:13.5px}.psugg .ps:last-child{border-bottom:0}
+.psugg .ps b{display:block;font-weight:600}.psugg .ps span{display:block;font-size:12px;color:var(--mute)}.psugg .ps.on,.psugg .ps:hover{background:#eef5fb}
+.psugg .ps.none{cursor:default;color:var(--mute);font-size:12.5px}.psugg mark{background:#fff3a8;color:inherit;padding:0;border-radius:2px}
 /* ---------- phones ---------- */
 @media (max-width:640px){
   html,body{overflow-x:hidden}
@@ -575,7 +579,7 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
       <select id="pTpl" onchange="renderPreview();repeatHint()"></select><label class="mute">Start <input id="pStart" type="date" onchange="renderPreview()"></label>
       <select id="pRepeat" onchange="repeatHint()" title="Repeat this project"><option value="">Doesn't repeat</option><option value="monthly">🔁 Every month</option><option value="quarterly">🔁 Every quarter</option><option value="yearly">🔁 Every year</option></select></div>
     <p id="pRepeatHint" class="mute hidden" style="margin:2px 0 6px;font-size:12.5px"></p>
-    <div class="row"><div style="flex:1;min-width:200px;position:relative"><input id="pPropQ" list="pPropList" placeholder="🏢 Property — type to search (optional)" autocomplete="off" style="width:100%" oninput="pPropPick()" onchange="pPropPick(true)"><datalist id="pPropList"></datalist>
+    <div class="row"><div style="flex:1;min-width:200px;position:relative"><input id="pPropQ" placeholder="🏢 Property — start typing a name or address (optional)" autocomplete="off" style="width:100%" oninput="pPropPick()" onchange="pPropPick(true)">
       <input type="hidden" id="pProp"><input type="hidden" id="pPropId"><div id="pPropHint" class="mute" style="font-size:12px;margin-top:3px">No property — leave blank for work that isn't tied to a building.</div></div>
       <input id="pClient" placeholder="Client / owner" style="flex:1;min-width:200px"></div>
     <textarea id="pNotes" rows="2" placeholder="Summary / key terms (optional)"></textarea>
@@ -802,12 +806,14 @@ function renderPreview(){const t=TPLS.find(t=>t.id==$('#pTpl').value);if(!t){$('
      <td>${tplItemWho(i,team)}</td><td class="mute" style="white-space:nowrap">${due(i.due_offset_days)}</td></tr>`).join('')}</table></div>`;}
 
 /* ---------- project details & team dialog ---------- */
-async function openProject(pid){const p=PROJECTS.find(x=>x.id===pid);if(!p)return;if(!PROPS.length){try{PROPS=await api('/api/properties')}catch(e){}}const mg=isMgr(),dis=mg?'':'disabled';
+async function openProject(pid){const p=PROJECTS.find(x=>x.id===pid);if(!p)return;if(!PROPS.length){try{PROPS=await api('/api/properties')}catch(e){}}
+  setTimeout(()=>{const i=$('#ppPropQ');if(i&&!i.disabled)propSuggest(i,async x=>{i._picked=true;i.value=pPropLabel(x);
+    await projPatch(pid,{property:x.address,client:(PROJECTS.find(y=>y.id===pid)||{}).client||x.client||x.owner_entity||null});});},0);const mg=isMgr(),dis=mg?'':'disabled';
   $('#taskDlgBody').innerHTML=`<div id="projDlg" style="margin:-18px -18px 12px">${projBanner(p,200,{edit:true})}</div>
    ${p.status==='archived'?`<div class="warnbox" style="margin:0 0 10px">🗄 <b>Archived</b> — hidden from task lists, Home, the calendar and reminders.${mg?` <button class="b sm" style="margin-left:6px" onclick="projArchive(${p.id},true)">Unarchive</button>`:''}</div>`:''}
    <h2>${mg?`<input value="${esc(p.name)}" style="font:inherit;font-weight:600;width:100%" onchange="projPatch(${p.id},{name:this.value})">`:esc(p.name)}</h2>
    <div class="team-grid">
-    <label>Property<input ${dis} id="ppPropQ" list="ppPropList" autocomplete="off" placeholder="No property — type to search" value="${esc(p.property_id?(()=>{const x=PROPS.find(x=>x.id===p.property_id);return x?pPropLabel(x):(p.property||'')})():'')}" onchange="projPropPick(${p.id},this)"><datalist id="ppPropList">${PROPS.map(x=>`<option value="${esc(pPropLabel(x))}"></option>`).join('')}</datalist></label>
+    <label>Property<span style="display:block;position:relative"><input ${dis} id="ppPropQ" autocomplete="off" placeholder="No property — start typing a name or address" value="${esc(p.property_id?(()=>{const x=PROPS.find(x=>x.id===p.property_id);return x?pPropLabel(x):(p.property||'')})():'')}" onchange="setTimeout(()=>projPropPick(${p.id},this),200)" style="width:100%"></span></label>
     <label>Client / owner<input ${dis} value="${esc(p.client||'')}" onchange="projPatch(${p.id},{client:this.value})"></label>
     <label>Start date<input ${dis} type="date" value="${p.start_date}" onchange="projPatch(${p.id},{start_date:this.value})"></label></div>
    <label class="mute" style="font-size:12px">Summary / notes</label><textarea ${dis} rows="3" onchange="projPatch(${p.id},{description:this.value})">${esc(p.description||'')}</textarea>
@@ -1095,7 +1101,8 @@ async function closeGo(period){const q=new URLSearchParams();if(period)q.set('pe
     <tfoot><tr><td class="prop mute">Done</td>${b.columns.map(c=>`<td class="cl mute">${b.totals[c]}/${b.rows.length}</td>`).join('')}</tr></tfoot>`
     :`<tbody><tr><td class="empty" style="padding:18px">No projects from this template ${W?'this '+W:'right now'}.${b.periods.length?` Other ${W}s: ${b.periods.slice(0,6).map(m=>`<span class="tlink" onclick="closeGo('${m}')">${m}</span>`).join(', ')}`:' Start one with “+ New project” using this template.'}</td></tr></tbody>`;
   $('#closeMissing').innerHTML=b.missing.length?`<div class="warnbox" style="margin-top:12px"><b>Had one last ${W} but not started this ${W}:</b> ${b.missing.map(m=>`<span class="tlink" onclick="openProperty(${m.property_id})">${esc(m.label)}</span>${isMgr()?` <button class="b ghost sm" onclick="startClose(${m.property_id})">Start</button>`:''}`).join(' · ')}</div>`:'';}
-async function projPropPick(pid,inp){const q=inp.value.trim();
+async function projPropPick(pid,inp){if(inp._picked){inp._picked=false;return;}const q=inp.value.trim();
+  const cur=PROJECTS.find(x=>x.id===pid)||{},curP=PROPS.find(x=>x.id===cur.property_id);if(curP&&q===pPropLabel(curP))return;
   if(!q){await projPatch(pid,{property:''});return;}
   const p=PROPS.find(x=>pPropLabel(x)===q||x.name.toLowerCase()===q.toLowerCase());
   if(!p){alert(`“${q}” isn't on the property list. Pick one from the suggestions or clear the box for no property. New properties are added on the Properties page.`);openProject(pid);return;}
@@ -2070,10 +2077,34 @@ async function delTpl(id){if(confirm('Delete template?')){await api('/api/templa
 function repeatHint(){const v=$('#pRepeat').value,h=$('#pRepeatHint');h.classList.toggle('hidden',!v);if(!v)return;
   const d=$('#pStart').value?new Date($('#pStart').value+'T12:00'):new Date(),n=$('#pName').value||'Project name';
   h.innerHTML=$('#pTpl').value?`A fresh copy is created ${({monthly:'every month',quarterly:'every 3 months',yearly:'every year'})[v]} on day ${d.getDate()}, named like “${esc(n)} – ${d.toLocaleString(undefined,{month:'long'})} ${d.getFullYear()}”.`:'<span class="over">Choose a template — each repeat is built from it.</span>';}
+/* 🔎 property suggestions: a narrowing list under a text box (every word must match name, address or owner) */
+function propMatches(q){const words=q.toLowerCase().split(/\s+/).filter(Boolean);if(!words.length)return PROPS.slice(0,8);
+  const hay=p=>(p.name+' '+p.address+' '+(p.owner_entity||'')+' '+(p.client||'')).toLowerCase();
+  const score=p=>{const n=p.name.toLowerCase(),a=p.address.toLowerCase();return (n.startsWith(words[0])?0:a.startsWith(words[0])?1:2);};
+  return PROPS.filter(p=>words.every(w=>hay(p).includes(w))).sort((x,y)=>score(x)-score(y)||x.name.localeCompare(y.name)).slice(0,8);}
+function propSuggest(inp,onPick){if(inp._ps)return;inp._ps=true;inp.setAttribute('autocomplete','off');inp.removeAttribute('list');
+  const box=document.createElement('div');box.className='psugg hidden';inp.parentNode.style.position='relative';inp.parentNode.appendChild(box);let items=[],hi=0;
+  const hl=(t,q)=>{let h=esc(t);for(const w of q.toLowerCase().split(/\s+/).filter(Boolean)){h=h.replace(new RegExp('('+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','ig'),'<mark>$1</mark>');}return h;};
+  const draw=()=>{const q=inp.value.trim();items=propMatches(q);hi=Math.min(hi,Math.max(0,items.length-1));
+    box.innerHTML=items.length?items.map((p,i)=>`<div class="ps ${i===hi?'on':''}" data-i="${i}"><b>${hl(p.name,q)}</b><span>${hl(p.address,q)}${p.owner_entity?' · '+hl(p.owner_entity,q):''}</span></div>`).join('')
+      :`<div class="ps none">No property matches “${esc(q)}” — leave blank for no property, or add it under Properties.</div>`;
+    const r=inp.getBoundingClientRect(),below=innerHeight-r.bottom-12,above=r.top-12,up=below<220&&above>below;   // float over dialogs
+    Object.assign(box.style,{position:'fixed',left:r.left+'px',width:r.width+'px',top:up?'auto':(r.bottom+4)+'px',bottom:up?(innerHeight-r.top+4)+'px':'auto',
+      maxHeight:Math.max(160,Math.min(340,up?above:below))+'px',marginTop:'0'});
+    box.classList.remove('hidden');};
+  const pick=i=>{const p=items[i];if(!p)return;box.classList.add('hidden');onPick(p);};
+  inp.addEventListener('input',()=>{hi=0;draw();});inp.addEventListener('focus',draw);
+  inp.addEventListener('keydown',e=>{if(box.classList.contains('hidden'))return;
+    if(e.key==='ArrowDown'){hi=Math.min(hi+1,items.length-1);draw();e.preventDefault();}
+    else if(e.key==='ArrowUp'){hi=Math.max(hi-1,0);draw();e.preventDefault();}
+    else if(e.key==='Enter'&&items.length){pick(hi);e.preventDefault();}
+    else if(e.key==='Escape'){box.classList.add('hidden');}});
+  box.addEventListener('mousedown',e=>{const el=e.target.closest('.ps[data-i]');if(el){e.preventDefault();pick(+el.dataset.i);}});
+  inp.addEventListener('blur',()=>setTimeout(()=>box.classList.add('hidden'),150));}
 /* new project: choose from the property list (no new pages from here) */
 const pPropLabel=p=>`${p.name} — ${p.address}`;
 async function pPropList(){if(!PROPS.length){try{PROPS=await api('/api/properties')}catch(e){}}
-  $('#pPropList').innerHTML=PROPS.map(p=>`<option value="${esc(pPropLabel(p))}"></option>`).join('');}
+  propSuggest($('#pPropQ'),p=>pPropSet(p));}
 function pPropSet(p){$('#pPropQ').value=p?pPropLabel(p):'';$('#pProp').value=p?p.address:'';$('#pPropId').value=p?p.id:'';
   $('#pPropHint').innerHTML=p?`Linked to <b>${esc(p.name)}</b> — its team fills in below.`:'No property — leave blank for work that isn\'t tied to a building.';
   if(p&&!$('#pClient').value)$('#pClient').value=p.client||p.owner_entity||'';propTeamFill();}
