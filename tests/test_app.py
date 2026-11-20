@@ -1709,3 +1709,20 @@ def test_reporting_status_for_property_managers(mgr, staff):
     assert any(b == "u-sam" and "Owner report sent" in t for b, t in SENT)
     assert next(x for x in ids(staff.get("/api/me/reporting"))["rows"] if x["project_id"] == proj)["sent"]
     assert "reporting" in {c["id"] for c in ids(staff.get("/api/me/notifications"))["categories"]}
+
+
+def test_deleted_property_stays_deleted(mgr):
+    addr = "321 Gone Away Ln, San Antonio, TX"
+    proj = ids(mgr.post("/api/projects", json={"name": "Gone project", "property": addr}))["id"]
+    pid = next(p["id"] for p in ids(mgr.get("/api/properties")) if p["address"] == addr)
+    name = ids(mgr.get(f"/api/properties/{pid}"))["name"]
+    r = ids(mgr.delete(f"/api/properties/{pid}?confirm={name}"))
+    for _ in range(2):   # listing used to re-create it from the project's address
+        assert addr not in [p["address"] for p in ids(mgr.get("/api/properties"))]
+    assert any(p["id"] == proj for p in ids(mgr.get("/api/projects")))        # the project is kept
+    ids(mgr.post(f"/api/trash/{r['trash_id']}/restore"))                        # undo brings it back, linked
+    back = next(p for p in ids(mgr.get("/api/properties")) if p["address"] == addr)
+    assert any(x["id"] == proj for x in ids(mgr.get(f"/api/properties/{back['id']}"))["projects"])
+    ids(mgr.delete(f"/api/properties/{back['id']}?confirm={back['name']}"))
+    again = ids(mgr.post("/api/properties", json={"address": addr}))["id"]     # adding it by hand reconnects the project
+    assert any(x["id"] == proj for x in ids(mgr.get(f"/api/properties/{again}"))["projects"])

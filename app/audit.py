@@ -191,7 +191,7 @@ def restore(trash_id: int, user_id) -> dict:
                 c.execute("INSERT OR REPLACE INTO property_team(property_id, role_id, user_id) VALUES(?,?,?)",
                           (new_id, r["role_id"], r["user_id"]))
             for pid in snap.get("linked_projects", []):
-                c.execute("UPDATE projects SET property_id=? WHERE id=? AND property_id IS NULL", (new_id, pid))
+                c.execute("UPDATE projects SET property_id=?, property_detached=0 WHERE id=? AND property_id IS NULL", (new_id, pid))
         c.execute("UPDATE trash SET restored_at=datetime('now'), restored_by=?, restored_id=? WHERE id=?",
                   (user_id, new_id, trash_id))
     log(user_id, "restored", t["kind"], new_id, t["label"])

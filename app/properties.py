@@ -83,6 +83,9 @@ def init():
         c.execute("""CREATE TABLE IF NOT EXISTS property_team(
             property_id INTEGER NOT NULL, role_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
             PRIMARY KEY(property_id, role_id))""")
+        if "property_detached" not in {r[1] for r in c.execute("PRAGMA table_info(projects)")}:
+            # set when a property page is deleted: its projects keep their address but don't re-create the page
+            c.execute("ALTER TABLE projects ADD COLUMN property_detached INTEGER NOT NULL DEFAULT 0")
         if "photo_file" not in {r[1] for r in c.execute("PRAGMA table_info(properties)")}:
             c.execute("ALTER TABLE properties ADD COLUMN photo_file TEXT")   # the property's own header photo
         if "property_id" not in {r[1] for r in c.execute("PRAGMA table_info(tasks)")}:
@@ -131,7 +134,7 @@ def link_all(quiet: bool = False):
     with tx() as c:
         linked = []
         for p in c.execute("""SELECT id, property, client FROM projects WHERE property_id IS NULL AND is_general=0
-                              AND COALESCE(TRIM(property),'')!=''""").fetchall():
+                              AND COALESCE(property_detached,0)=0 AND COALESCE(TRIM(property),'')!=''""").fetchall():
             c.execute("UPDATE projects SET property_id=? WHERE id=?", (find_or_create(p["property"], p["client"], c), p["id"]))
             linked.append(p["id"])
     for pid in linked:
@@ -144,7 +147,7 @@ def link_all(quiet: bool = False):
 
 def relink(project_id: int):
     with tx() as c:
-        c.execute("UPDATE projects SET property_id=NULL WHERE id=?", (project_id,))
+        c.execute("UPDATE projects SET property_id=NULL, property_detached=0 WHERE id=?", (project_id,))
     link_all()
 
 
@@ -252,6 +255,11 @@ def create(address: str, name: str | None = None, client: str | None = None, not
     pid = find_or_create(address, client)
     if pid is None:
         raise ValueError("Enter the property's address.")
+    n = norm(address)
+    with tx() as c:
+        for r in c.execute("SELECT id, property FROM projects WHERE property_detached=1 AND property_id IS NULL").fetchall():
+            if norm(r["property"] or "") == n:
+                c.execute("UPDATE projects SET property_id=?, property_detached=0 WHERE id=?", (pid, r["id"]))
     update(pid, {k: v for k, v in {"name": name, "client": client, "notes": notes}.items() if v})
     return pid
 
@@ -283,7 +291,9 @@ def mask_accounts(text: str) -> str:
 
 def delete(pid: int, keep_files: bool = False):
     with tx() as c:
-        c.execute("UPDATE projects SET property_id=NULL WHERE property_id=?", (pid,))
+        c.execute("UPDATE projects SET property_id=NULL, property_detached=1 WHERE property_id=?", (pid,))
+        c.execute("DELETE FROM property_team WHERE property_id=?", (pid,))
+        c.execute("UPDATE tasks SET property_id=NULL WHERE property_id=?", (pid,))
         ids = [r[0] for r in c.execute("SELECT id FROM critical_dates WHERE property_id=?", (pid,))]
         c.executemany("DELETE FROM critical_date_alerts WHERE date_id=?", [(i,) for i in ids])
         c.execute("DELETE FROM critical_dates WHERE property_id=?", (pid,))

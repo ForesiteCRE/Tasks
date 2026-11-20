@@ -988,7 +988,7 @@ function propTeamCard(p,mg){
 async function propTeamSet(rid,uid){const r=await api(`/api/properties/${PROP.id}/team/${rid}`,{method:'PUT',body:{user_id:+uid||null}});
   toast(r.moved?`Updated — ${r.moved} open task${r.moved>1?'s':''} moved`:'Updated');await refresh();openProperty(PROP.id);}
 async function propPatch(b){await api('/api/properties/'+PROP.id,{method:'PATCH',body:b});PROPS=[];await refresh();openProperty(PROP.id);toast('Saved');}
-async function delProperty(){const r=await api(`/api/properties/${PROP.id}?confirm=${encodeURIComponent($('#propDelConfirm').value)}`,{method:'DELETE'});PROPS=[];show('properties');toast('Property page deleted',()=>restoreTrash(r.trash_id),'Undo');}
+async function delProperty(){const r=await api(`/api/properties/${PROP.id}?confirm=${encodeURIComponent($('#propDelConfirm').value)}`,{method:'DELETE'});PROPS=[];await refresh();await qProps();show('properties');toast('Property page deleted',()=>restoreTrash(r.trash_id),'Undo');}
 async function ctAdd(){await api(`/api/properties/${PROP.id}/contacts`,{method:'POST',body:{role:$('#ctRole').value,name:$('#ctName').value,company:$('#ctCompany').value,email:$('#ctEmail').value,phone:$('#ctPhone').value,notes:$('#ctNotes').value}});toast('Contact added');openProperty(PROP.id);}
 function ctBank(){const d=[...document.querySelectorAll('#propPage details')].find(x=>x.querySelector('#ctRole'));if(!d)return;d.open=true;$('#ctRole').value='Bank';
   if(PROP.bank_name&&!$('#ctCompany').value)$('#ctCompany').value=PROP.bank_name;d.scrollIntoView({behavior:'smooth',block:'center'});$('#ctName').focus();}
