@@ -444,7 +444,7 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
   <div class="pagehead"><div><h2>🏢 Properties</h2><div class="pagesub">Each building's critical dates, vendors, insurance, team and work.</div></div>
     <div class="row mgr" style="margin:0;gap:6px"><button class="b ghost" onclick="rpkgPick()" title="Accounting's Report Packages spreadsheet">⬆ Import report packages</button><button class="b" onclick="addPropertyForm()">+ Add property</button></div></div>
   <div id="propAdd"></div>
-  <div class="row" style="margin-bottom:12px"><input type="search" id="propSearch" placeholder="Search properties…" oninput="renderProperties()" style="flex:1;min-width:180px"></div>
+  <div class="row" style="margin-bottom:12px"><input type="search" id="propSearch" placeholder="Search properties…" oninput="renderProperties()" style="flex:1;min-width:180px"><div class="seg" id="propArch"><button class="on" onclick="propShowArchived(false)">Active</button><button onclick="propShowArchived(true)">🗄 Archived</button></div></div>
   <div class="propgrid" id="propList"></div>
   <div class="panel" style="margin-top:18px"><header><h3>⚑ Critical dates — next 120 days</h3><span class="cnt" id="propUpN"></span></header><div class="body" id="propUpcoming"></div></div>
 </section>
@@ -642,7 +642,7 @@ const statusSel=(t)=>`<select class="pill ${t.status}" ${canEdit(t)?'':'disabled
 
 async function refresh(){
   [USERS,TPLS,PROJECTS,ROLES]=await Promise.all([api('/api/users'),api('/api/templates'),api('/api/projects'),api('/api/roles')]);
-  TASKS=PROJECTS.flatMap(p=>p.tasks.map(t=>({...t,project_name:p.name,project_status:p.status})));HANDLES=[];
+  TASKS=PROJECTS.filter(p=>p.status!=='archived').flatMap(p=>p.tasks.map(t=>({...t,project_name:p.name,project_status:p.status})));HANDLES=[];
   document.querySelectorAll('.mgr').forEach(el=>el.classList.toggle('hidden',!isMgr()));
   document.querySelectorAll('.adm').forEach(el=>el.classList.toggle('hidden',!isAdmin()));
 
@@ -650,7 +650,7 @@ async function refresh(){
   const keepTpl=$('#pTpl').value;$('#pTpl').innerHTML=tOpts;$('#pTpl').value=keepTpl;
   const w=$('#calWho').value, pj=$('#calProj').value;
   $('#calWho').innerHTML=`<option value="">Everyone</option><option value="me">Just me</option><option value="none">Unassigned</option>`+USERS.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('');$('#calWho').value=w;
-  const projOpts=PROJECTS.filter(p=>!p.is_general&&p.status!=='done').map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join(''),gen=PROJECTS.find(p=>p.is_general);
+  const projOpts=PROJECTS.filter(p=>!p.is_general&&p.status!=='done'&&p.status!=='archived').map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join(''),gen=PROJECTS.find(p=>p.is_general);
   $('#calProj').innerHTML=`<option value="">All projects</option>${gen?`<option value="${gen.id}">No project</option>`:''}`+projOpts;$('#calProj').value=pj;
   const tp=$('#tProj').value,tw=$('#tWho').value,qp=$('#qProj').value,qw=$('#qWho').value;
   $('#tProj').innerHTML=`<option value="">All projects</option><option value="none">No project</option>`+projOpts;$('#tProj').value=tp;
@@ -698,12 +698,13 @@ function projStats(p){const t0=today(),open=p.tasks.filter(t=>t.status!=='done')
   const stage=p.status==='done'?'done':p.approval==='pending'?'waiting':!started?'not_started':'in_progress';
   const doneAt=p.tasks.map(t=>t.completed_at||'').sort().pop()||'';
   return {done,total:p.tasks.length,over,blocked,nxt,mine,stage,recentDone:p.status==='done'&&doneAt.slice(0,10)>=isoAdd(t0,-30),pct:p.tasks.length?Math.round(100*done/p.tasks.length):0};}
-const PFILTERS=[['active','Active'],['mine','Mine'],['attention','⚠️ Needs attention'],['waiting','⏳ Waiting on owner'],['recurring','🔁 Repeating'],['finished','✅ Finished'],['all','All']];
+const PFILTERS=[['active','Active'],['mine','Mine'],['attention','⚠️ Needs attention'],['waiting','⏳ Waiting on owner'],['recurring','🔁 Repeating'],['finished','✅ Finished'],['all','All'],['archived','🗄 Archived']];
 function projMatches(p,S){const q=($('#pSearch').value||'').toLowerCase();
   if(q&&!(p.name+' '+(p.property||'')+' '+(p.property_name||'')+' '+(p.client||'')).toLowerCase().includes(q))return false;
   const live=p.status!=='done'||(PV==='board'&&S.recentDone);   // the board's Done column shows the last 30 days
+  if(p.status==='archived')return PF==='archived';
   return {active:live,mine:live&&S.mine,attention:p.status!=='done'&&(S.over||S.blocked),waiting:p.approval==='pending',
-    recurring:!!p.recurrence_id,finished:p.status==='done',all:true}[PF];}
+    recurring:!!p.recurrence_id,finished:p.status==='done',all:true,archived:false}[PF];}
 const PCOL=[['#2f7ed8','#eaf2fc'],['#e8590c','#fff1e6'],['#2b8a3e','#e9f6ec'],['#9c36b5','#f6ebfa'],['#c2255c','#fdebf1'],['#0c8599','#e3f6f8'],['#b08900','#fdf6dd'],['#5f3dc4','#efebfc'],['#d6336c','#fdeef4'],['#37b24d','#ecf8ee'],['#1864ab','#e6f0fa'],['#a61e4d','#fbe9ef']];
 function propColor(p){const k=p.property_id?+p.property_id:[...(p.property||p.address||'')].reduce((h,c)=>(h*31+c.charCodeAt(0))>>>0,7);
   if(!p.property_id&&!(p.property||p.address))return ['#9aa5b1','#f3f5f7'];return PCOL[(k-1+PCOL.length)%PCOL.length];}
@@ -801,6 +802,7 @@ function renderPreview(){const t=TPLS.find(t=>t.id==$('#pTpl').value);if(!t){$('
 /* ---------- project details & team dialog ---------- */
 async function openProject(pid){const p=PROJECTS.find(x=>x.id===pid);if(!p)return;const mg=isMgr(),dis=mg?'':'disabled';
   $('#taskDlgBody').innerHTML=`<div id="projDlg" style="margin:-18px -18px 12px">${projBanner(p,200,{edit:true})}</div>
+   ${p.status==='archived'?`<div class="warnbox" style="margin:0 0 10px">🗄 <b>Archived</b> — hidden from task lists, Home, the calendar and reminders.${mg?` <button class="b sm" style="margin-left:6px" onclick="projArchive(${p.id},true)">Unarchive</button>`:''}</div>`:''}
    <h2>${mg?`<input value="${esc(p.name)}" style="font:inherit;font-weight:600;width:100%" onchange="projPatch(${p.id},{name:this.value})">`:esc(p.name)}</h2>
    <div class="team-grid">
     <label>Property / address<input ${dis} value="${esc(p.property||'')}" onchange="projPatch(${p.id},{property:this.value})"></label>
@@ -819,6 +821,7 @@ async function openProject(pid){const p=PROJECTS.find(x=>x.id===pid);if(!p)retur
    :`<div class="sec"><h3>👥 Project team</h3><p class="mute" style="margin:0 0 6px;font-size:12px">Tasks assigned by role follow the person in that role — change someone here and their open tasks move over (they get a Blink message). Add an address above to share one team across every project at that property.</p>
    <div class="team-grid">${p.team.map(m=>{const n=p.tasks.filter(t=>t.role_id===m.role_id&&t.status!=='done').length;
      return `<label>${esc(m.role)} ${n?`<span class="via">· ${n} open task${n>1?'s':''}</span>`:''}<select ${dis} onchange="teamSet(${p.id},${m.role_id},this.value)">${userOpts(m.user_id,'—')}</select></label>`}).join('')}</div></div>`}
+   ${mg&&p.status!=='archived'?`<div class="row" style="margin:14px 0 0;gap:8px;align-items:center"><button class="b ghost" onclick="projArchive(${p.id})">🗄 Archive project</button><span class="mute" style="font-size:12px">Keeps everything; hides it from day-to-day lists. Unarchive any time.</span></div>`:''}
    ${(mg||p.created_by===ME.id)?`<details class="danger"><summary>Danger zone</summary>
      <p>Deleting removes this project and all ${p.tasks.length} of its tasks for everyone. You can restore it from Admin ▾ → Recently deleted for 30 days.</p>
      <label>Type the project name <b>${esc(p.name)}</b> to confirm<input id="delConfirm" autocomplete="off" oninput="$('#delBtn').disabled=this.value.trim().toLowerCase()!==${esc(JSON.stringify(p.name.trim().toLowerCase()))}"></label>
@@ -859,9 +862,12 @@ async function propUploadPhoto(f){if(!f)return;toast('Uploading photo…');
   PROPS=[];await openProperty(PROP.id);toast('Property photo updated');}
 async function propRemovePhoto(){if(!confirm('Remove this property photo? The header will show Street View or a map instead.'))return;
   await api(`/api/properties/${PROP.id}/photo`,{method:'DELETE'});PROPS=[];await openProperty(PROP.id);}
+let PROP_ARCH=false,ARCH_PROPS=[];
+function propShowArchived(on){PROP_ARCH=on;document.querySelectorAll('#propArch button').forEach((b,i)=>b.classList.toggle('on',(i===1)===on));renderProperties(true);}
 async function renderProperties(fetch){if(fetch||!PROPS.length)PROPS=await api('/api/properties');
+  if(PROP_ARCH)ARCH_PROPS=await api('/api/properties?archived=1');
   const q=($('#propSearch').value||'').toLowerCase();
-  const ps=PROPS.filter(p=>!q||(p.name+' '+p.address+' '+(p.client||'')).toLowerCase().includes(q));
+  const ps=(PROP_ARCH?ARCH_PROPS:PROPS).filter(p=>!q||(p.name+' '+p.address+' '+(p.client||'')).toLowerCase().includes(q));
   $('#propList').innerHTML=ps.map(p=>`<div class="pcard" style="padding:0;overflow:hidden" onclick="openProperty(${p.id})">${propBanner(p,110)}
     <div style="padding:10px 12px"><h4>${esc(p.name)}</h4><div class="sub">${esc(p.client||' ')}</div>
     <div class="row" style="margin:6px 0 0;gap:6px;font-size:12.5px"><span class="mute">${p.projects} project${p.projects===1?'':'s'} · ${p.open_tasks} open task${p.open_tasks===1?'':'s'}</span>${p.overdue?`<span class="risk hi">${p.overdue} overdue</span>`:''}</div>
@@ -883,7 +889,8 @@ function insChip(ins){const m={ok:['ok','🛡 '],not_named:['bad','⚠️ '],unv
   return `<span class="pchip ${m[0]}">${m[1]}${esc(ins.label)}${ins.expires&&ins.state!=='missing'?` · exp. ${fmtDate(ins.expires)}`:''}</span>`;}
 const money=n=>'$'+Number(n).toLocaleString(undefined,{maximumFractionDigits:0});
 function renderProperty(){const p=PROP,mg=isMgr(),dis=mg?'':'disabled',open=p.dates.filter(d=>d.status==='open'),done=p.dates.filter(d=>d.status!=='open');
-  $('#propPage').innerHTML=`<div class="row" style="margin:0 0 10px"><button class="b ghost" onclick="show('properties')">← All properties</button></div>
+  $('#propPage').innerHTML=`<div class="row" style="margin:0 0 10px;justify-content:space-between"><button class="b ghost" onclick="show('properties')">← All properties</button>${mg&&!p.archived_at?`<button class="b ghost" onclick="propArchive(${p.id})">🗄 Archive property</button>`:''}</div>
+  ${p.archived_at?`<div class="warnbox" style="margin:0 0 12px">🗄 <b>Archived property</b> — hidden from the Properties page and pickers, and its critical-date reminders are paused.${mg?` <button class="b sm" style="margin-left:6px" onclick="propArchive(${p.id},true)">Unarchive</button>`:''}</div>`:''}
   <div class="card" style="padding:0;overflow:hidden">${propBanner(p,190,true)}<div style="padding:14px 16px">
     <h2 style="margin:0 0 8px">${mg?`<input value="${esc(p.name)}" style="font:inherit;font-weight:600;width:100%" onchange="propPatch({name:this.value})">`:esc(p.name)}</h2>
     <div class="row" style="margin:0 0 10px;gap:6px">${p.spend_limit?`<span class="pchip" title="Applies to capital expenditures and non-emergency repairs — not normal operating expenses">💲 CapEx / non-emergency repairs over <b>${money(p.spend_limit)}</b> → owner approval</span>`:`<span class="pchip">💲 Owner approval threshold not set</span>`}${insChip(p.insurance)}${p.our_coi.status.state!=='ok'?ourChip(p.our_coi.status):''}</div>
@@ -1436,6 +1443,15 @@ async function lisaSend(q){q=(q||$('#lisaQ').value).trim();if(!q||LISA_BUSY)retu
     LISA.push({role:'assistant',content:r.reply||'Sorry, I\'m not sure.'});}
   catch(e){LISA.push({role:'assistant',content:'Sorry — I couldn\'t reach the server. Try again?'});}
   LISA_BUSY=false;lisaSave();lisaRender();}
+async function projArchive(pid,undo){
+  if(!undo&&!confirm('Archive this project? It drops off task lists, Home, the calendar and reminders. Nothing is deleted — unarchive any time from Projects → 🗄 Archived.'))return;
+  await api(`/api/projects/${pid}/archive${undo?'?undo=true':''}`,{method:'POST'});await refresh();
+  if(undo)openProject(pid);else{taskDlg.close();toast('Project archived',()=>projArchive(pid,true),'Undo');}}
+async function propArchive(id,undo){
+  if(!undo&&!confirm('Archive this property? It drops off the Properties page and pickers, its reminders pause, and its projects are archived too. Nothing is deleted — unarchive any time.'))return;
+  const r=await api(`/api/properties/${id}/archive${undo?'?undo=true':''}`,{method:'POST'});PROPS=[];await refresh();await qProps();
+  if(undo){openProperty(id);toast(`Property unarchived${r.projects?` · ${r.projects} project${r.projects>1?'s':''} back`:''}`);}
+  else{show('properties');toast(`Property archived${r.projects?` · ${r.projects} project${r.projects>1?'s':''} archived too`:''}`,()=>propArchive(id,true),'Undo');}}
 async function delProject(pid){const typed=$('#delConfirm').value;
   const r=await api(`/api/projects/${pid}?confirm=${encodeURIComponent(typed)}`,{method:'DELETE'});taskDlg.close();await refresh();toast('Project deleted',()=>restoreTrash(r.trash_id),'Undo');}
 async function removeSamples(){if(!confirm('Remove all sample projects and their tasks? Your real projects are not affected.'))return;
@@ -1706,7 +1722,7 @@ function qFill(keepProj){const pr=$('#qProp').value,cur=keepProj!==undefined?kee
   if(pr&&isMgr()&&!ps.length)$('#qProj').options[0].textContent='No project (none open here)';}
 async function qProps(){if(!PROPS.length){try{PROPS=await api('/api/properties')}catch(e){return}}const v=$('#qProp').value;
   $('#qProp').innerHTML='<option value="">No property</option>'+PROPS.map(p=>`<option value="${p.id}">🏢 ${esc(p.name)}</option>`).join('');$('#qProp').value=v;tPropFill();}
-function tPropFill(){const tpf=$('#tPropF').value,pmap=new Map();PROJECTS.forEach(p=>{const k=projPropKey(p);if(k)pmap.set(k,p.property_name||p.property);});
+function tPropFill(){const tpf=$('#tPropF').value,pmap=new Map();PROJECTS.filter(p=>p.status!=="archived").forEach(p=>{const k=projPropKey(p);if(k)pmap.set(k,p.property_name||p.property);});
   PROPS.forEach(p=>pmap.set('p'+p.id,p.name));
   $('#tPropF').innerHTML=`<option value="">All properties</option>`+[...pmap].sort((a,b)=>a[1].localeCompare(b[1])).map(([k,l])=>`<option value="${esc(k)}">${esc(l)}</option>`).join('')+`<option value="none">No property</option>`;$('#tPropF').value=tpf;}
 function qPropChanged(){qFill();}

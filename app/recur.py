@@ -64,7 +64,7 @@ def on_done(task_id: int) -> dict | None:
         c.execute("""INSERT INTO task_checklist(task_id, text, position)
                      SELECT ?, text, position FROM task_checklist WHERE task_id=?""", (new_id, task_id))
         c.execute("UPDATE tasks SET repeat_next_id=? WHERE id=?", (new_id, task_id))
-        c.execute("UPDATE projects SET status='active' WHERE id=?", (t["project_id"],))
+        c.execute("UPDATE projects SET status='active' WHERE id=? AND status!='archived'", (t["project_id"],))
         return {"id": new_id, "title": t["title"], "due_date": due.isoformat(), "assignee_id": t["assignee_id"]}
 
 

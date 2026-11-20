@@ -194,6 +194,8 @@ def _init_extras():
     notify.init()
     from . import reportpkg
     reportpkg.init()
+    from . import archive
+    archive.init()
 
 
 def get_setting(key: str) -> str | None:

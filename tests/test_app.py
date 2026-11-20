@@ -1726,3 +1726,28 @@ def test_deleted_property_stays_deleted(mgr):
     ids(mgr.delete(f"/api/properties/{back['id']}?confirm={back['name']}"))
     again = ids(mgr.post("/api/properties", json={"address": addr}))["id"]     # adding it by hand reconnects the project
     assert any(x["id"] == proj for x in ids(mgr.get(f"/api/properties/{again}"))["projects"])
+
+
+def test_archive_projects_and_properties(mgr, staff):
+    from app import properties as P
+    addr = "77 Archive Row, San Antonio, TX"
+    p1 = ids(mgr.post("/api/projects", json={"name": "Arch A", "property": addr}))["id"]
+    p2 = ids(mgr.post("/api/projects", json={"name": "Arch B", "property": addr}))["id"]
+    t = ids(mgr.post("/api/tasks", json={"title": "Arch task", "project_id": p1, "assignee_id": mgr.me["id"], "due_date": "2000-01-01"}))["id"]
+    prop = P.property_for_address(addr)
+    assert staff.post(f"/api/projects/{p1}/archive").status_code == 403
+    ids(mgr.post(f"/api/projects/{p1}/archive"))
+    st = {p["id"]: p["status"] for p in ids(mgr.get("/api/projects"))}
+    assert st[p1] == "archived"
+    assert t not in [x["id"] for x in ids(mgr.get("/api/dashboard"))["agenda"]]          # off Home
+    ids(mgr.post(f"/api/projects/{p1}/archive?undo=true"))
+    assert {p["id"]: p["status"] for p in ids(mgr.get("/api/projects"))}[p1] == "active"
+    # archiving the property archives its projects; unarchiving brings back exactly those
+    r = ids(mgr.post(f"/api/properties/{prop}/archive"))
+    assert r["projects"] == 2
+    assert prop not in [x["id"] for x in ids(mgr.get("/api/properties"))]
+    assert prop in [x["id"] for x in ids(mgr.get("/api/properties?archived=1"))]
+    assert all(p["status"] == "archived" for p in ids(mgr.get("/api/projects")) if p["id"] in (p1, p2))
+    r = ids(mgr.post(f"/api/properties/{prop}/archive?undo=true"))
+    assert r["projects"] == 2 and prop in [x["id"] for x in ids(mgr.get("/api/properties"))]
+    assert {p["id"]: p["status"] for p in ids(mgr.get("/api/projects"))}[p1] == "active"

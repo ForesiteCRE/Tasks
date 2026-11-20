@@ -315,11 +315,12 @@ def _date_row(d: dict, today: date) -> dict:
     return d
 
 
-def list_all() -> list[dict]:
+def list_all(archived: bool = False) -> list[dict]:
     link_all()
     today = date.today()
     with tx() as c:
-        props = rows(c.execute("SELECT * FROM properties ORDER BY name COLLATE NOCASE"))
+        props = rows(c.execute("SELECT * FROM properties WHERE archived_at IS " + ("NOT NULL" if archived else "NULL")
+                               + " ORDER BY name COLLATE NOCASE"))
         for p in props:
             s = c.execute("""SELECT COUNT(DISTINCT pr.id) AS projects,
                                     SUM(t.status!='done') AS open_tasks,
@@ -536,7 +537,7 @@ def run_alerts(today: date | None = None) -> int:
             _roll(c, d)
         due = rows(c.execute("""SELECT cd.*, p.name AS property_name, u.blink_user_id AS assignee_blink
                                 FROM critical_dates cd JOIN properties p ON p.id=cd.property_id
-                                LEFT JOIN users u ON u.id=cd.assignee_id WHERE cd.status='open'"""))
+                                LEFT JOIN users u ON u.id=cd.assignee_id WHERE cd.status='open' AND p.archived_at IS NULL"""))
     for d in due:
         left = (date.fromisoformat(d["date"]) - today).days
         offsets = [int(x) for x in d["remind_days"].split(",") if x.strip().isdigit()] or [90, 30, 7]

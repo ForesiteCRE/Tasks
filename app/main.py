@@ -974,8 +974,33 @@ class DatePatch(BaseModel):
 
 
 @app.get("/api/properties")
-def list_properties(request: Request):
-    return [_hide_bank(p, request) for p in properties.list_all()]
+def list_properties(request: Request, archived: bool = False):
+    return [_hide_bank(p, request) for p in properties.list_all(archived)]
+
+
+# ---------- archive (managers) ----------
+@app.post("/api/projects/{pid}/archive")
+def project_archive(pid: int, request: Request, undo: bool = False):
+    _require_manager(request)
+    from . import archive
+    with tx() as c:
+        p = c.execute("SELECT name FROM projects WHERE id=? AND is_general=0", (pid,)).fetchone()
+    if not p:
+        raise HTTPException(404, "Project not found")
+    (archive.unarchive_project if undo else archive.archive_project)(pid)
+    audit.log(_me_id(request), "unarchived" if undo else "archived", "project", pid, p["name"])
+    return {"ok": True}
+
+@app.post("/api/properties/{pid}/archive")
+def property_archive(pid: int, request: Request, undo: bool = False):
+    _require_manager(request)
+    from . import archive
+    p = properties.get(pid)
+    if not p:
+        raise HTTPException(404, "Property not found")
+    n = (archive.unarchive_property if undo else archive.archive_property)(pid)
+    audit.log(_me_id(request), "unarchived" if undo else "archived", "property", pid, p["name"], f"{n} project(s) too" if n else None)
+    return {"ok": True, "projects": n}
 
 
 def _hide_bank(p: dict, request: Request) -> dict:
