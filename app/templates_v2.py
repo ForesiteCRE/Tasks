@@ -4,7 +4,7 @@
   • Accounting Task Checklist — AppFolio procedures, monthly review, owner report packets, cash forecast, training
 Imported by starter_templates.py, which owns installing them.
 """
-PM, ACCT, AP, AR, LEASING, AM = "Property Manager", "Head of Accounting", "AP", "AR", "Leasing", "Asset Manager"
+PM, ACCT, AP, AR, LEASING, AM = "Property Manager", "Head of Accounting", "Accounting 2", "Accounting 1", "Leasing", "Asset Manager"
 
 # ---------------------------------------------------------------- Property Onboarding
 # Start date = management commencement (≈30 days before the assumption date). Takeover day = day 30.

@@ -970,8 +970,8 @@ async function cdPatch(id,b){const d=PROP.dates.find(x=>x.id===id);await api('/a
   if(b.status==='handled'&&d&&d.repeat)toast('Handled — next one scheduled 🔁');openProperty(PROP.id);}
 async function cdDel(id){if(!confirm('Remove this critical date? (Its task, if any, stays.)'))return;await api('/api/critical-dates/'+id,{method:'DELETE'});openProperty(PROP.id);}
 let PROP_TEAM_EDIT=false;
-const TEAM_CORE=['Asset Manager','Property Manager','Backup Property Manager','AR','AP','Property Assistant'];
-const ROLE_LABEL={AR:'Accounts Receivable',AP:'Accounts Payable'};
+const TEAM_CORE=['Asset Manager','Property Manager','Backup Property Manager','Accounting 1','Accounting 2','Property Assistant'];
+const ROLE_LABEL={};
 const roleLabel=r=>ROLE_LABEL[r]||r;
 function propTeamCard(p,mg){
   const by=Object.fromEntries(p.roles.map(r=>[r.role.toLowerCase(),r]));

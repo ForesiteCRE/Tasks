@@ -221,8 +221,8 @@ def load(me_id: int) -> dict:
                 ids[name] = uid
                 m["users"].append(uid)
         # --- role defaults for the demo (remembered so they can be restored)
-        plan = {"Property Manager": me_id, "Head of Accounting": ids["Jordan Lee"], "AP": ids["Maria Garza"],
-                "AR": ids["Maria Garza"], "Leasing": ids["Alex Rivera"], "Asset Manager": ids["Sam Patel"]}
+        plan = {"Property Manager": me_id, "Head of Accounting": ids["Jordan Lee"], "Accounting 2": ids["Maria Garza"],
+                "Accounting 1": ids["Maria Garza"], "Leasing": ids["Alex Rivera"], "Asset Manager": ids["Sam Patel"]}
         for r in team.list_roles():
             if r["name"] in plan:
                 m["roles_before"][str(r["id"])] = r["default_user_id"]
@@ -502,14 +502,14 @@ def _showcase(m: dict, me_id: int, ids: dict, hq_id):
         roles = {r["name"]: r["id"] for r in c.execute("SELECT id, name FROM project_roles")}
     # property teams: different property managers own different buildings
     pa = properties.property_for_address
-    teams = {hq_id: {"Property Manager": me_id, "Head of Accounting": U("Jordan Lee"), "AP": U("Maria Garza"), "AR": U("Chris Ogden"),
+    teams = {hq_id: {"Property Manager": me_id, "Head of Accounting": U("Jordan Lee"), "Accounting 2": U("Maria Garza"), "Accounting 1": U("Chris Ogden"),
                      "Leasing": U("Taylor Brooks"), "Asset Manager": U("Sam Patel")},
              pa("4500 Fredericksburg Rd, San Antonio, TX"): {"Property Manager": U("Alex Rivera"), "Head of Accounting": U("Jordan Lee"),
-                     "AP": U("Maria Garza"), "AR": U("Maria Garza"), "Leasing": U("Taylor Brooks"), "Asset Manager": U("Sam Patel")},
+                     "Accounting 2": U("Maria Garza"), "Accounting 1": U("Maria Garza"), "Leasing": U("Taylor Brooks"), "Asset Manager": U("Sam Patel")},
              pa("8800 Research Blvd, Austin, TX"): {"Property Manager": U("Priya Shah"), "Head of Accounting": U("Jordan Lee"),
-                     "AP": U("Chris Ogden"), "AR": U("Chris Ogden"), "Leasing": U("Taylor Brooks")},
+                     "Accounting 2": U("Chris Ogden"), "Accounting 1": U("Chris Ogden"), "Leasing": U("Taylor Brooks")},
              pa("1200 Broadway St, San Antonio, TX"): {"Property Manager": U("Alex Rivera"), "Head of Accounting": U("Jordan Lee"),
-                     "AP": U("Maria Garza"), "AR": U("Chris Ogden")}}
+                     "Accounting 2": U("Maria Garza"), "Accounting 1": U("Chris Ogden")}}
     for prop, team_ in teams.items():
         if prop:
             for role, uid in team_.items():

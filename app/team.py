@@ -1,4 +1,4 @@
-"""Project roles (Property Manager, Head of Accounting, AP, AR, ...) and each project's team.
+"""Project roles (Property Manager, Head of Accounting, Accounting 1, Accounting 2, ...) and each project's team.
 
 - project_roles: the list of roles, each with an optional default person.
 - project_team: who holds each role on a given project.
@@ -23,9 +23,9 @@ CREATE TABLE IF NOT EXISTS project_team (
     PRIMARY KEY (project_id, role_id)
 );
 """
-DEFAULT_ROLES = ["Property Manager", "Head of Accounting", "AP", "AR", "Leasing", "Asset Manager"]
+DEFAULT_ROLES = ["Property Manager", "Head of Accounting", "Accounting 1", "Accounting 2", "Leasing", "Asset Manager"]
 # The property team card shows these (plus the owner contact); added once if missing.
-CORE_ROLES = ["Asset Manager", "Property Manager", "Backup Property Manager", "AR", "AP", "Property Assistant"]
+CORE_ROLES = ["Asset Manager", "Property Manager", "Backup Property Manager", "Accounting 1", "Accounting 2", "Property Assistant"]
 
 
 def init():
@@ -39,6 +39,14 @@ def init():
         if not c.execute("SELECT 1 FROM project_roles").fetchone():
             c.executemany("INSERT INTO project_roles(name, position) VALUES(?,?)",
                           [(n, i) for i, n in enumerate(DEFAULT_ROLES)])
+        for old, new in (("AR", "Accounting 1"), ("AP", "Accounting 2")):   # renamed Nov 2026; assignments stay
+            if not c.execute("SELECT 1 FROM project_roles WHERE name=?", (new,)).fetchone():
+                c.execute("UPDATE project_roles SET name=? WHERE name=?", (new, old))
+        a1 = c.execute("SELECT id, position FROM project_roles WHERE name='Accounting 1'").fetchone()
+        a2 = c.execute("SELECT id, position FROM project_roles WHERE name='Accounting 2'").fetchone()
+        if a1 and a2 and a1[1] > a2[1]:   # list Accounting 1 before Accounting 2
+            c.execute("UPDATE project_roles SET position=? WHERE id=?", (a2[1], a1[0]))
+            c.execute("UPDATE project_roles SET position=? WHERE id=?", (a1[1], a2[0]))
         have = {r[0].lower() for r in c.execute("SELECT name FROM project_roles")}
         for n in CORE_ROLES:
             if n.lower() not in have:

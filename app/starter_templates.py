@@ -6,7 +6,7 @@ Managers add these from Tasks → Templates → "Add starter templates"; they be
 """
 from .db import tx
 
-PM, ACCT, AP, AR, LEASING, AM = "Property Manager", "Head of Accounting", "AP", "AR", "Leasing", "Asset Manager"
+PM, ACCT, AP, AR, LEASING, AM = "Property Manager", "Head of Accounting", "Accounting 2", "Accounting 1", "Leasing", "Asset Manager"
 
 from . import templates_v2 as V2
 
