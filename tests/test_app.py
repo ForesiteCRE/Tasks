@@ -1591,14 +1591,14 @@ def test_onboarding_document_requests(mgr):
     t = next(x for x in ids(mgr.get("/api/templates")) if x["name"] == name)
     doc = next(i for i in t["items"] if i["title"] == st.DOC_TASK)
     kids = [i for i in t["items"] if i.get("parent_item_id") == doc["id"]]
-    assert len(kids) == len(st._doc_subtasks()) == 45
+    assert len(kids) == len(st._doc_subtasks()) == 60
     assert any(k["title"] == "Tenant · Current rent roll" and k["due_offset_days"] == 5 for k in kids)
     assert any(k["title"].startswith("Accounting · Balance sheet") and k["due_offset_days"] == 55 for k in kids)
     # simulate a template installed before this change, then run the one-time update
     tpl.delete_item(doc["id"])
     agreement = next(i for i in t["items"] if i["title"] == "Fully executed management agreement on file")
     old = tpl.add_item(t["id"], "Collect property documents from owner / prior manager", due_offset_days=3)
-    acct = next(i for i in t["items"] if i["title"] == "Set up property in accounting system")
+    acct = next(i for i in t["items"] if i["title"] == "Set up property in AppFolio")
     tpl.add_dependency(acct["id"], old)
     with tx() as c:
         c.execute("UPDATE template_items SET position=? WHERE id=?", (agreement["position"] + 0, old))
@@ -1608,7 +1608,41 @@ def test_onboarding_document_requests(mgr):
     titles = [i["title"] for i in t["items"] if not i.get("parent_item_id")]
     assert "Collect property documents from owner / prior manager" not in titles and st.DOC_TASK in titles
     doc = next(i for i in t["items"] if i["title"] == st.DOC_TASK)
-    assert len([i for i in t["items"] if i.get("parent_item_id") == doc["id"]]) == 45
-    acct = next(i for i in t["items"] if i["title"] == "Set up property in accounting system")
+    assert len([i for i in t["items"] if i.get("parent_item_id") == doc["id"]]) == 60
+    acct = next(i for i in t["items"] if i["title"] == "Set up property in AppFolio")
     assert agreement["id"] in acct["waiting_on"]
     assert st.migrate_onboarding_docs() is False                                   # only once
+
+
+def test_templates_v2_from_foresite_lists(mgr):
+    from app import starter_templates as st, tpl
+    from app.db import tx, set_setting
+    keys = [s["key"] for s in st.STARTERS]
+    assert "renewal" not in keys and {"cash_forecast", "acct_training"} <= set(keys)
+    st.install(["month_end", "onboarding", "acct_training", "cash_forecast"])
+    by = {t["name"]: t for t in ids(mgr.get("/api/templates"))}
+    me = [i["title"] for i in by["Month-End Close"]["items"]]
+    assert "Monthly financial review" in me and "Approve recurring bills (around the 22nd)" in me and "Compile owner report packet" in me
+    ob = by["Property Onboarding (Management Takeover)"]["items"]
+    setup = next(i for i in ob if i["title"] == "Set up property in AppFolio")
+    assert any(i["title"] == "Add the owner" and i["parent_item_id"] == setup["id"] for i in ob)
+    assert any(i["title"].startswith("Legal · ") for i in ob)
+    tr = by["Accounting New Hire Training"]["items"]
+    assert any(i["title"] == "A/P · Processing 1099s / 1096s" for i in tr)
+    # an older install gets rebuilt; a Lease Renewal template is removed (its projects keep their tasks)
+    with tx() as c:
+        rid = c.execute("INSERT INTO templates(name, description) VALUES('Lease Renewal','old')").lastrowid
+        mid = by["Month-End Close"]["id"]
+        c.execute("DELETE FROM template_items WHERE template_id=?", (mid,))
+    tpl.add_item(rid, "Renewal outreach")
+    tpl.add_item(mid, "Old month-end step")
+    pid = ids(mgr.post("/api/projects", json={"name": "Old renewal project", "template_id": rid}))["id"]
+    set_setting("tpl.v2", "")
+    done = st.upgrade_templates_v2()
+    assert "Month-End Close" in done and "removed Lease Renewal" in done
+    by = {t["name"]: t for t in ids(mgr.get("/api/templates"))}
+    assert "Lease Renewal" not in by
+    assert [i["title"] for i in by["Month-End Close"]["items"]][0] == "Post tenant receipts & bank deposits"
+    assert any(p["id"] == pid for p in ids(mgr.get("/api/projects")))
+    assert st.upgrade_templates_v2() == []
+    assert "New Assignment Check List" in by["Property Onboarding (Management Takeover)"]["description"]

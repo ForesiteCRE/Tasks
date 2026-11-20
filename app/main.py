@@ -48,6 +48,7 @@ async def lifespan(_):
     tpl.init()
     try:
         starter_templates.migrate_onboarding_docs()
+        starter_templates.upgrade_templates_v2()
     except Exception:
         logging.getLogger("templates").exception("onboarding document-request update failed")
     try:

@@ -8,6 +8,8 @@ from .db import tx
 
 PM, ACCT, AP, AR, LEASING, AM = "Property Manager", "Head of Accounting", "AP", "AR", "Leasing", "Asset Manager"
 
+from . import templates_v2 as V2
+
 # ---------- Property Onboarding Document Requests (our Management Transition Documentation Request) ----------
 # One task; every document the prior manager provides is a subtask, labeled by section. "Prior to takeover" items
 # are due right after the request; "at takeover" items (accounting that keeps coming as months close) are due later.
@@ -57,7 +59,7 @@ _DOCS = [  # (section, document, role, prior-to-takeover?, at-takeover?)
 
 def _doc_subtasks() -> list[dict]:
     subs = []
-    for sec, doc, role, early, late in _DOCS:
+    for sec, doc, role, early, late in _DOCS + V2.EXTRA_DOCS:
         base = doc.split(" — ")[0]
         if early:
             subs.append({"title": f"{sec} · {base} — so far" if late else f"{sec} · {doc}", "role": role, "days": EARLY, "est": 10})
@@ -79,53 +81,10 @@ STARTERS = [
         "key": "onboarding",
         "board": "none",
         "name": "Property Onboarding (Management Takeover)",
-        "description": "New management assignment. Start date = management commencement date (set it ~30 days before "
-                       "takeover so pre-takeover items land in time). Adjust days to your process.",
-        "items": [
-            {"title": "Fully executed management agreement on file", "role": AM, "days": 0, "est": 30,
-             "checklist": ["Signed by owner and us", "Fee schedule & leasing commissions noted", "Owner reporting requirements noted",
-                           "Approval/spending limits noted", "Insurance requirements noted"]},
-            DOC_REQUEST_ITEM,
-            {"title": "Site inspection & property condition walk", "role": PM, "days": 5, "est": 240,
-             "subtasks": [{"title": "Photo-document roof, parking lot, common areas & signage", "role": PM, "days": 5, "est": 120},
-                          {"title": "Inventory keys, locks & access systems", "role": PM, "days": 6, "est": 60}]},
-            {"title": "Set up property in accounting system", "role": ACCT, "days": 7, "est": 240,
-             "after": ["Fully executed management agreement on file"],
-             "checklist": ["Property & owner entity created", "Chart of accounts / GL mapped", "Owner W-9 on file",
-                           "Management & leasing fees configured", "Reporting package template set up"]},
-            {"title": "Open operating & security deposit bank accounts", "role": ACCT, "days": 10, "est": 120,
-             "checklist": ["Operating account opened", "Security deposit (trust) account opened", "Signers & online access set",
-                           "Positive pay / fraud controls on"]},
-            {"title": "Load tenants, leases & recurring charges", "role": AR, "days": 12, "est": 300,
-             "after": ["Set up property in accounting system"],
-             "checklist": ["Tenants & contacts", "Base rent & escalations", "CAM / tax / insurance estimates",
-                           "Security deposits by tenant", "Opening receivable balances tie to prior manager"]},
-            {"title": "Lease abstracts for every tenant", "role": LEASING, "days": 14, "est": 480,
-             "after": ["Fully executed management agreement on file"],
-             "checklist": ["Critical dates (expirations, options, ROFR)", "CAM caps & exclusions", "Co-tenancy / exclusives",
-                           "Insurance requirements", "Notice addresses"]},
-            {"title": "Send tenant notification letters (new manager & payment instructions)", "role": PM, "days": 20, "est": 120,
-             "after": ["Open operating & security deposit bank accounts", "Load tenants, leases & recurring charges"]},
-            {"title": "Transfer utilities to owner/management", "role": PM, "days": 20, "est": 120},
-            {"title": "Review, assign or rebid vendor contracts", "role": PM, "days": 21, "est": 240,
-             "checklist": ["Landscaping", "Janitorial / porter", "Parking lot sweeping", "HVAC PM", "Fire/life safety",
-                           "Pest control", "Trash", "Security / alarm monitoring"]},
-            {"title": "Set up vendors & recurring payables", "role": AP, "days": 22, "est": 180,
-             "after": ["Review, assign or rebid vendor contracts", "Set up property in accounting system"],
-             "checklist": ["Vendor W-9s & COIs collected", "Recurring invoices scheduled", "Utility accounts set to auto-pay"]},
-            {"title": "Insurance: management named as additional insured", "role": AM, "days": 25, "est": 60},
-            {"title": "Set up after-hours emergency line & vendor call list", "role": PM, "days": 25, "est": 60},
-            {"title": "Takeover day: confirm everything transferred", "role": PM, "days": 30, "est": 120,
-             "after": ["Send tenant notification letters (new manager & payment instructions)", "Transfer utilities to owner/management",
-                       "Set up vendors & recurring payables"]},
-            {"title": "Receive final accounting & deposits from prior manager", "role": ACCT, "days": 45, "est": 180,
-             "after": ["Takeover day: confirm everything transferred"],
-             "checklist": ["Final operating statement", "Security deposits transferred & reconciled", "Prepaid rents & AR detail",
-                           "Open payables list", "Bank statements through cut-off"]},
-            {"title": "First monthly owner report delivered", "role": ACCT, "days": 60, "est": 240,
-             "after": ["Receive final accounting & deposits from prior manager"]},
-            {"title": "90-day review with owner", "role": AM, "days": 90, "est": 90},
-        ],
+        "description": "New management assignment, built from our New Assignment Check List, Transition Plan and Document Request. "
+                       "Start date = management commencement (about 30 days before the assumption date, so pre-takeover items land in "
+                       "time). Adjust days to your process.",
+        "items": [DOC_REQUEST_ITEM if x == "DOC_REQUESTS" else x for x in V2.ONBOARDING_ITEMS],
     },
     {
         "key": "sale_handoff",
@@ -205,48 +164,13 @@ STARTERS = [
         "key": "move_in",
         "name": "Tenant Move-In",
         "description": "New lease signed. Start date = lease execution date.",
-        "items": [
-            {"title": "Fully executed lease & guaranty on file", "role": LEASING, "days": 0, "est": 30},
-            {"title": "Lease abstract & critical dates entered", "role": LEASING, "days": 3, "est": 90},
-            {"title": "Set up tenant & recurring charges", "role": AR, "days": 5, "est": 60,
-             "after": ["Lease abstract & critical dates entered"], "checklist": ["Base rent & free-rent periods", "CAM/tax/ins estimates", "Security deposit received"]},
-            {"title": "Tenant COI received (meets lease requirements)", "role": PM, "days": 10, "est": 30},
-            {"title": "Coordinate TI / make-ready", "role": PM, "days": 20, "est": 240,
-             "checklist": ["Permits", "Contractor COIs", "Inspections", "Punch list"]},
-            {"title": "Utilities transferred to tenant", "role": PM, "days": 25, "est": 45},
-            {"title": "Move-in walk, keys & welcome packet", "role": PM, "days": 30, "est": 60,
-             "after": ["Tenant COI received (meets lease requirements)", "Coordinate TI / make-ready"]},
-            {"title": "Pay leasing commission(s)", "role": AP, "days": 35, "est": 45},
-        ],
+        "items": V2.MOVE_IN_ITEMS,
     },
     {
         "key": "move_out",
         "name": "Tenant Move-Out",
         "description": "Tenant vacating. Start date = notice received / lease expiration minus 30 days.",
-        "items": [
-            {"title": "Confirm move-out date & lease surrender obligations", "role": PM, "days": 0, "est": 45},
-            {"title": "Notify leasing team: space coming available", "role": LEASING, "days": 1, "est": 15},
-            {"title": "Move-out inspection & photos", "role": PM, "days": 30, "est": 90},
-            {"title": "Keys returned & locks changed", "role": PM, "days": 30, "est": 30},
-            {"title": "Utilities back to owner", "role": PM, "days": 31, "est": 30},
-            {"title": "Security deposit reconciliation & refund/charge letter", "role": AR, "days": 45, "est": 120,
-             "after": ["Move-out inspection & photos"]},
-            {"title": "Final CAM reconciliation for tenant", "role": ACCT, "days": 60, "est": 120},
-        ],
-    },
-    {
-        "key": "renewal",
-        "name": "Lease Renewal",
-        "description": "Renewal or extension. Start date = 180 days before lease expiration.",
-        "items": [
-            {"title": "Renewal outreach & tenant intentions", "role": LEASING, "days": 0, "est": 60},
-            {"title": "Market comps & renewal proposal", "role": LEASING, "days": 14, "est": 180},
-            {"title": "Owner approval of terms", "role": AM, "days": 30, "est": 30, "after": ["Market comps & renewal proposal"]},
-            {"title": "Renewal amendment drafted & executed", "role": LEASING, "days": 60, "est": 120,
-             "after": ["Owner approval of terms"]},
-            {"title": "Update rent schedule & recurring charges", "role": AR, "days": 65, "est": 45,
-             "after": ["Renewal amendment drafted & executed"]},
-        ],
+        "items": V2.MOVE_OUT_ITEMS,
     },
     {
         "key": "cam_rec",
@@ -268,21 +192,8 @@ STARTERS = [
         "key": "month_end",
         "board": "month",
         "name": "Month-End Close",
-        "description": "Monthly accounting close and owner reporting. Start date = 1st of the month (pairs well with Monthly recurring).",
-        "items": [
-            {"title": "Post rent receipts & reconcile deposits", "role": AR, "days": 2, "est": 120},
-            {"title": "Late notices & delinquency follow-up", "role": AR, "days": 6, "est": 90},
-            {"title": "Enter & approve payables", "role": AP, "days": 5, "est": 180,
-             "checklist": ["Utilities", "Contracted services", "Repairs & maintenance", "Management fee"]},
-            {"title": "Bank reconciliation", "role": ACCT, "days": 8, "est": 120,
-             "after": ["Post rent receipts & reconcile deposits", "Enter & approve payables"]},
-            {"title": "Accruals & prepaid adjustments", "role": ACCT, "days": 9, "est": 90},
-            {"title": "Variance commentary (budget vs actual)", "role": PM, "days": 10, "est": 90,
-             "after": ["Bank reconciliation"]},
-            {"title": "Owner report package & distribution", "role": ACCT, "days": 12, "est": 180,
-             "after": ["Variance commentary (budget vs actual)", "Accruals & prepaid adjustments"],
-             "checklist": ["Income statement & balance sheet", "Rent roll & aging", "GL detail", "Variance commentary", "Owner distribution"]},
-        ],
+        "description": "Monthly close in AppFolio and the owner report packet, from Accounting's procedures. Start date = 1st of the month (pairs well with Monthly recurring).",
+        "items": V2.MONTH_END_ITEMS,
     },
     {
         "key": "budget",
@@ -330,7 +241,7 @@ STARTERS = [
             {"title": "Final December close", "role": ACCT, "days": 40, "est": 240, "after": ["Confirm year-end accruals & prepaids"]},
             {"title": "Owner year-end package & tax information", "role": ACCT, "days": 55, "est": 180, "after": ["Final December close"]},
             {"title": "Issue 1099s to vendors (by Jan 31)", "role": AP, "days": 55, "est": 120, "after": ["Collect missing vendor W-9s"]},
-            {"title": "File 1099s with the IRS", "role": AP, "days": 58, "est": 45, "after": ["Issue 1099s to vendors (by Jan 31)"]},
+            {"title": "File 1099s & 1096 with the IRS", "role": AP, "days": 58, "est": 45, "after": ["Issue 1099s to vendors (by Jan 31)"]},
             {"title": "Archive the year & roll the fiscal year", "role": ACCT, "days": 70, "est": 60, "after": ["Owner year-end package & tax information"]},
         ],
     },
@@ -350,6 +261,8 @@ STARTERS = [
             {"title": "Send summary to owner / asset manager", "role": PM, "days": 20, "est": 20, "after": ["Photos & inspection report"]},
         ],
     },
+    V2.CASH_REFORECAST,
+    V2.TRAINING,
 ]
 
 
@@ -364,11 +277,12 @@ SAMPLE_PROJECTS = {
     "move_in": ("Sample – Suite 110 Move-In, 777 E Sonterra (Coastal Coffee)", "777 E Sonterra Blvd, San Antonio, TX 78258",
                 "Sonterra Commons Owner LLC", -10),
     "move_out": ("Sample – Suite 204 Move-Out", "8800 Research Blvd, Austin, TX", "Research Plaza Owner LP", -5),
-    "renewal": ("Sample – Suite 300 Renewal (Lone Star Dental)", "4500 Fredericksburg Rd, San Antonio, TX",
-                "Fredericksburg Center LLC", -3),
     "cam_rec": ("Sample – 2026 CAM Reconciliation (777 E Sonterra)", "777 E Sonterra Blvd, San Antonio, TX 78258",
                 "Sonterra Commons Owner LLC", -15),
     "budget": ("Sample – 2027 Budget (8800 Research Blvd)", "8800 Research Blvd, Austin, TX", "Research Plaza Owner LP", -6),
+    "cash_forecast": ("Sample – Cash Reforecast for distribution (4500 Fredericksburg Rd)", "4500 Fredericksburg Rd, San Antonio, TX",
+                      "Fredericksburg Center LLC", -1),
+    "acct_training": ("Sample – Accounting New Hire Training", None, None, -12),
     "tax_protest": ("Sample – 2026 Tax Protest (4500 Fredericksburg Rd)", "4500 Fredericksburg Rd, San Antonio, TX",
                     "Fredericksburg Center LLC", -12),
     "year_end": ("Sample – 2026 Year-End & 1099s (777 E Sonterra)", "777 E Sonterra Blvd, San Antonio, TX 78258",
@@ -462,6 +376,70 @@ def _add_item(tid: int, item: dict, roles: dict, ids: dict, parent=None) -> int:
     return iid
 
 
+def _build_items(tid: int, items: list[dict], roles: dict):
+    from . import tpl
+    ids = {}
+    for item in items:
+        _add_item(tid, item, roles, ids)
+    for item in items:
+        for dep in item.get("after", []):
+            if dep in ids:
+                tpl.add_dependency(ids[item["title"]], ids[dep])
+
+
+REBUILT_V2 = ("onboarding", "month_end", "move_in", "move_out")
+REMOVED_V2 = {"Lease Renewal": "Sample – Suite 300 Renewal (Lone Star Dental)"}
+
+
+def upgrade_templates_v2() -> list[str]:
+    """One time (Nov 2026): rebuild the installed onboarding, month-end, move-in and move-out templates from Foresite's
+    own checklists, and remove the Lease Renewal template. Template names and tracking-board settings stay; projects
+    already started keep their tasks."""
+    from . import team, tpl
+    from .db import get_setting, set_setting
+    if get_setting("tpl.v2"):
+        return []
+    roles = {r["name"].lower(): r["id"] for r in team.list_roles()}
+    done = []
+    for key in REBUILT_V2:
+        st = next(x for x in STARTERS if x["key"] == key)
+        with tx() as c:
+            t = c.execute("SELECT id FROM templates WHERE name=?", (st["name"],)).fetchone()
+            if not t:
+                continue
+            tops = [r[0] for r in c.execute("SELECT id FROM template_items WHERE template_id=? AND parent_item_id IS NULL", (t[0],))]
+            c.execute("UPDATE templates SET description=? WHERE id=?", (st["description"], t[0]))
+        for iid in tops:
+            tpl.delete_item(iid)
+        _build_items(t[0], st["items"], roles)
+        done.append(st["name"])
+    with tx() as c:
+        c.execute("UPDATE template_items SET title='File 1099s & 1096 with the IRS' WHERE title='File 1099s with the IRS'")
+    for name, sample in REMOVED_V2.items():
+        with tx() as c:
+            t = c.execute("SELECT id FROM templates WHERE name=?", (name,)).fetchone()
+            samples = [r[0] for r in c.execute("SELECT id FROM projects WHERE is_sample=1 AND name=?", (sample,))]
+        for pid in samples:
+            delete_project(pid)
+        if t:
+            with tx() as c:
+                tops = [r[0] for r in c.execute("SELECT id FROM template_items WHERE template_id=? AND parent_item_id IS NULL", (t[0],))]
+            for iid in tops:
+                tpl.delete_item(iid)
+            with tx() as c:
+                c.execute("UPDATE projects SET template_id=NULL WHERE template_id=?", (t[0],))
+                c.execute("DELETE FROM recurrences WHERE template_id=?", (t[0],))
+                c.execute("DELETE FROM templates WHERE id=?", (t[0],))
+            done.append(f"removed {name}")
+    with tx() as c:   # anyone already using starter templates also gets the two new ones
+        uses_starters = c.execute("SELECT 1 FROM templates WHERE name IN (?,?)",
+                                  ("Month-End Close", "Property Onboarding (Management Takeover)")).fetchone()
+    if uses_starters:
+        done += _install_templates(["cash_forecast", "acct_training"])
+    set_setting("tpl.v2", "done")
+    return done
+
+
 def migrate_onboarding_docs() -> bool:
     """One time: in an installed onboarding template, swap the old one-step document checklist for
     "Property Onboarding Document Requests" (one subtask per document). Anything else edited in the template stays.
@@ -516,12 +494,6 @@ def _install_templates(keys: list[str]) -> list[str]:
         with tx() as c:
             tid = c.execute("INSERT INTO templates(name, description, board_period) VALUES(?,?,?)",
                             (s["name"], s["description"], s.get("board"))).lastrowid
-        ids = {}
-        for item in s["items"]:
-            _add_item(tid, item, roles, ids)
-        for item in s["items"]:
-            for dep in item.get("after", []):
-                if dep in ids:
-                    tpl.add_dependency(ids[item["title"]], ids[dep])
+        _build_items(tid, s["items"], roles)
         added.append(s["name"])
     return added

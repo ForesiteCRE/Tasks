@@ -108,7 +108,7 @@ def add_extra_team(m: dict):
 # Fictional team wins for demos: (person, icon-kind, what they did, detail). "me" = whoever loaded the demo.
 SAMPLE_WINS = [
     ("Chris Ogden", "Collected $18,400 past-due rent from Lone Star Dental", "Suite 300 · 4500 Fredericksburg Rd"),
-    ("Taylor Brooks", "Signed a 5-year renewal with Coastal Coffee", "Suite 110 · 777 E Sonterra Blvd"),
+    ("Taylor Brooks", "Got every tenant COI at 777 E Sonterra current", "All 14 tenants · before the insurance renewal"),
     ("Sam Patel", "Won the tax protest — 777 E Sonterra value cut 8%", "Saves the owner about $21,000 this year"),
     ("Priya Shah", "Roof leak at 8800 Research fixed the same day", "No tenant damage · vendor on site in 2 hours"),
     ("Maria Garza", "Collected every vendor W-9 before year-end", "1099s ready to go in January"),
