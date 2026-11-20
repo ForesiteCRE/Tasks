@@ -820,7 +820,7 @@ async function openProject(pid){const p=PROJECTS.find(x=>x.id===pid);if(!p)retur
    <div class="team-grid">${p.team.map(m=>{const n=p.tasks.filter(t=>t.role_id===m.role_id&&t.status!=='done').length;
      return `<label>${esc(m.role)} ${n?`<span class="via">· ${n} open task${n>1?'s':''}</span>`:''}<select ${dis} onchange="teamSet(${p.id},${m.role_id},this.value)">${userOpts(m.user_id,'—')}</select></label>`}).join('')}</div></div>`}
    ${(mg||p.created_by===ME.id)?`<details class="danger"><summary>Danger zone</summary>
-     <p>Deleting removes this project and all ${p.tasks.length} of its tasks for everyone. It can't be undone (only restored from a nightly backup).</p>
+     <p>Deleting removes this project and all ${p.tasks.length} of its tasks for everyone. You can restore it from Admin ▾ → Recently deleted for 30 days.</p>
      <label>Type the project name <b>${esc(p.name)}</b> to confirm<input id="delConfirm" autocomplete="off" oninput="$('#delBtn').disabled=this.value.trim().toLowerCase()!==${esc(JSON.stringify(p.name.trim().toLowerCase()))}"></label>
      <button class="b" id="delBtn" disabled style="background:var(--bad);border-color:var(--bad);margin-top:8px" onclick="delProject(${p.id})">Permanently delete project</button></details>`:''}`;
   if(!taskDlg.open)taskDlg.showModal();if($('#pjvSel'))pjvList(p.id);loadBids(p.id);}
