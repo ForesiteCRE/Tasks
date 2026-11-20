@@ -881,7 +881,7 @@ function addPropertyForm(){$('#propAdd').innerHTML=`<div class="card"><h3 style=
   <button class="b" onclick="addProperty()">Add</button><button class="b ghost" onclick="$('#propAdd').innerHTML=''">Cancel</button></div></div>`;$('#npAddr').focus();}
 async function addProperty(){const r=await api('/api/properties',{method:'POST',body:{address:$('#npAddr').value,name:$('#npName').value||null,client:$('#npClient').value||null}});
   $('#propAdd').innerHTML='';PROPS=[];openProperty(r.id);}
-async function openProperty(id){const same=PROP&&PROP.id===id;PROP=await api('/api/properties/'+id);LEASE=null;if(!same){PROP_ALL=false;PROP_TEAM_EDIT=false;}
+async function openProperty(id){const same=PROP&&PROP.id===id;PROP=await api('/api/properties/'+id);LEASE=null;if(!same){PROP_ALL=false;PROP_TEAM_EDIT=false;CT_EDIT=null;}
   document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-property'));
   markNav('property');
   if(taskDlg.open)taskDlg.close();renderProperty();scrollTo(0,0);}
@@ -939,8 +939,8 @@ function renderProperty(){const p=PROP,mg=isMgr(),dis=mg?'':'disabled',open=p.da
         ${d.summary?`<div class="sub">${esc(d.summary)}</div>`:''}</div>${mg?`<button class="b ghost sm" style="color:var(--bad)" title="Delete file" onclick="docDel(${d.id})">✕</button>`:''}</div>`).join('')||(p.insurance.state==='missing'?'':'<div class="empty">No documents yet.</div>')}</div></div>
     ${ourCoiPanel(p)}
     <div class="panel"><header><h3>📇 Contacts</h3><span class="cnt">${p.contacts.length}</span></header><div class="body">
-      ${p.contacts.map(c=>`<div class="row2"><span class="ico">👤</span><div class="grow"><span class="mute" style="font-size:12px">${esc(c.role)}</span><div><b>${esc(c.name||c.company||'')}</b>${c.name&&c.company?` · ${esc(c.company)}`:''}</div>
-        <div class="sub">${c.email?`<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`:''}${c.email&&c.phone?' · ':''}${c.phone?`<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>`:''}${c.notes?' · '+esc(c.notes):''}</div></div>${mg?`<button class="b ghost sm" style="color:var(--bad)" onclick="ctDel(${c.id})">✕</button>`:''}</div>`).join('')||'<div class="empty">No contacts yet.</div>'}
+      ${p.contacts.map(c=>CT_EDIT===c.id?ctForm(c,p):`<div class="row2"><span class="ico">👤</span><div class="grow"><span class="mute" style="font-size:12px">${esc(c.role)}</span><div><b>${esc(c.name||c.company||'')}</b>${c.name&&c.company?` · ${esc(c.company)}`:''}</div>
+        <div class="sub">${c.email?`<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`:''}${c.email&&c.phone?' · ':''}${c.phone?`<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>`:''}${c.notes?' · '+esc(c.notes):''}</div></div>${mg?`<button class="b ghost sm" title="Edit" onclick="CT_EDIT=${c.id};renderProperty()">✎</button><button class="b ghost sm" style="color:var(--bad)" title="Remove" onclick="ctDel(${c.id})">✕</button>`:''}</div>`).join('')||'<div class="empty">No contacts yet.</div>'}
       ${mg?`<details style="margin-top:8px"><summary class="mute" style="cursor:pointer">+ Add a contact</summary><div class="team-grid" style="margin-top:8px">
         <label>Role<select id="ctRole">${p.contact_roles.map(r=>`<option>${esc(r)}</option>`).join('')}</select></label><label>Name<input id="ctName"></label>
         <label>Company<input id="ctCompany"></label><label>Email<input id="ctEmail" type="email"></label><label>Phone<input id="ctPhone" type="tel"></label><label>Notes<input id="ctNotes"></label></div>
@@ -1006,6 +1006,18 @@ async function delProperty(){const r=await api(`/api/properties/${PROP.id}?confi
 async function ctAdd(){await api(`/api/properties/${PROP.id}/contacts`,{method:'POST',body:{role:$('#ctRole').value,name:$('#ctName').value,company:$('#ctCompany').value,email:$('#ctEmail').value,phone:$('#ctPhone').value,notes:$('#ctNotes').value}});toast('Contact added');openProperty(PROP.id);}
 function ctBank(){const d=[...document.querySelectorAll('#propPage details')].find(x=>x.querySelector('#ctRole'));if(!d)return;d.open=true;$('#ctRole').value='Bank';
   if(PROP.bank_name&&!$('#ctCompany').value)$('#ctCompany').value=PROP.bank_name;d.scrollIntoView({behavior:'smooth',block:'center'});$('#ctName').focus();}
+let CT_EDIT=null;
+function ctForm(c,p){const roles=p.contact_roles.includes(c.role)?p.contact_roles:[c.role,...p.contact_roles];
+  return `<div class="row2" style="display:block;background:#f6f9fb;border-radius:8px;padding:10px"><div class="team-grid">
+    <label>Role<select id="ceRole">${roles.map(r=>`<option ${r===c.role?'selected':''}>${esc(r)}</option>`).join('')}</select></label>
+    <label>Name<input id="ceName" value="${esc(c.name||'')}"></label><label>Company<input id="ceCompany" value="${esc(c.company||'')}"></label>
+    <label>Email<input id="ceEmail" type="email" value="${esc(c.email||'')}"></label><label>Phone<input id="cePhone" type="tel" value="${esc(c.phone||'')}"></label>
+    <label>Notes<input id="ceNotes" value="${esc(c.notes||'')}"></label></div>
+    <div class="row" style="justify-content:flex-end;gap:6px;margin:6px 0 0"><button class="b ghost sm" onclick="CT_EDIT=null;renderProperty()">Cancel</button><button class="b sm" onclick="ctSave(${c.id})">Save</button></div></div>`;}
+async function ctSave(id){const v=k=>$('#ce'+k).value;
+  if(![v('Name'),v('Company'),v('Email'),v('Phone')].some(x=>x.trim())){alert('Add at least a name, company, email or phone.');return;}
+  await api('/api/property-contacts/'+id,{method:'PATCH',body:{role:v('Role'),name:v('Name'),company:v('Company'),email:v('Email'),phone:v('Phone'),notes:v('Notes')}});
+  CT_EDIT=null;toast('Contact saved');openProperty(PROP.id);}
 async function ctDel(id){if(!confirm('Remove this contact?'))return;await api('/api/property-contacts/'+id,{method:'DELETE'});openProperty(PROP.id);}
 async function docPatch(id,b){await api('/api/property-docs/'+id,{method:'PATCH',body:b});PROPS=[];openProperty(PROP.id);toast('Saved');}
 async function docDel(id){if(!confirm('Delete this file from the property?'))return;await api('/api/property-docs/'+id,{method:'DELETE'});PROPS=[];openProperty(PROP.id);}
