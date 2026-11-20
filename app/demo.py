@@ -684,6 +684,8 @@ def remove() -> dict:
             c.execute("DELETE FROM project_team WHERE user_id=?", (uid,))
             c.execute("DELETE FROM property_team WHERE user_id=?", (uid,))
             c.execute("DELETE FROM users WHERE id=?", (uid,))
+    from . import fun
+    fun.clean_wins()   # wins for sample tasks that real people ticked off, and every sample shout-out
     set_setting("demo.manifest", "")
     return {"removed": True, "projects": len(m["projects"]), "people": len(m["users"])}
 

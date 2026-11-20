@@ -67,7 +67,10 @@ def feed(limit: int = 30, me: int | None = None) -> list[dict]:
                                       (SELECT GROUP_CONCAT(ku.name, ', ') FROM win_kudos k JOIN users ku ON ku.id=k.user_id WHERE k.win_id=w.id) AS kudos_from,
                                       EXISTS(SELECT 1 FROM win_kudos k WHERE k.win_id=w.id AND k.user_id=?) AS mine_kudo
                                FROM wins w LEFT JOIN users u ON u.id=w.user_id
-                               WHERE w.at >= datetime('now','-7 days') ORDER BY (w.kind='task'), w.at DESC, w.id DESC LIMIT ?""", (me, limit)))
+                               WHERE w.at >= datetime('now','-7 days')
+                                 AND NOT (w.kind='task' AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id=w.ref_id))
+                                 AND NOT (w.kind='project' AND NOT EXISTS (SELECT 1 FROM projects p WHERE p.id=w.ref_id))
+                               ORDER BY (w.kind='task'), w.at DESC, w.id DESC LIMIT ?""", (me, limit)))
     for w in ws:
         if w["kind"] == "badge":
             ico, name, _ = BADGES.get(w["title"], ("🏅", w["title"], ""))
@@ -75,6 +78,23 @@ def feed(limit: int = 30, me: int | None = None) -> list[dict]:
         else:
             w["icon"] = {"task": "✅", "project": "🎉", "streak": "🔥", "shoutout": "🏆"}.get(w["kind"], "✅")
     return ws
+
+
+def clean_wins(reset: bool = False) -> int:
+    """Remove leftover wins: ones whose task/project is gone and every sample shout-out. reset=True clears the whole
+    feed and everyone's streak/badge history (a fresh start after the demo)."""
+    with tx() as c:
+        if reset:
+            n = c.execute("SELECT COUNT(*) FROM wins").fetchone()[0]
+            for t in ("win_kudos", "wins", "user_badges", "user_days"):
+                c.execute(f"DELETE FROM {t}")
+            return n
+        ids = [r[0] for r in c.execute("""SELECT id FROM wins WHERE kind='shoutout'
+               OR (kind='task' AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id=wins.ref_id))
+               OR (kind='project' AND NOT EXISTS (SELECT 1 FROM projects p WHERE p.id=wins.ref_id))""")]
+        c.executemany("DELETE FROM win_kudos WHERE win_id=?", [(i,) for i in ids])
+        c.executemany("DELETE FROM wins WHERE id=?", [(i,) for i in ids])
+        return len(ids)
 
 
 def kudo(win_id: int, user_id: int) -> dict:

@@ -2265,6 +2265,12 @@ def demo_fill(request: Request):
         raise HTTPException(403, "Only the admin can do that.")
     return demo.fill(_me_id(request))
 
+@app.post("/api/fun/clean-wins")
+def fun_clean_wins(request: Request, reset: bool = False):
+    if not auth.is_admin(request):
+        raise HTTPException(403, "Only the admin can do that.")
+    return {"removed": fun.clean_wins(reset)}
+
 @app.delete("/api/demo")
 def demo_remove():
     return demo.remove()

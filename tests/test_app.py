@@ -1807,3 +1807,18 @@ def test_owner_entity_separate_from_client(mgr):
     ids(mgr.patch(f"/api/properties/{pid}", json={"owner_entity": "5 Entity Ct Holdings, LLC", "client": "Kurt"}))
     p = ids(mgr.get(f"/api/properties/{pid}"))
     assert p["owner_entity"] == "5 Entity Ct Holdings, LLC" and p["client"] == "Kurt"
+
+
+def test_leftover_sample_wins_cleaned(mgr, staff):
+    from app.db import tx
+    with tx() as c:
+        c.execute("INSERT INTO wins(user_id, kind, ref_id, title) VALUES(?, 'task', 99999999, 'ghost task')", (mgr.me["id"],))
+        c.execute("INSERT INTO wins(user_id, kind, ref_id, title) VALUES(?, 'shoutout', NULL, 'sample shout')", (mgr.me["id"],))
+    titles = [w["title"] for w in ids(mgr.get("/api/fun/team"))["wins"]]
+    assert "ghost task" not in titles                                   # feed skips wins for deleted tasks
+    assert staff.post("/api/fun/clean-wins").status_code == 403
+    assert ids(mgr.post("/api/fun/clean-wins"))["removed"] >= 2
+    with tx() as c:
+        assert not c.execute("SELECT 1 FROM wins WHERE title IN ('ghost task','sample shout')").fetchone()
+    ids(mgr.post("/api/fun/clean-wins?reset=true"))
+    assert ids(mgr.get("/api/fun/team"))["wins"] == []
