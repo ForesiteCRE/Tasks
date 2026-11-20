@@ -52,6 +52,10 @@ async def lifespan(_):
     except Exception:
         logging.getLogger("templates").exception("onboarding document-request update failed")
     try:
+        demo.flag_demo_vendors()
+    except Exception:
+        logging.getLogger("demo").exception("flagging demo vendors failed")
+    try:
         demo.backfill_contacts()
     except Exception:
         logging.getLogger("demo").exception("sample contact backfill failed")

@@ -175,6 +175,14 @@ def fill(me_id: int | None = None) -> dict:
     return {"loaded": True, "wins": len(manifest().get("sample_wins", [])), "contacts": len(m.get("contacts", []))}
 
 
+def flag_demo_vendors():
+    """Vendors made by an earlier demo load are samples too, so 'Remove sample vendors' clears them."""
+    m = manifest()
+    if m and m.get("vendors"):
+        with tx() as c:
+            c.executemany("UPDATE vendors SET is_sample=1 WHERE id=?", [(v,) for v in m["vendors"]])
+
+
 def backfill_contacts():
     """Demo data loaded before sample contacts existed gets them once."""
     m = manifest()
@@ -404,6 +412,8 @@ def load(me_id: int) -> dict:
                 vid = V.create({"name": name, "trades": trades, "contact_name": contact, "phone": phone, "notes": notes,
                                 "email": f"office@{slug}.example.com"}, me_id)
                 m["vendors"].append(vid)
+                with tx() as c:   # demo vendors count as samples (Vendors → Remove sample vendors)
+                    c.execute("UPDATE vendors SET is_sample=1 WHERE id=?", (vid,))
                 return vid
             green = vend("Green Leaf Landscaping", ["Landscaping"], "Marco Ruiz", "(210) 555-0301", "Weekly service; irrigation checks included.")
             lone = vend("Lone Star Lawn Care", ["Landscaping"], "Dale Pruitt", "(210) 555-0302")
