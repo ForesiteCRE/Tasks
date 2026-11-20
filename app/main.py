@@ -939,6 +939,7 @@ class PropertyPatch(BaseModel):
     address: str | None = None
     name: str | None = None
     client: str | None = None
+    owner_email: str | None = None
     notes: str | None = None
     report_notes: str | None = None
     spend_limit: float | None = None

@@ -86,6 +86,8 @@ def init():
         if "property_detached" not in {r[1] for r in c.execute("PRAGMA table_info(projects)")}:
             # set when a property page is deleted: its projects keep their address but don't re-create the page
             c.execute("ALTER TABLE projects ADD COLUMN property_detached INTEGER NOT NULL DEFAULT 0")
+        if "owner_email" not in {r[1] for r in c.execute("PRAGMA table_info(properties)")}:
+            c.execute("ALTER TABLE properties ADD COLUMN owner_email TEXT")
         if "photo_file" not in {r[1] for r in c.execute("PRAGMA table_info(properties)")}:
             c.execute("ALTER TABLE properties ADD COLUMN photo_file TEXT")   # the property's own header photo
         if "property_id" not in {r[1] for r in c.execute("PRAGMA table_info(tasks)")}:
@@ -265,7 +267,7 @@ def create(address: str, name: str | None = None, client: str | None = None, not
 
 
 def update(pid: int, fields: dict):
-    allowed = {k: v for k, v in fields.items() if k in ("name", "client", "notes", "address", "report_notes", "bank_name", "bank_accounts",
+    allowed = {k: v for k, v in fields.items() if k in ("name", "client", "owner_email", "notes", "address", "report_notes", "bank_name", "bank_accounts",
                                                              "our_coi_requirements") and v is not None}
     if "bank_accounts" in allowed:
         allowed["bank_accounts"] = mask_accounts(allowed["bank_accounts"])

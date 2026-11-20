@@ -1790,3 +1790,10 @@ def test_property_directory_import(mgr, staff):
         assert c.execute("SELECT 1 FROM users WHERE email='newbie@foresitecre.com'").fetchone()
     again = ids(mgr.post("/api/properties/directory/import", json={"data_b64": b64, "apply": True, "mapping": {"Sam": staff.me["id"]}}))
     assert again["created"] == 0 and again["updated"] == 3                            # re-running updates, no duplicates
+
+
+def test_property_owner_email(mgr):
+    pid = ids(mgr.post("/api/properties", json={"address": "12 Owner Way, San Antonio, TX", "client": "Owner Way LLC"}))["id"]
+    ids(mgr.patch(f"/api/properties/{pid}", json={"owner_email": "owner@ownerway.example.com"}))
+    p = ids(mgr.get(f"/api/properties/{pid}"))
+    assert p["client"] == "Owner Way LLC" and p["owner_email"] == "owner@ownerway.example.com"
