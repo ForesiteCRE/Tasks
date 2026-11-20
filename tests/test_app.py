@@ -1782,7 +1782,7 @@ def test_property_directory_import(mgr, staff):
     one = ids(mgr.get(f"/api/properties/{props['Dir One']['id']}"))
     team = {x["role"]: x["user_name"] for x in one["roles"]}
     assert team["Property Manager"] == staff.me["name"] and team["Accounting 1"] == mgr.me["name"] and team["Accounting 2"] == staff.me["name"]
-    assert one["client"] == "One Owner, LLC" and "Units: 5" in one["notes"] and "(818) 555-0000" in one["notes"]
+    assert one["owner_entity"] == "One Owner, LLC" and "Units: 5" in one["notes"] and "(818) 555-0000" in one["notes"]
     assert any(d["kind"] == "insurance_renewal" and d["date"] == "2099-01-31" for d in one["dates"])
     clinic = ids(mgr.get(f"/api/properties/{props['Shared Clinic']['id']}"))
     assert {x["role"]: x["user_name"] for x in clinic["roles"]}["Accounting 1"] == "Newbie Person"
@@ -1800,3 +1800,10 @@ def test_property_owner_email(mgr):
     p = ids(mgr.get(f"/api/properties/{pid}"))
     assert p["client"] == "Owner Way LLC" and not p["owner_email"]
     assert any(c["role"] == "Owner contact" and c["email"] == "owner@ownerway.example.com" for c in p["contacts"])
+
+
+def test_owner_entity_separate_from_client(mgr):
+    pid = ids(mgr.post("/api/properties", json={"address": "5 Entity Ct, San Antonio, TX"}))["id"]
+    ids(mgr.patch(f"/api/properties/{pid}", json={"owner_entity": "5 Entity Ct Holdings, LLC", "client": "Kurt"}))
+    p = ids(mgr.get(f"/api/properties/{pid}"))
+    assert p["owner_entity"] == "5 Entity Ct Holdings, LLC" and p["client"] == "Kurt"

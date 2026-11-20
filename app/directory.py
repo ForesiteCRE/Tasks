@@ -1,7 +1,7 @@
 """Import Foresite's Property Directory (Master List) → property pages + property teams.
 
 Columns used: Property · Units · Sqft · Start Date · Mgmt Fee Percent · Minimum Fee · Notes · Bldg Mgmt · % Rent ·
-Insurance Expiration · Owner(s) · Property Name · Property Address · Site Manager Name · Accountant.
+Insurance Expiration · Owner(s) → owner (legal entity) · Property Name · Property Address · Site Manager Name · Accountant.
   Site Manager  → Property Manager role
   Accountant    → "Dez" → Accounting 1; "Jackie/Lisa" → Accounting 1 = Jackie, Accounting 2 = Lisa
 People on the sheet are first names; the preview matches them to people in the app (and lets you pick or add).
@@ -99,7 +99,7 @@ def _create(c, r: dict) -> int:
     n = properties.norm(r["address"])
     if c.execute("SELECT 1 FROM properties WHERE norm=?", (n,)).fetchone():   # another building at the same address
         n = f"{n} #{re.sub(r'[^a-z0-9]+', '-', r['name'].lower()).strip('-')}"
-    return c.execute("INSERT INTO properties(name, address, norm, client) VALUES(?,?,?,?)",
+    return c.execute("INSERT INTO properties(name, address, norm, owner_entity) VALUES(?,?,?,?)",
                      (r["name"], r["address"], n, r["owner"] or None)).lastrowid
 
 
@@ -177,7 +177,7 @@ def apply(data: bytes, mapping: dict, new_people: dict, archive_others: bool, us
                 updated += 1
                 with tx() as c:
                     c.execute("UPDATE properties SET archived_at=NULL WHERE id=?", (pid,))
-                properties.update(pid, {"name": r["name"], "client": r["owner"] or None})
+                properties.update(pid, {"name": r["name"], "owner_entity": r["owner"] or None})
             else:
                 with tx() as c:
                     pid = _create(c, r)

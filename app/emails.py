@@ -209,7 +209,7 @@ def compose_property_insurance(prop: dict, ins: dict, pm: dict, agent: dict | No
     hi = _first((agent or {}).get("name"))
     body = f"""Hi {hi or 'there'},
 
-I'm the property manager for {_where(prop)}{', owned by ' + prop['client'] if prop.get('client') else ''}.
+I'm the property manager for {_where(prop)}{', owned by ' + (prop.get('owner_entity') or prop['client']) if (prop.get('owner_entity') or prop.get('client')) else ''}.
 
 {ask}
 

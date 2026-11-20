@@ -160,7 +160,7 @@ def run_tool(name: str, args: dict, user: dict) -> dict:
         if not r:
             return {"error": "No property matches that name."}
         p = properties.get(r["id"])
-        out = {"name": p["name"], "address": p["address"], "owner": p.get("client"), "link": f"#property-{p['id']}",
+        out = {"name": p["name"], "address": p["address"], "owner": p.get("owner_entity") or p.get("client"), "client": p.get("client"), "link": f"#property-{p['id']}",
                "approval_threshold_capex": p.get("spend_limit"), "report_notes": p.get("report_notes"),
                "team": {x["role"]: x["user_name"] for x in p["roles"] if x["user_id"]},
                "upcoming_critical_dates": [{"title": d["title"], "date": d["date"], "days_left": d["days_left"], "who": d.get("assignee_name")}

@@ -107,7 +107,7 @@ def read(data: bytes, content_type: str, filename: str, prop: dict) -> dict | No
                     "certificate shows and list anything missing or too low."),
             messages=[{"role": "user", "content": [
                 intake.document_block(data, content_type, filename),
-                {"type": "text", "text": f"Property: {prop.get('name')} — {prop.get('address')}\nOwner: {prop.get('client') or 'unknown'}\n"
+                {"type": "text", "text": f"Property: {prop.get('name')} — {prop.get('address')}\nOwner: {(prop.get('owner_entity') or prop.get('client')) or 'unknown'}\n"
                                          f"Requirements from the management agreement:\n{prop.get('our_coi_requirements') or '(none recorded)'}\n"
                                          f"Today: {date.today():%Y-%m-%d}"}]}])
         if resp.stop_reason != "end_turn":
@@ -207,8 +207,8 @@ def draft_request(property_id: int, user_id) -> int:
 
 Could you please issue a certificate of insurance for Foresite Real Estate, Inc. for {emails._where(prop)}? {why}
 
-• Additional insured: {prop.get('client') or 'the property owner'}, and their respective officers, employees and agents
-• Certificate holder: {prop.get('client') or 'the property owner'}
+• Additional insured: {(prop.get('owner_entity') or prop.get('client')) or 'the property owner'}, and their respective officers, employees and agents
+• Certificate holder: {(prop.get('owner_entity') or prop.get('client')) or 'the property owner'}
 • Property address in the Description of Operations
 • Please include the additional insured endorsements
 

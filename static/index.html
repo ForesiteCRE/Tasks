@@ -867,9 +867,9 @@ function propShowArchived(on){PROP_ARCH=on;document.querySelectorAll('#propArch 
 async function renderProperties(fetch){if(fetch||!PROPS.length)PROPS=await api('/api/properties');
   if(PROP_ARCH)ARCH_PROPS=await api('/api/properties?archived=1');
   const q=($('#propSearch').value||'').toLowerCase();
-  const ps=(PROP_ARCH?ARCH_PROPS:PROPS).filter(p=>!q||(p.name+' '+p.address+' '+(p.client||'')).toLowerCase().includes(q));
+  const ps=(PROP_ARCH?ARCH_PROPS:PROPS).filter(p=>!q||(p.name+' '+p.address+' '+(p.client||'')+' '+(p.owner_entity||'')).toLowerCase().includes(q));
   $('#propList').innerHTML=ps.map(p=>`<div class="pcard" style="padding:0;overflow:hidden" onclick="openProperty(${p.id})">${propBanner(p,110)}
-    <div style="padding:10px 12px"><h4>${esc(p.name)}</h4><div class="sub">${esc(p.client||' ')}</div>
+    <div style="padding:10px 12px"><h4>${esc(p.name)}</h4><div class="sub">${esc(p.owner_entity||p.client||"\u00a0")}</div>
     <div class="row" style="margin:6px 0 0;gap:6px;font-size:12.5px"><span class="mute">${p.projects} project${p.projects===1?'':'s'} · ${p.open_tasks} open task${p.open_tasks===1?'':'s'}</span>${p.overdue?`<span class="risk hi">${p.overdue} overdue</span>`:''}</div>
     <div class="row" style="margin:6px 0 0;gap:4px">${p.insurance&&p.insurance.state!=='ok'?insChip(p.insurance):''}${p.our_coi&&p.our_coi.state!=='ok'?ourChip(p.our_coi):''}${p.coi_issues?`<span class="pchip bad">🧰 ${p.coi_issues} vendor COI${p.coi_issues>1?'s':''} needed</span>`:''}</div>
     ${p.next_date?`<div class="nextd">${p.next_date.icon} ${esc(p.next_date.title)} · ${fmtDate(p.next_date.date)} ${daysBadge(p.next_date.days_left)}</div>`:`<div class="nextd mute">No critical dates yet</div>`}</div></div>`).join('')
@@ -895,7 +895,7 @@ function renderProperty(){const p=PROP,mg=isMgr(),dis=mg?'':'disabled',open=p.da
     <h2 style="margin:0 0 8px">${mg?`<input value="${esc(p.name)}" style="font:inherit;font-weight:600;width:100%" onchange="propPatch({name:this.value})">`:esc(p.name)}</h2>
     <div class="row" style="margin:0 0 10px;gap:6px">${p.spend_limit?`<span class="pchip" title="Applies to capital expenditures and non-emergency repairs — not normal operating expenses">💲 CapEx / non-emergency repairs over <b>${money(p.spend_limit)}</b> → owner approval</span>`:`<span class="pchip">💲 Owner approval threshold not set</span>`}${insChip(p.insurance)}${p.our_coi.status.state!=='ok'?ourChip(p.our_coi.status):''}</div>
     <div class="team-grid"><label>Address<input ${dis} value="${esc(p.address)}" onchange="propPatch({address:this.value})"></label>
-      <label>Owner / client<input ${dis} value="${esc(p.client||'')}" onchange="propPatch({client:this.value})"></label></div></div></div>
+      <label>Owner (legal entity)<input ${dis} value="${esc(p.owner_entity||'')}" placeholder="e.g. 1830 The Strand-JA, LLC" onchange="propPatch({owner_entity:this.value})"></label></div></div></div>
   ${mg?`<div class="row" style="margin:0 0 12px"><button class="b" onclick="propNewProject()">＋ New project</button><button class="b ghost" onclick="docPick()">📄 Upload &amp; read a document</button><span class="mute" style="font-size:12.5px">Management agreement, insurance policy, tax notice… Claude pulls out dates, the spend limit, reporting requirements and contacts, and checks the insurance.</span></div><div id="leaseBox"></div>`:''}
   <div class="hgrid"><div>
     <div class="panel" id="propTasks"><header><h3>✅ Open tasks</h3><span class="cnt"><button class="b ghost sm" style="margin-right:8px" onclick="propAddTask()">＋ Task</button>${p.tasks.length}${p.tasks.filter(isOver).length?` · <span class="over">${p.tasks.filter(isOver).length} overdue</span>`:''}</span></header><div class="body">
@@ -987,13 +987,13 @@ function propTeamCard(p,mg){
   const core=TEAM_CORE.map(n=>by[n.toLowerCase()]).filter(Boolean);
   const extra=p.roles.filter(r=>!TEAM_CORE.some(n=>n.toLowerCase()===r.role.toLowerCase())&&r.user_id);
   const oc=p.contacts.find(c=>c.role==='Owner contact');
-  const ownerName=p.client||(oc&&oc.company)||'';   // the owner = the entity; the person is the Owner contact (Contacts)
+  const ownerName=p.client||'';   // the client; the owner's legal entity is at the top of the page
   const chip=(label,name,sub,cls='')=>`<div class="tchip ${cls}" title="${esc(label)}: ${esc(name||'not set')}${sub?' · '+esc(sub):''}"><span class="tav">${name?esc(initials(name)):'?'}</span><div><small>${esc(label)}</small><b>${name?esc(name.replace(/ \(demo\)$/,'')):'<i class="mute">not set</i>'}</b></div></div>`;
   const filled=p.roles.filter(r=>r.user_id).length;
   if(PROP_TEAM_EDIT&&mg)return `<div class="panel" id="propTeam"><header><h3>👥 Property team</h3><span class="cnt"><button class="b sm" onclick="PROP_TEAM_EDIT=false;renderProperty()">Done</button></span></header><div class="body">
       <p class="mute" style="margin:4px 0 8px;font-size:12px">Every project here uses these people. Change someone and their open tasks at this property move over (they get a Blink message).</p>
-      <label style="display:block;margin-bottom:4px">Client<input value="${esc(ownerName)}" placeholder="Ownership entity, e.g. Sonterra Commons Owner LLC" onchange="propPatch({client:this.value})" style="width:100%"></label>
-      <div class="mute" style="font-size:12px;margin:0 0 10px">The person to reach at the client (name, email, phone) is the <b>Owner contact</b> under 📇 Contacts.</div>
+      <label style="display:block;margin-bottom:4px">Client<input value="${esc(ownerName)}" placeholder="Who we work for / report to" onchange="propPatch({client:this.value})" style="width:100%"></label>
+      <div class="mute" style="font-size:12px;margin:0 0 10px">The owner's legal entity is at the top of this page; the person to reach (name, email, phone) is the <b>Owner contact</b> under 📇 Contacts.</div>
       <div class="team-grid">${[...core,...p.roles.filter(r=>!core.includes(r))].map(r=>{const n=p.tasks.filter(t=>t.role_id===r.role_id).length;return `<label>${esc(roleLabel(r.role))}${n?` <span class="via">· ${n} open</span>`:''}<select onchange="propTeamSet(${r.role_id},this.value)">${userOpts(r.user_id,'—')}</select></label>`}).join('')}</div></div></div>`;
   return `<div class="panel" id="propTeam"><header><h3>👥 Property team</h3><span class="cnt">${filled}/${p.roles.length}${mg?` <button class="b ghost sm" style="margin-left:6px" onclick="PROP_TEAM_EDIT=true;renderProperty()">✎ Edit</button>`:''}</span></header>
     <div class="body tchips">${ownerChip(ownerName,oc)}${core.map(r=>chip(roleLabel(r.role),r.user_name)).join('')}${extra.map(r=>chip(roleLabel(r.role),r.user_name)).join('')}</div></div>`;}

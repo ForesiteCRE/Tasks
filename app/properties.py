@@ -86,6 +86,10 @@ def init():
         if "property_detached" not in {r[1] for r in c.execute("PRAGMA table_info(projects)")}:
             # set when a property page is deleted: its projects keep their address but don't re-create the page
             c.execute("ALTER TABLE projects ADD COLUMN property_detached INTEGER NOT NULL DEFAULT 0")
+        if "owner_entity" not in {r[1] for r in c.execute("PRAGMA table_info(properties)")}:
+            # the owner's legal entity, separate from the client (who we work for / report to)
+            c.execute("ALTER TABLE properties ADD COLUMN owner_entity TEXT")
+            c.execute("UPDATE properties SET owner_entity=client WHERE COALESCE(client,'')!=''")
         if "owner_email" not in {r[1] for r in c.execute("PRAGMA table_info(properties)")}:
             c.execute("ALTER TABLE properties ADD COLUMN owner_email TEXT")
         for r in c.execute("SELECT id, owner_email FROM properties WHERE COALESCE(owner_email,'')!=''").fetchall():
@@ -275,7 +279,7 @@ def create(address: str, name: str | None = None, client: str | None = None, not
 
 
 def update(pid: int, fields: dict):
-    allowed = {k: v for k, v in fields.items() if k in ("name", "client", "owner_email", "notes", "address", "report_notes", "bank_name", "bank_accounts",
+    allowed = {k: v for k, v in fields.items() if k in ("name", "client", "owner_entity", "owner_email", "notes", "address", "report_notes", "bank_name", "bank_accounts",
                                                              "our_coi_requirements") and v is not None}
     if "bank_accounts" in allowed:
         allowed["bank_accounts"] = mask_accounts(allowed["bank_accounts"])

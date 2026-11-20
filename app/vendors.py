@@ -375,7 +375,7 @@ def read_coi(data: bytes, content_type: str, filename: str, prop: dict, vendor_n
             messages=[{"role": "user", "content": [
                 intake.document_block(data, content_type, filename),
                 {"type": "text", "text": f"Vendor: {vendor_name}\nProperty: {prop.get('name')} — {prop.get('address')}\n"
-                                         f"Property owner: {prop.get('client') or 'unknown'}\nToday: {date.today():%Y-%m-%d}"}]}],
+                                         f"Property owner: {(prop.get('owner_entity') or prop.get('client')) or 'unknown'}\nToday: {date.today():%Y-%m-%d}"}]}],
         )
         if resp.stop_reason != "end_turn":
             return None
