@@ -1795,5 +1795,8 @@ def test_property_directory_import(mgr, staff):
 def test_property_owner_email(mgr):
     pid = ids(mgr.post("/api/properties", json={"address": "12 Owner Way, San Antonio, TX", "client": "Owner Way LLC"}))["id"]
     ids(mgr.patch(f"/api/properties/{pid}", json={"owner_email": "owner@ownerway.example.com"}))
+    from app import properties as P
+    P.init()   # an email typed on the old team-card field moves to the Owner contact
     p = ids(mgr.get(f"/api/properties/{pid}"))
-    assert p["client"] == "Owner Way LLC" and p["owner_email"] == "owner@ownerway.example.com"
+    assert p["client"] == "Owner Way LLC" and not p["owner_email"]
+    assert any(c["role"] == "Owner contact" and c["email"] == "owner@ownerway.example.com" for c in p["contacts"])

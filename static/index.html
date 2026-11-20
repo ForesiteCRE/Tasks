@@ -987,18 +987,18 @@ function propTeamCard(p,mg){
   const core=TEAM_CORE.map(n=>by[n.toLowerCase()]).filter(Boolean);
   const extra=p.roles.filter(r=>!TEAM_CORE.some(n=>n.toLowerCase()===r.role.toLowerCase())&&r.user_id);
   const oc=p.contacts.find(c=>c.role==='Owner contact');
-  const ownerName=p.client||(oc&&(oc.company||oc.name))||'',ownerEmail=p.owner_email||(oc&&oc.email)||'';
+  const ownerName=p.client||(oc&&oc.company)||'';   // the owner = the entity; the person is the Owner contact (Contacts)
   const chip=(label,name,sub,cls='')=>`<div class="tchip ${cls}" title="${esc(label)}: ${esc(name||'not set')}${sub?' · '+esc(sub):''}"><span class="tav">${name?esc(initials(name)):'?'}</span><div><small>${esc(label)}</small><b>${name?esc(name.replace(/ \(demo\)$/,'')):'<i class="mute">not set</i>'}</b></div></div>`;
   const filled=p.roles.filter(r=>r.user_id).length;
   if(PROP_TEAM_EDIT&&mg)return `<div class="panel" id="propTeam"><header><h3>👥 Property team</h3><span class="cnt"><button class="b sm" onclick="PROP_TEAM_EDIT=false;renderProperty()">Done</button></span></header><div class="body">
       <p class="mute" style="margin:4px 0 8px;font-size:12px">Every project here uses these people. Change someone and their open tasks at this property move over (they get a Blink message).</p>
-      <div class="team-grid" style="margin-bottom:8px"><label>Owner<input value="${esc(ownerName)}" placeholder="Owner / ownership entity" onchange="propPatch({client:this.value})"></label>
-        <label>Owner email<input type="email" value="${esc(ownerEmail)}" placeholder="owner@example.com" onchange="propPatch({owner_email:this.value})"></label></div>
+      <label style="display:block;margin-bottom:4px">Owner (entity)<input value="${esc(ownerName)}" placeholder="e.g. Sonterra Commons Owner LLC" onchange="propPatch({client:this.value})" style="width:100%"></label>
+      <div class="mute" style="font-size:12px;margin:0 0 10px">The person to reach at the owner (name, email, phone) is the <b>Owner contact</b> under 📇 Contacts.</div>
       <div class="team-grid">${[...core,...p.roles.filter(r=>!core.includes(r))].map(r=>{const n=p.tasks.filter(t=>t.role_id===r.role_id).length;return `<label>${esc(roleLabel(r.role))}${n?` <span class="via">· ${n} open</span>`:''}<select onchange="propTeamSet(${r.role_id},this.value)">${userOpts(r.user_id,'—')}</select></label>`}).join('')}</div></div></div>`;
   return `<div class="panel" id="propTeam"><header><h3>👥 Property team</h3><span class="cnt">${filled}/${p.roles.length}${mg?` <button class="b ghost sm" style="margin-left:6px" onclick="PROP_TEAM_EDIT=true;renderProperty()">✎ Edit</button>`:''}</span></header>
-    <div class="body tchips">${ownerChip(ownerName,ownerEmail)}${core.map(r=>chip(roleLabel(r.role),r.user_name)).join('')}${extra.map(r=>chip(roleLabel(r.role),r.user_name)).join('')}</div></div>`;}
-function ownerChip(name,email){
-  return `<div class="tchip own" title="Owner: ${esc(name||'not set')}${email?' · '+esc(email):''}"><span class="tav">${name?esc(initials(name)):'?'}</span><div><small>Owner</small><b>${name?esc(name):'<i class="mute">not set</i>'}</b>${email?`<a href="mailto:${esc(email)}" onclick="event.stopPropagation()" style="display:block;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(email)}</a>`:''}</div></div>`;}
+    <div class="body tchips">${ownerChip(ownerName,oc)}${core.map(r=>chip(roleLabel(r.role),r.user_name)).join('')}${extra.map(r=>chip(roleLabel(r.role),r.user_name)).join('')}</div></div>`;}
+function ownerChip(name,oc){const who=oc&&(oc.name||oc.email);
+  return `<div class="tchip own" title="Owner: ${esc(name||'not set')}${who?' · contact: '+esc(oc.name||'')+' '+esc(oc.email||''):''}"><span class="tav">${name?esc(initials(name)):'?'}</span><div><small>Owner</small><b>${name?esc(name):'<i class="mute">not set</i>'}</b>${who?`<span style="display:block;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(oc.name||'')}${oc.email?`${oc.name?' · ':''}<a href="mailto:${esc(oc.email)}" onclick="event.stopPropagation()">${esc(oc.email)}</a>`:''}</span>`:''}</div></div>`;}
 async function propTeamSet(rid,uid){const r=await api(`/api/properties/${PROP.id}/team/${rid}`,{method:'PUT',body:{user_id:+uid||null}});
   toast(r.moved?`Updated — ${r.moved} open task${r.moved>1?'s':''} moved`:'Updated');await refresh();openProperty(PROP.id);}
 async function propPatch(b){await api('/api/properties/'+PROP.id,{method:'PATCH',body:b});PROPS=[];await refresh();openProperty(PROP.id);toast('Saved');}

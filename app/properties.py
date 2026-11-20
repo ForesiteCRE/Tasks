@@ -88,6 +88,14 @@ def init():
             c.execute("ALTER TABLE projects ADD COLUMN property_detached INTEGER NOT NULL DEFAULT 0")
         if "owner_email" not in {r[1] for r in c.execute("PRAGMA table_info(properties)")}:
             c.execute("ALTER TABLE properties ADD COLUMN owner_email TEXT")
+        for r in c.execute("SELECT id, owner_email FROM properties WHERE COALESCE(owner_email,'')!=''").fetchall():
+            oc = c.execute("SELECT id, email FROM property_contacts WHERE property_id=? AND role='Owner contact' ORDER BY id LIMIT 1",
+                           (r["id"],)).fetchone()
+            if oc and not oc["email"]:
+                c.execute("UPDATE property_contacts SET email=? WHERE id=?", (r["owner_email"], oc["id"]))
+            elif not oc or oc["email"].lower() != r["owner_email"].lower():
+                c.execute("INSERT INTO property_contacts(property_id, role, email) VALUES(?, 'Owner contact', ?)", (r["id"], r["owner_email"]))
+            c.execute("UPDATE properties SET owner_email=NULL WHERE id=?", (r["id"],))
         if "photo_file" not in {r[1] for r in c.execute("PRAGMA table_info(properties)")}:
             c.execute("ALTER TABLE properties ADD COLUMN photo_file TEXT")   # the property's own header photo
         if "property_id" not in {r[1] for r in c.execute("PRAGMA table_info(tasks)")}:
