@@ -802,12 +802,12 @@ function renderPreview(){const t=TPLS.find(t=>t.id==$('#pTpl').value);if(!t){$('
      <td>${tplItemWho(i,team)}</td><td class="mute" style="white-space:nowrap">${due(i.due_offset_days)}</td></tr>`).join('')}</table></div>`;}
 
 /* ---------- project details & team dialog ---------- */
-async function openProject(pid){const p=PROJECTS.find(x=>x.id===pid);if(!p)return;const mg=isMgr(),dis=mg?'':'disabled';
+async function openProject(pid){const p=PROJECTS.find(x=>x.id===pid);if(!p)return;if(!PROPS.length){try{PROPS=await api('/api/properties')}catch(e){}}const mg=isMgr(),dis=mg?'':'disabled';
   $('#taskDlgBody').innerHTML=`<div id="projDlg" style="margin:-18px -18px 12px">${projBanner(p,200,{edit:true})}</div>
    ${p.status==='archived'?`<div class="warnbox" style="margin:0 0 10px">🗄 <b>Archived</b> — hidden from task lists, Home, the calendar and reminders.${mg?` <button class="b sm" style="margin-left:6px" onclick="projArchive(${p.id},true)">Unarchive</button>`:''}</div>`:''}
    <h2>${mg?`<input value="${esc(p.name)}" style="font:inherit;font-weight:600;width:100%" onchange="projPatch(${p.id},{name:this.value})">`:esc(p.name)}</h2>
    <div class="team-grid">
-    <label>Property / address<input ${dis} value="${esc(p.property||'')}" onchange="projPatch(${p.id},{property:this.value})"></label>
+    <label>Property<input ${dis} id="ppPropQ" list="ppPropList" autocomplete="off" placeholder="No property — type to search" value="${esc(p.property_id?(()=>{const x=PROPS.find(x=>x.id===p.property_id);return x?pPropLabel(x):(p.property||'')})():'')}" onchange="projPropPick(${p.id},this)"><datalist id="ppPropList">${PROPS.map(x=>`<option value="${esc(pPropLabel(x))}"></option>`).join('')}</datalist></label>
     <label>Client / owner<input ${dis} value="${esc(p.client||'')}" onchange="projPatch(${p.id},{client:this.value})"></label>
     <label>Start date<input ${dis} type="date" value="${p.start_date}" onchange="projPatch(${p.id},{start_date:this.value})"></label></div>
    <label class="mute" style="font-size:12px">Summary / notes</label><textarea ${dis} rows="3" onchange="projPatch(${p.id},{description:this.value})">${esc(p.description||'')}</textarea>
@@ -1095,6 +1095,11 @@ async function closeGo(period){const q=new URLSearchParams();if(period)q.set('pe
     <tfoot><tr><td class="prop mute">Done</td>${b.columns.map(c=>`<td class="cl mute">${b.totals[c]}/${b.rows.length}</td>`).join('')}</tr></tfoot>`
     :`<tbody><tr><td class="empty" style="padding:18px">No projects from this template ${W?'this '+W:'right now'}.${b.periods.length?` Other ${W}s: ${b.periods.slice(0,6).map(m=>`<span class="tlink" onclick="closeGo('${m}')">${m}</span>`).join(', ')}`:' Start one with “+ New project” using this template.'}</td></tr></tbody>`;
   $('#closeMissing').innerHTML=b.missing.length?`<div class="warnbox" style="margin-top:12px"><b>Had one last ${W} but not started this ${W}:</b> ${b.missing.map(m=>`<span class="tlink" onclick="openProperty(${m.property_id})">${esc(m.label)}</span>${isMgr()?` <button class="b ghost sm" onclick="startClose(${m.property_id})">Start</button>`:''}`).join(' · ')}</div>`:'';}
+async function projPropPick(pid,inp){const q=inp.value.trim();
+  if(!q){await projPatch(pid,{property:''});return;}
+  const p=PROPS.find(x=>pPropLabel(x)===q||x.name.toLowerCase()===q.toLowerCase());
+  if(!p){alert(`“${q}” isn't on the property list. Pick one from the suggestions or clear the box for no property. New properties are added on the Properties page.`);openProject(pid);return;}
+  await projPatch(pid,{property:p.address,client:(PROJECTS.find(x=>x.id===pid)||{}).client||p.client||p.owner_entity||null});}
 async function propNewProject(){const p=PROP;openNewProject();await pPropList();pPropByAddress(p.address);$('#pClient').value=p.client||'';
   await propTeamFill();renderPreview();}
 async function propAddTask(){const id=PROP.id;show('tasks');$('#qCard').classList.add('open');await qProps();$('#qProp').value=id;qFill();$('#qTitle').focus();
