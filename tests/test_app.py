@@ -1679,3 +1679,33 @@ def test_report_package_import(mgr, staff):
     proj = ids(mgr.post("/api/projects", json={"name": "Close", "property": "1546 Babcock, San Antonio, TX 78229"}))["id"]
     assert ids(mgr.get(f"/api/projects/{proj}/report-package"))["items"] == ["Cover sheet"]
     assert mgr.post("/api/properties/report-packages/import", json={"data_b64": "bm90IGV4Y2Vs"}).status_code == 400
+
+
+def test_reporting_status_for_property_managers(mgr, staff):
+    from datetime import date
+    from app import starter_templates as st, properties as P
+    from app.db import tx
+    st.install(["month_end"])
+    tid = next(t for t in ids(mgr.get("/api/templates")) if t["name"] == "Month-End Close")["id"]
+    ids(mgr.patch(f"/api/templates/{tid}", json={"board_period": "month"}))
+    addr = "88 Report Way, San Antonio, TX"
+    proj = ids(mgr.post("/api/projects", json={"name": "Close – Report Way", "template_id": tid, "property": addr,
+                                               "start_date": date.today().replace(day=1).isoformat()}))["id"]
+    pid = P.property_for_address(addr)
+    with tx() as c:
+        role = c.execute("SELECT id FROM project_roles WHERE name='Property Manager'").fetchone()[0]
+        c.execute("UPDATE users SET blink_user_id='u-sam' WHERE id=?", (staff.me["id"],))
+    P.set_member(pid, role, staff.me["id"])
+    r = ids(staff.get("/api/me/reporting"))
+    row = next(x for x in r["rows"] if x["project_id"] == proj)
+    assert row["total"] > 5 and not row["sent"] and r["scope"] == "mine"
+    # the PM doesn't own the accounting steps…
+    tasks = [t for t in next(p for p in ids(mgr.get("/api/projects")) if p["id"] == proj)["tasks"]]
+    send = next(t for t in tasks if t["title"] == "Review & send owner report")
+    assert send["assignee_id"] != staff.me["id"]
+    # …but hears when the report goes out
+    SENT.clear()
+    ids(mgr.patch(f"/api/tasks/{send['id']}", json={"status": "done"}))
+    assert any(b == "u-sam" and "Owner report sent" in t for b, t in SENT)
+    assert next(x for x in ids(staff.get("/api/me/reporting"))["rows"] if x["project_id"] == proj)["sent"]
+    assert "reporting" in {c["id"] for c in ids(staff.get("/api/me/notifications"))["categories"]}

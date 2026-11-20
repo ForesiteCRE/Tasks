@@ -88,11 +88,29 @@ def on_status_change(task_id: int, old: str | None, new: str | None, actor_id, n
               f"Assigned to {t['assignee_name'] or 'nobody'} · marked by {who}"
               + (f"\n_{why}_" if why else ""))
 
+    if new == "done" and "owner report" in (t["title"] or "").lower() and "send" in (t["title"] or "").lower():
+        _owner_report_sent(t, who)
+
     if new == "done":
         if _on("your_turn"):
             _notify_unblocked(task_id, who)
         if t["project_status"] == "done" and not t["is_general"] and _on("project_done"):
             _send(_managers(exclude_user_id=actor_id), f"🎉 **Project complete:** {t['project_name']} — all tasks done.")
+
+
+def _owner_report_sent(t: dict, who: str):
+    """Accounting sent the owner report → the property's Property Manager(s) hear about it (Blink settings apply)."""
+    from . import notify
+    with tx() as c:
+        p = c.execute("""SELECT pr.id, pr.name FROM projects p JOIN properties pr ON pr.id=p.property_id WHERE p.id=?""",
+                      (t["project_id"],)).fetchone()
+        if not p:
+            return
+        pms = [r[0] for r in c.execute("""SELECT DISTINCT pt.user_id FROM property_team pt JOIN project_roles r ON r.id=pt.role_id
+                                          WHERE pt.property_id=? AND r.name IN ('Property Manager','Backup Property Manager')""", (p["id"],))]
+    for uid in pms:
+        if uid != t.get("assignee_id"):
+            notify.deliver(uid, "reporting", f"📨 **Owner report sent** for {p['name']} · {t['project_name']} (by {who})")
 
 
 def _notify_unblocked(done_task_id: int, who: str):

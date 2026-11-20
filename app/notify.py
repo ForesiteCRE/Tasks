@@ -27,6 +27,7 @@ CATEGORIES = {
     "assigned":   ("New tasks & projects assigned to me", "including tasks added for you in Blink", "summary", "all"),
     "your_turn":  ("It's my turn", "a task you were waiting on is done, so yours can start", "summary", "all"),
     "checkin":    ("Task check-in", "a daily “how are these going?” list of your due and overdue tasks", "off", "all"),
+    "reporting":  ("Owner reports sent at my properties", "Accounting finished and sent the monthly owner report", "summary", "all"),
     "critical":   ("Property critical dates & insurance", "tax protest, renewals, owner reports, COI/insurance issues at your properties", "summary", "all"),
     "approvals":  ("Owner approvals", "an owner approved or asked for changes on a project you requested", "summary", "all"),
     "emails":     ("Emails drafted for me", "COI and insurance follow-ups waiting in Emails to send", "summary", "all"),

@@ -2131,6 +2131,39 @@ def my_note_delete(nid: int, request: Request):
     return {"ok": True}
 
 
+@app.get("/api/me/reporting")
+def my_reporting(request: Request, all: bool = False):
+    """This month's close board, limited to the properties I'm on (managers: every property if they're on none)."""
+    uid = _me_id(request)
+    with tx() as c:
+        mine = {r[0] for r in c.execute("SELECT DISTINCT property_id FROM property_team WHERE user_id=?", (uid,))}
+    with tx() as c:   # the monthly board (Month-End Close first)
+        t = c.execute("""SELECT id FROM templates WHERE board_period='month'
+                         ORDER BY (lower(name) LIKE '%month-end%') DESC, (lower(name) LIKE '%close%') DESC, id LIMIT 1""").fetchone()
+    if not t:
+        return {"rows": [], "missing": [], "label": "", "scope": "none"}
+    b = closeboard.board(None, t[0])
+    if not b.get("template_id"):
+        return {"rows": [], "missing": [], "label": "", "scope": "none"}
+    scope = "mine"
+    if all or (not mine and auth.is_manager(request)):
+        scope, keep = "all", lambda pid: True
+    else:
+        keep = lambda pid: pid in mine
+    send_step = next((c for c in b["columns"] if "owner report" in c.lower() and "send" in c.lower()), None)
+    rows = []
+    for r in b["rows"]:
+        if not keep(r["property_id"]):
+            continue
+        sent = r["cells"].get(send_step) if send_step else None
+        rows.append({"label": r["label"], "property_id": r["property_id"], "project_id": r["project_id"], "done": r["done"],
+                     "total": r["total"], "overdue": r["overdue"], "blocked": r["blocked"], "next": r["next"],
+                     "sent": bool(sent and sent["status"] == "done"), "sent_at": sent and sent.get("completed_at")})
+    return {"rows": rows, "missing": [m for m in b["missing"] if keep(m["property_id"])], "label": b["label"],
+            "template_id": b["template_id"], "template": next((t["name"] for t in b["templates"] if t["id"] == b["template_id"]), ""),
+            "scope": scope, "has_mine": bool(mine)}
+
+
 @app.get("/api/me/unread")
 def my_unread(request: Request):
     m = extras.unread_mentions(_me_id(request))

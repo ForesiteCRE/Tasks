@@ -1487,8 +1487,8 @@ let HOME={layout:null,notes:[],my_properties:[]},HOME_W={},HCUST=false;
 const WIDGETS={today:'🎯 Today ring & streak',kpis:'📊 Numbers (overdue, due today…)',agenda:'📅 Agenda',notes:'📝 Notes',
   nodate:'🗂 Tasks without a due date',projects:'📁 My projects',properties:'🏢 My properties',wins:'🙌 Team wins',
   waiting:'⏳ Waiting on me',blocked:'⛔ Blocked for me',emails:'✉️ Emails ready to send',reminders:'⏰ Reminders',
-  comments:'💬 Comments & mentions',done:'✅ Done this week'};
-const HOME_DEFAULT={top:['today','kpis'],left:['agenda','nodate','projects','properties'],right:['notes','wins','waiting','blocked','emails','reminders','comments','done'],hidden:[]};
+  comments:'💬 Comments & mentions',done:'✅ Done this week',reporting:'📊 Reporting status at my properties'};
+const HOME_DEFAULT={top:['today','kpis'],left:['agenda','reporting','nodate','projects','properties'],right:['notes','wins','waiting','blocked','emails','reminders','comments','done'],hidden:[]};
 function homeLayout(){const L=HOME.layout||HOME_DEFAULT,out={top:[],left:[],right:[],hidden:[]},seen=new Set();
   for(const z of ['top','left','right','hidden'])for(const id of (L[z]||[]))if(WIDGETS[id]&&!seen.has(id)){seen.add(id);out[z].push(id);}
   for(const z of ['top','left','right'])for(const id of HOME_DEFAULT[z])if(!seen.has(id)){seen.add(id);out[z].push(id);}   // widgets added later show up in their default spot
@@ -1525,6 +1525,23 @@ async function noteAdd(){const r=await api('/api/me/notes',{method:'POST',body:{
 async function noteSave(id,text){const n=HOME.notes.find(x=>x.id===id);if(!n||n.text===text)return;n.text=text;await api('/api/me/notes/'+id,{method:'PATCH',body:{text}});}
 async function noteColor(id){const n=HOME.notes.find(x=>x.id===id);n.color=NOTE_COLORS[(NOTE_COLORS.indexOf(n.color)+1)%NOTE_COLORS.length];renderNotes();api('/api/me/notes/'+id,{method:'PATCH',body:{color:n.color}});}
 async function noteDel(id){const n=HOME.notes.find(x=>x.id===id);if(n&&n.text.trim()&&!confirm('Delete this note?'))return;await api('/api/me/notes/'+id,{method:'DELETE'});HOME.notes=HOME.notes.filter(x=>x.id!==id);renderNotes();}
+/* 📊 reporting status (this month's close at my properties) */
+let REP_ALL=false;
+async function renderHomeReporting(){const el=$('#homeReporting');if(!el)return;
+  let r;try{r=await api('/api/me/reporting'+(REP_ALL?'?all=1':''))}catch(e){return}
+  if(!r.template_id||(!r.rows.length&&!r.missing.length&&!isMgr())){el.innerHTML='';return;}
+  const row=x=>{const pct=x.total?Math.round(100*x.done/x.total):0;
+    const st=x.sent?'<span class="vbadge good">📨 Report sent</span>':x.total&&x.done===x.total?'<span class="vbadge good">✅ Complete</span>':x.overdue?`<span class="risk hi">${x.overdue} late</span>`:x.blocked?`<span class="risk md">${x.blocked} blocked</span>`:'';
+    return `<div class="row2" style="cursor:pointer;display:block" onclick="openProject(${x.project_id})">
+      <div class="row" style="justify-content:space-between;margin:0;gap:8px"><span><span class="pdot" style="${pcVars(propColor({property_id:x.property_id}))}"></span><b>${esc(x.label)}</b></span><span>${st}</span></div>
+      <div class="bar" style="margin:5px 0 3px"><i style="width:${pct}%"></i></div>
+      <div class="sub">${x.done}/${x.total} steps${x.sent?'':x.next?` · next: <span class="${x.next.overdue?'over':''}">${esc(x.next.title)}</span> — ${esc((x.next.assignee_name||'').split(' (')[0])}${x.next.due_date?', '+fmtDate(x.next.due_date):''}`:''}</div></div>`;};
+  const body=(cap('rep',r.rows).map(row).join('')+moreLink('rep',r.rows.length,'renderHomeReporting()'))
+    +(r.missing.length?`<div class="mute" style="font-size:12.5px;margin-top:8px">Not started yet: ${r.missing.map(m=>`<span class="tlink" onclick="openProperty(${m.property_id})">${esc(m.label)}</span>`).join(', ')}</div>`:'')
+    ||`<div class="empty">${r.has_mine?'No '+esc(r.template)+' started yet this month at your properties.':'You\'re not on a property team yet — this shows the monthly close for properties you\'re on.'}</div>`;
+  const sent=r.rows.filter(x=>x.sent).length;
+  el.innerHTML=panel('📊 Reporting status',null,body+`<div class="row" style="justify-content:space-between;margin:8px 0 0;font-size:12.5px"><span class="tlink" onclick="CLOSE.template_id=${r.template_id};show('close')">Open the tracking board →</span>${isMgr()&&r.has_mine?`<span class="tlink" onclick="REP_ALL=!REP_ALL;renderHomeReporting()">${REP_ALL?'Just my properties':'All properties'}</span>`:''}</div>`,
+    `<span class="mute">${esc(r.label)} · ${sent}/${r.rows.length} reports sent</span>`);}
 /* 🏢 my properties */
 async function renderHomeProps(){const el=$('#homeProps');if(!el)return;if(!PROPS.length){try{PROPS=await api('/api/properties')}catch(e){return}}
   const mine=PROPS.filter(p=>HOME.my_properties.includes(p.id)),list=mine.length?mine:(isMgr()?PROPS:[]);
@@ -1566,6 +1583,7 @@ async function renderHome(){const tok=++HTOK;
         <div class="row" style="justify-content:space-between;margin:0;font-size:12px"><span class="mute">${p.done}/${p.total} done</span><span>${p.my_open?`<b>${p.my_open}</b> mine`:'<span class="mute">nothing on you</span>'}${p.my_next_due?` · next ${fmtDate(p.my_next_due)}`:''}</span></div>
         <div class="chips">${p.roles.map(r=>`<span class="chip2">${esc(r)}</span>`).join('')}${p.overdue?`<span class="risk hi">${p.overdue} overdue</span>`:''}</div></div></div>`}).join('')||'<div class="empty">You\'re not on any active projects.</div>'}</div></div>`,
     properties:'<div id="homeProps"></div>',
+    reporting:'<div id="homeReporting"></div>',
     notes:'<div id="homeNotes"></div>',
     wins:'<div id="funTeam"></div>',
     waiting:`${panel('⏳ Waiting on me',d.waiting_on_me.length,cap('wait',d.waiting_on_me).map(w=>`<div class="row2" style="cursor:pointer" onclick="openTask(${w.my_task_id})"><span class="ico">▶️</span><div class="grow"><b>#${w.my_task_id} ${esc(w.my_task_title)}</b><div class="sub">${esc(w.assignee_name)} can't start <i>${esc(w.title)}</i> until this is done${w.my_due?` · due ${fmtDate(w.my_due)}`:''}</div></div></div>`).join('')+moreLink('wait',d.waiting_on_me.length,'renderHome()')||'<div class="empty">Nobody is waiting on you.</div>')}`,
@@ -1577,7 +1595,7 @@ async function renderHome(){const tok=++HTOK;
     done:`${panel('✅ Done this week',d.done_week.length,d.done_week.map(t=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><span class="ico">✓</span><div class="grow">${esc(t.title)}<div class="sub">${esc(t.project_name)}${t.actual_minutes?' · '+fmtMin(t.actual_minutes):' · <span class="over">log time</span>'}</div></div></div>`).join('')||'<div class="empty">Nothing yet this week.</div>')}`};
   HOME_W=W;$('#home').innerHTML=homeLayoutHTML(W);
   if(unread.mentions)api('/api/me/mentions-seen',{method:'POST'}).then(()=>setBadge(0));
-  loadFunToday();loadFunTeam();renderNotes();renderHomeProps();
+  loadFunToday();loadFunTeam();renderNotes();renderHomeProps();renderHomeReporting();
   api('/api/emails').then(r=>{const el=$('#homeEmails');if(!el||!r.drafts.length)return;
     el.innerHTML=panel('✉️ Emails ready to send',r.drafts.length,cap('homeEm',r.drafts).map(d=>`<div class="row2" style="cursor:pointer" onclick="show('emails')"><span class="ico">✉️</span><div class="grow">${esc(d.subject)}<div class="sub">To ${esc(d.to_name||d.to_email||'?')}${d.gmail_draft_id?' · in your Gmail drafts':''}</div></div></div>`).join('')+moreLink('homeEm',r.drafts.length,'renderHome()'));});
 }
