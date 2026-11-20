@@ -192,6 +192,8 @@ def _init_extras():
     home.init()
     from . import notify
     notify.init()
+    from . import reportpkg
+    reportpkg.init()
 
 
 def get_setting(key: str) -> str | None:

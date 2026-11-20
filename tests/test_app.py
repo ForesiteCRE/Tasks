@@ -1646,3 +1646,36 @@ def test_templates_v2_from_foresite_lists(mgr):
     assert any(p["id"] == pid for p in ids(mgr.get("/api/projects")))
     assert st.upgrade_templates_v2() == []
     assert "New Assignment Check List" in by["Property Onboarding (Management Takeover)"]["description"]
+
+
+def test_report_package_import(mgr, staff):
+    import base64, io, openpyxl
+    p1 = ids(mgr.post("/api/properties", json={"address": "1546 Babcock, San Antonio, TX 78229", "name": "1546 Babcock"}))["id"]
+    wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Report Packages"
+    ws.append(["Property", "Monthly", "Quarterly", "Submitted Via", "Cover Sheet", "Executive Summary", "Inspection Report", "Site Plan",
+               "Insurance Report", "AF Report", "Delinquency Report", "Bank Rec/ Stmt", "Distribution Schedule", "Loan Stmt", "Misc Schedules"])
+    ws.append(["1546 Babcock - 1546 Babcock San Antonio, TX 78229", "X", None, "Email", None, "X", None, None, None, "X", "X", "X"])
+    ws.append(["Lott's Landing (8336) - AT&T - 8336 FM 78 Converse, TX 78109", "X", None, "Email", None, "X", None, "X", None, "X",
+               None, "X", None, None, None, "See report notes"])
+    ws.append(["Blank Plaza - 100 Nowhere Rd San Antonio, TX 78201"])
+    buf = io.BytesIO(); wb.save(buf); b64 = base64.b64encode(buf.getvalue()).decode()
+    assert staff.post("/api/properties/report-packages/import", json={"data_b64": b64}).status_code == 403
+    pre = ids(mgr.post("/api/properties/report-packages/import", json={"data_b64": b64}))
+    assert pre["matched"] == 1 and pre["new"] == 2 and pre["with_package"] == 2 and not pre["applied"]
+    lott = next(r for r in pre["rows"] if r["name"].startswith("Lott"))
+    assert lott["name"] == "Lott's Landing (8336) - AT&T" and lott["address"].startswith("8336 FM 78")
+    assert ids(mgr.get(f"/api/properties/{p1}")).get("report_items") in (None, "", "[]")       # preview changes nothing
+    r = ids(mgr.post("/api/properties/report-packages/import", json={"data_b64": b64, "apply": True, "create_missing": True}))
+    assert sum(x["status"] == "created" for x in r["rows"]) == 2
+    p = ids(mgr.get(f"/api/properties/{p1}"))
+    import json as _j
+    assert p["report_freq"] == "monthly" and p["report_via"] == "Email"
+    assert _j.loads(p["report_items"]) == ["Executive summary", "AppFolio report", "Delinquency report", "Bank rec & statement"]
+    lp = next(x for x in ids(mgr.get("/api/properties")) if x["name"].startswith("Lott"))
+    assert "See report notes" in (ids(mgr.get(f"/api/properties/{lp['id']}"))["report_notes"] or "")
+    ids(mgr.put(f"/api/properties/{p1}/report-package", json={"freq": "quarterly", "items": ["Cover sheet", "Bogus"]}))
+    p = ids(mgr.get(f"/api/properties/{p1}"))
+    assert p["report_freq"] == "quarterly" and _j.loads(p["report_items"]) == ["Cover sheet"]
+    proj = ids(mgr.post("/api/projects", json={"name": "Close", "property": "1546 Babcock, San Antonio, TX 78229"}))["id"]
+    assert ids(mgr.get(f"/api/projects/{proj}/report-package"))["items"] == ["Cover sheet"]
+    assert mgr.post("/api/properties/report-packages/import", json={"data_b64": "bm90IGV4Y2Vs"}).status_code == 400

@@ -6,3 +6,4 @@ hook0-client>=2.0
 python-dotenv>=1.0
 itsdangerous>=2.1
 cryptography>=42
+openpyxl>=3.1

@@ -1086,6 +1086,38 @@ def property_photo(pid: int):
         raise HTTPException(404, "No photo")
     return FileResponse(path, headers={"Cache-Control": "private, max-age=86400"})
 
+# ---------- owner report packages ----------
+@app.put("/api/properties/{pid}/report-package")
+def put_report_package(pid: int, body: dict, request: Request):
+    _require_manager(request)
+    from . import reportpkg
+    if not properties.get(pid):
+        raise HTTPException(404, "Property not found")
+    reportpkg.save(pid, body)
+    return {"ok": True}
+
+@app.post("/api/properties/report-packages/import")
+def import_report_packages(body: dict, request: Request):
+    """Accounting's Report Packages spreadsheet (base64 .xlsx). apply=false → preview only."""
+    _require_manager(request)
+    import base64
+    from . import reportpkg
+    try:
+        data = base64.b64decode((body.get("data_b64") or "").split(",")[-1])
+        r = reportpkg.import_rows(data, apply=bool(body.get("apply")), create_missing=bool(body.get("create_missing")))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception:
+        raise HTTPException(400, "Couldn't read that file — please upload the Excel (.xlsx) workbook.")
+    if r["applied"]:
+        audit.log(_me_id(request), "imported report packages", "property", None, f"{r['with_package']} packages")
+    return r
+
+@app.get("/api/projects/{pid}/report-package")
+def project_report_package(pid: int):
+    from . import reportpkg
+    return reportpkg.for_project(pid) or {}
+
 @app.get("/api/properties/{pid}/streetview")
 def property_streetview(pid: int):
     p = properties.get(pid)
