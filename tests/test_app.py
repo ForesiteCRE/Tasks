@@ -1822,3 +1822,29 @@ def test_leftover_sample_wins_cleaned(mgr, staff):
         assert not c.execute("SELECT 1 FROM wins WHERE title IN ('ghost task','sample shout')").fetchone()
     ids(mgr.post("/api/fun/clean-wins?reset=true"))
     assert ids(mgr.get("/api/fun/team"))["wins"] == []
+
+
+def test_vendor_directory_import(mgr, staff):
+    import base64, io, openpyxl
+    wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Clean Vendor List"
+    ws.append([None, "Category", None, "Company Name", "Name", "Address", "Phone Numbers", "Email", None, None, None, None, None,
+               "Street Address 1", "Street Address 2", "City", "State", "Zip", "First Name", "Last Name"])
+    ws.append(["Building systems", "Plumbing", None, "Zeta Plumbing Co.", "Martinez, Andrew", "1 Pipe St San Antonio, TX 78250",
+               "Phone: (210) 555-0001, Office: (210) 555-0002", "zeta@example.com"] + [None] * 10 + ["Andrew", "Martinez"])
+    ws.append(["Building systems", "HVAC", None, None, "of Texas, LLC, Zeta Mechanical", "2 Air St San Antonio, TX 78217"] + [None] * 12 +
+              ["Zeta Mechanical", "of Texas, LLC"])
+    ws.append([None, "Other", None, "Zeta Drafting", None, None, None, None])
+    ws2 = wb.create_sheet("Removed - At Managed Props"); ws2.append(["Company Name", "Name"]); ws2.append(["A Tenant LLC", ""])
+    buf = io.BytesIO(); wb.save(buf); b64 = base64.b64encode(buf.getvalue()).decode()
+    assert staff.post("/api/vendors/import", json={"data_b64": b64}).status_code == 403
+    pre = ids(mgr.post("/api/vendors/import", json={"data_b64": b64}))
+    assert pre["total"] == 3 and pre["new"] == 3
+    z = next(v for v in pre["rows"] if v["name"] == "Zeta Plumbing Co.")
+    assert z["contact_name"] == "Andrew Martinez" and z["phone"] == "(210) 555-0001 · Office (210) 555-0002"
+    assert any(v["name"] == "Zeta Mechanical of Texas, LLC" and v["trade"] == "HVAC" for v in pre["rows"])
+    r = ids(mgr.post("/api/vendors/import", json={"data_b64": b64, "apply": True}))
+    assert r["created"] == 3
+    again = ids(mgr.post("/api/vendors/import", json={"data_b64": b64, "apply": True}))
+    assert again["created"] == 0 and again["updated"] == 3                       # no duplicates
+    names = [v["name"] for v in ids(mgr.get("/api/vendors"))["vendors"]]
+    assert "A Tenant LLC" not in names and names.count("Zeta Drafting") == 1

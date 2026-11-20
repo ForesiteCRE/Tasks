@@ -466,7 +466,7 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
 </section>
 
 <section id="v-vendors" class="hidden">
-  <div class="pagehead"><div><h2>🧰 Vendors</h2><div class="pagesub">Who we've used — ratings, prices, notes and where they work.</div></div><div class="row" style="margin:0"><button class="b ghost mgr" id="venSampleBtn" onclick="venSamples(true)">🧪 Load sample vendors</button><button class="b" onclick="vendorForm()">+ Add vendor</button></div></div>
+  <div class="pagehead"><div><h2>🧰 Vendors</h2><div class="pagesub">Who we've used — ratings, prices, notes and where they work.</div></div><div class="row" style="margin:0"><button class="b ghost mgr" id="venSampleBtn" onclick="venSamples(true)">🧪 Load sample vendors</button><button class="b ghost mgr" onclick="venImportPick()">⬆ Import vendor list</button><button class="b" onclick="vendorForm()">+ Add vendor</button></div></div>
   <div id="venSampleBar" class="card hidden" style="display:flex;justify-content:space-between;align-items:center;gap:10px;background:#fffbea;border-color:#f5e3a3"><span>🧪 <b id="venSampleN"></b> sample vendors are showing (made-up companies with sample reviews) — great for trying ratings, warnings and property slots.</span><button class="b ghost" onclick="venSamples(false)">Remove sample vendors</button></div>
   <div class="row" style="margin-bottom:12px"><input type="search" id="venSearch" placeholder="Search vendors…" oninput="renderVendors()" style="flex:1;min-width:180px">
     <select id="venTrade" onchange="renderVendors(true)"><option value="">All trades</option></select></div>
@@ -1112,10 +1112,27 @@ const coiChip=k=>{const m={ok:['ok','🛡'],expiring:['warn','⏳'],unverified:[
 const vbadge=v=>v.badge?`<span class="vbadge ${v.badge}" title="${esc(v.warning||'')}">${esc(v.badge_label)}</span>`:'';
 let VEN_SAMPLES=0;
 async function loadVendors(){const r=await api('/api/vendors');VENDORS=r.vendors;TRADES=r.trades;VEN_SAMPLES=r.samples||0;return VENDORS;}
+let VEN_FILE=null;
+function venImportPick(){const i=document.createElement('input');i.type='file';i.accept='.xlsx';i.onchange=async()=>{const f=i.files[0];if(!f)return;
+  VEN_FILE=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(f)});toast('Reading the vendor list…');
+  const r=await api('/api/vendors/import',{method:'POST',body:{data_b64:VEN_FILE}});
+  $('#taskDlgBody').innerHTML=`<h2>⬆ Import vendor list</h2>
+    <p class="mute">${r.total} vendors · <b>${r.new}</b> new · <b>${r.existing}</b> already in the list (blank details filled in, trade added — never duplicated). Nothing changes until you click Import.</p>
+    <div class="row" style="flex-wrap:wrap;gap:5px;margin:4px 0 10px">${r.by_trade.map(([t,n])=>`<span class="pill">${esc(t)} · ${n}</span>`).join('')}</div>
+    ${r.samples?`<label class="row" style="gap:6px;margin:0 0 10px"><input type="checkbox" id="venRmSamples" checked> Remove the <b>${r.samples}</b> sample vendors first</label>`:''}
+    <div style="max-height:45vh;overflow:auto;border:1px solid var(--line);border-radius:8px"><table class="rpkgtab"><tr><th>Vendor</th><th>Trade</th><th>Contact</th></tr>
+      ${r.rows.map(v=>`<tr><td><b>${esc(v.name)}</b><div class="mute" style="font-size:11.5px">${esc(v.address||'')}</div></td><td style="font-size:12.5px">${esc(v.trade)}</td>
+        <td style="font-size:12px">${esc(v.contact_name||'')}${v.contact_name&&(v.phone||v.email)?'<br>':''}${esc(v.phone||'')}${v.phone&&v.email?'<br>':''}${esc(v.email||'')}</td></tr>`).join('')}</table>
+      ${r.total>r.rows.length?`<div class="mute" style="padding:8px;font-size:12px">…and ${r.total-r.rows.length} more</div>`:''}</div>
+    <div class="row" style="justify-content:flex-end;margin-top:10px;gap:6px"><button class="b ghost" onclick="taskDlg.close()">Cancel</button><button class="b" onclick="venImportApply()">Import ${r.total} vendors</button></div>`;
+  if(!taskDlg.open)taskDlg.showModal();};i.click();}
+async function venImportApply(){const rm=$('#venRmSamples')&&$('#venRmSamples').checked;toast('Importing…');
+  const r=await api('/api/vendors/import',{method:'POST',body:{data_b64:VEN_FILE,apply:true,remove_samples:rm}});
+  taskDlg.close();renderVendors(true);toast(`Imported: ${r.created} added · ${r.updated} updated${r.samples_removed?` · ${r.samples_removed} samples removed`:''}`);}
 async function venSamples(load){if(!load&&!confirm('Remove all sample vendors (and their sample reviews, and any property/project slots they fill)? Vendors you added are not affected.'))return;
   const r=await api('/api/vendors/samples',{method:load?'POST':'DELETE'});toast(load?`Added ${r.added} sample vendors`:`Removed ${r.removed} sample vendors`);renderVendors(true);}
 async function renderVendors(fetch){if(fetch||!VENDORS.length)await loadVendors();
-  $('#venSampleBar').classList.toggle('hidden',!(VEN_SAMPLES&&isMgr()));$('#venSampleN').textContent=VEN_SAMPLES;$('#venSampleBtn').classList.toggle('hidden',!!VEN_SAMPLES||!isMgr());
+  $('#venSampleBar').classList.toggle('hidden',!(VEN_SAMPLES&&isMgr()));$('#venSampleN').textContent=VEN_SAMPLES;$('#venSampleBtn').classList.toggle('hidden',!!VEN_SAMPLES||!isMgr()||VENDORS.length>0);   // only offered on an empty list
   const tsel=$('#venTrade'),tv=tsel.value;tsel.innerHTML='<option value="">All trades</option>'+TRADES.map(t=>`<option ${t===tv?'selected':''}>${esc(t)}</option>`).join('');
   const q=($('#venSearch').value||'').toLowerCase(),list=VENDORS.filter(v=>(!tv||v.trades.includes(tv))&&(!q||(v.name+' '+v.trades.join(' ')+' '+(v.contact_name||'')).toLowerCase().includes(q)));
   $('#venList').innerHTML=list.map(v=>`<div class="pcard vcard" onclick="openVendor(${v.id})"><div class="row" style="justify-content:space-between;margin:0;align-items:flex-start"><h4 style="margin:0">${esc(v.name)}${v.is_sample?' <span class="pill" style="background:#fff3bf;color:#8a6d00">sample</span>':''}</h4>${vbadge(v)}</div>
