@@ -112,6 +112,8 @@ def mode(uid: int, cat: str) -> str:
 
 def deliver(uid: int | None, cat: str, text: str, blink_id: str | None = None) -> str:
     """Send now, save for the summary, or skip — per that person's settings. Returns what happened."""
+    if getattr(blink._QUIET, "on", False):   # bulk imports / demo loading: nothing sent or queued
+        return "off"
     if uid is None and blink_id:
         with tx() as c:
             r = c.execute("SELECT id FROM users WHERE blink_user_id=?", (blink_id,)).fetchone()

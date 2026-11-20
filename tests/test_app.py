@@ -1751,3 +1751,42 @@ def test_archive_projects_and_properties(mgr, staff):
     r = ids(mgr.post(f"/api/properties/{prop}/archive?undo=true"))
     assert r["projects"] == 2 and prop in [x["id"] for x in ids(mgr.get("/api/properties"))]
     assert {p["id"]: p["status"] for p in ids(mgr.get("/api/projects"))}[p1] == "active"
+
+
+def test_property_directory_import(mgr, staff):
+    import base64, io, openpyxl
+    from app.db import tx
+    wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Master List"
+    ws.append(["Property Directory"]); ws.append([])
+    ws.append([None, "Property", "Units", "Sqft", "Start Date", "Mgmt Fee Percent", "Minimum Fee", "Notes", "Bldg Mgmt", "% Rent",
+               "Insurance Expiration", "Owner(s)", "Property Name", "Property Address", "Site Manager Name", "Accountant"])
+    ws.append([1, "Dir One - 10 Dir St San Antonio, TX 78201", 5, 11500, None, 4, 1200, None, None, None, "2099-01-31",
+               "One Owner, LLC - Phone: (818) 555-0000", "Dir One", "10 Dir St San Antonio, TX 78201", "Sam", "Bethany/Sam"])
+    ws.append([2, "Clinic - 99 Shared Rd San Antonio, TX 78202", 1, 100, None, None, None, None, None, None, None,
+               "Fund", "Shared Clinic", "99 Shared Rd San Antonio, TX 78202", "Sam", "Newbie"])
+    ws.append([3, "Assoc - 99 Shared Rd San Antonio, TX 78202", 1, 100, None, None, None, None, None, None, None,
+               "Assoc Inc", "Shared Assoc", "99 Shared Rd San Antonio, TX 78202", "Sam", ""])
+    buf = io.BytesIO(); wb.save(buf); b64 = base64.b64encode(buf.getvalue()).decode()
+    assert staff.post("/api/properties/directory/import", json={"data_b64": b64}).status_code == 403
+    pre = ids(mgr.post("/api/properties/directory/import", json={"data_b64": b64}))
+    assert pre["counts"]["total"] == 3
+    names = {n["name"]: n for n in pre["names"]}
+    assert names["Sam"]["count"] == 4 and names["Bethany"]["user_id"] == mgr.me["id"]
+    SENT.clear()
+    r = ids(mgr.post("/api/properties/directory/import", json={
+        "data_b64": b64, "apply": True, "mapping": {"Sam": staff.me["id"], "Bethany": mgr.me["id"]},
+        "new_people": {"Newbie": {"name": "Newbie Person", "email": "newbie@foresitecre.com"}}}))
+    assert r["created"] == 3 and r["assigned"] == 6 and SENT == []                    # quiet: no Blink messages
+    props = {p["name"]: p for p in ids(mgr.get("/api/properties"))}
+    assert "Shared Clinic" in props and "Shared Assoc" in props                       # same address, two pages
+    one = ids(mgr.get(f"/api/properties/{props['Dir One']['id']}"))
+    team = {x["role"]: x["user_name"] for x in one["roles"]}
+    assert team["Property Manager"] == staff.me["name"] and team["Accounting 1"] == mgr.me["name"] and team["Accounting 2"] == staff.me["name"]
+    assert one["client"] == "One Owner, LLC" and "Units: 5" in one["notes"] and "(818) 555-0000" in one["notes"]
+    assert any(d["kind"] == "insurance_renewal" and d["date"] == "2099-01-31" for d in one["dates"])
+    clinic = ids(mgr.get(f"/api/properties/{props['Shared Clinic']['id']}"))
+    assert {x["role"]: x["user_name"] for x in clinic["roles"]}["Accounting 1"] == "Newbie Person"
+    with tx() as c:
+        assert c.execute("SELECT 1 FROM users WHERE email='newbie@foresitecre.com'").fetchone()
+    again = ids(mgr.post("/api/properties/directory/import", json={"data_b64": b64, "apply": True, "mapping": {"Sam": staff.me["id"]}}))
+    assert again["created"] == 0 and again["updated"] == 3                            # re-running updates, no duplicates

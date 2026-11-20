@@ -1121,6 +1121,27 @@ def put_report_package(pid: int, body: dict, request: Request):
     reportpkg.save(pid, body)
     return {"ok": True}
 
+@app.post("/api/properties/directory/import")
+def import_directory(body: dict, request: Request):
+    """Property Directory (base64 .xlsx). apply=false → preview; apply=true → create/update pages + teams."""
+    _require_manager(request)
+    import base64
+    from . import directory
+    try:
+        data = base64.b64decode((body.get("data_b64") or "").split(",")[-1])
+        if not body.get("apply"):
+            return directory.preview(data)
+        r = directory.apply(data, {k: v for k, v in (body.get("mapping") or {}).items() if v},
+                            body.get("new_people") or {}, bool(body.get("archive_others")), _me_id(request))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception:
+        logging.getLogger("directory").exception("directory import failed")
+        raise HTTPException(400, "Couldn't read that file — please upload the Excel (.xlsx) Property Directory.")
+    audit.log(_me_id(request), "imported property directory", "property", None,
+              f"{r['created']} created · {r['updated']} updated · {r['assigned']} team assignments")
+    return r
+
 @app.post("/api/properties/report-packages/import")
 def import_report_packages(body: dict, request: Request):
     """Accounting's Report Packages spreadsheet (base64 .xlsx). apply=false → preview only."""
