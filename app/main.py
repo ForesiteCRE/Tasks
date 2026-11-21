@@ -832,6 +832,7 @@ def get_task(tid: int):
     d = collab.task_detail(tid)
     if not d:
         raise HTTPException(404, "Task not found")
+    d["inspection"] = inspections.step_info(tid)
     return d
 
 

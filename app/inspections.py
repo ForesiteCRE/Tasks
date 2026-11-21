@@ -28,6 +28,10 @@ CHECKLIST = [
     ("Tenants", ["Tenant compliance (signs, outdoor storage, lease issues)", "Tenant concerns raised"]),
 ]
 GENERAL = "General photos"
+# Template steps the walk-through covers → the checklist areas that must be looked at (None = always, once finished)
+STEPS = {"exterior walk": ["Site & parking", "Building exterior"], "common areas & life safety": ["Common areas", "Life safety & systems"],
+         "check vacant suites": ["Vacant suites"], "photos & inspection report": None, "work orders for issues found": None,
+         "site inspection & property condition walk": None}
 RATINGS = ("good", "issue", "na")
 
 
@@ -197,11 +201,59 @@ def finish(iid: int, uid, notes: str | None = None, assignee_id=None, today: dat
         c.execute("UPDATE projects SET status='active' WHERE id=?", (gp,))
         c.execute("UPDATE inspections SET status='done', finished_at=datetime('now'), notes=COALESCE(?, notes) WHERE id=?",
                   ((notes or "").strip() or None, iid))
+    steps = complete_steps(iid, uid, len(made), today)
     if made and who != uid:
         from . import notify
         notify.deliver(who, "assigned", f"🔧 {len(made)} repair task{'s' if len(made) > 1 else ''} from the inspection at "
                                         f"{i['property_name']} — {link}")
-    return {"tasks": made, "report": f"/inspections/{iid}/report"}
+    return {"tasks": made, "steps": steps, "report": f"/inspections/{iid}/report"}
+
+
+def _step_tasks(c, property_id: int, today: date):
+    """Open inspection steps at this property, in projects that have started (not next quarter's)."""
+    return [t for t in rows(c.execute(
+        """SELECT t.id, t.title, t.status FROM tasks t JOIN projects p ON p.id=t.project_id
+           WHERE COALESCE(p.property_id, t.property_id)=? AND t.status!='done' AND p.archived_at IS NULL
+             AND p.status NOT IN ('archived') AND (p.start_date IS NULL OR p.start_date<=?)""", (property_id, today.isoformat())))
+        if t["title"].strip().lower() in STEPS]
+
+
+def step_info(task_id: int) -> dict | None:
+    """For a task dialog: is this an inspection step, and is there an inspection to continue / a report?"""
+    with tx() as c:
+        t = c.execute("""SELECT t.title, t.status, COALESCE(p.property_id, t.property_id) AS property_id, p.start_date
+                         FROM tasks t JOIN projects p ON p.id=t.project_id WHERE t.id=?""", (task_id,)).fetchone()
+        if not t or not t["property_id"] or t["title"].strip().lower() not in STEPS:
+            return None
+        draft = c.execute("SELECT id FROM inspections WHERE property_id=? AND status='draft' ORDER BY id DESC", (t["property_id"],)).fetchone()
+        last = c.execute("""SELECT id, finished_at FROM inspections WHERE property_id=? AND status='done' AND finished_at>=?
+                            ORDER BY id DESC""", (t["property_id"], t["start_date"] or "0000")).fetchone()
+    return {"property_id": t["property_id"], "draft_id": draft[0] if draft else None,
+            "report_id": last["id"] if last else None, "report_date": last["finished_at"][:10] if last else None}
+
+
+def complete_steps(iid: int, uid, made: int, today: date | None = None) -> list[int]:
+    """Finishing an inspection checks off the matching template steps (if their areas were looked at)."""
+    from . import services
+    from .auth import PUBLIC_URL
+    today = today or date.today()
+    i = get(iid)
+    link = f"{PUBLIC_URL}/inspections/{iid}/report"
+    with tx() as c:
+        steps = _step_tasks(c, i["property_id"], today)
+    done = []
+    for t in steps:
+        areas = STEPS[t["title"].strip().lower()]
+        if areas and not any(x["rating"] for x in i["items"] if x["section"] in areas):
+            continue
+        key = t["title"].strip().lower()
+        note = (f"✅ Done with the inspection walk-through — {made} repair task{'s' if made != 1 else ''} created. {link}"
+                if key == "work orders for issues found" and made else
+                "✅ No issues found on the inspection walk-through." if key == "work orders for issues found" else
+                f"✅ Done with the inspection walk-through — report: {link}")
+        services.apply_update(t["id"], uid, "web", "done", note)
+        done.append(t["id"])
+    return done
 
 
 def for_property(pid: int) -> list[dict]:

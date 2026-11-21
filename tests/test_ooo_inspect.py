@@ -151,3 +151,32 @@ def test_inspection_walkthrough(mgr, staff):
     assert again["tasks"] == []                                                 # never duplicates tasks
     lst = mgr.get(f"/api/properties/{pid}/inspections").json()["items"]
     assert lst[0]["issues"] == 2 and lst[0]["photos"] == 2 and lst[0]["status"] == "done"
+
+
+def test_inspection_checks_off_quarterly_steps(mgr):
+    from app import services
+    pid = mgr.post("/api/properties", json={"address": "77 Quarter Rd, San Antonio, TX", "name": "Quarter Plaza"}).json()
+    pid = pid if isinstance(pid, int) else pid["id"]
+    with tx() as c:
+        tid = c.execute("SELECT id FROM templates WHERE name='Quarterly Property Inspection'").fetchone()[0]
+    proj = services.create_project_from_template(tid, "Q4 Inspection – Quarter Plaza", T - timedelta(days=3))
+    with tx() as c:
+        c.execute("UPDATE projects SET property_id=? WHERE id=?", (pid, proj))
+        steps = {r["title"]: r["id"] for r in c.execute("SELECT id, title FROM tasks WHERE project_id=?", (proj,))}
+    info = mgr.get(f"/api/tasks/{steps['Exterior walk']}").json()["inspection"]
+    assert info == {"property_id": pid, "draft_id": None, "report_id": None, "report_date": None}
+    i = mgr.post(f"/api/properties/{pid}/inspections").json()
+    assert mgr.get(f"/api/tasks/{steps['Exterior walk']}").json()["inspection"]["draft_id"] == i["id"]
+    for it in i["items"]:
+        if it["section"] in ("Site & parking", "Building exterior", "Common areas"):
+            mgr.patch(f"/api/inspection-items/{it['id']}", json={"rating": "good"})
+    r = mgr.post(f"/api/inspections/{i['id']}/finish", json={}).json()
+    with tx() as c:
+        st = {t: c.execute("SELECT status FROM tasks WHERE id=?", (x,)).fetchone()[0] for t, x in steps.items()}
+        note = c.execute("SELECT note FROM task_updates WHERE task_id=? ORDER BY id DESC", (steps["Work orders for issues found"],)).fetchone()[0]
+    assert st["Exterior walk"] == st["Common areas & life safety"] == st["Photos & inspection report"] == "done"
+    assert st["Work orders for issues found"] == "done" and "No issues" in note
+    assert st["Check vacant suites"] != "done" and st["Send summary to owner / asset manager"] != "done"   # not looked at / still the PM's
+    assert len(r["steps"]) == 4
+    assert mgr.get(f"/api/tasks/{steps['Exterior walk']}").json()["inspection"]["report_id"] == i["id"]
+    assert mgr.get(f"/api/tasks/{steps['Send summary to owner / asset manager']}").json()["inspection"] is None
