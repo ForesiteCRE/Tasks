@@ -115,7 +115,7 @@ def _staff_allowed(request: Request) -> bool:
         return True   # vendor endpoints check property/project team membership themselves
     return path.startswith(("/api/tasks", "/api/checklist/", "/api/reminders", "/api/me/", "/api/critical-dates/",
                              "/api/vendors", "/api/vendor-reviews/", "/api/property-vendors/", "/api/project-vendors/", "/api/emails", "/api/wins/", "/api/our-cois/", "/api/help",
-                             "/api/vendor-cois/", "/api/utilities", "/api/inspections", "/api/inspection-items/", "/api/inspection-photos/"))
+                             "/api/vendor-cois/", "/api/utilities", "/api/inspections", "/api/inspection-items/", "/api/inspection-photos/", "/api/inbox-files/"))
 
 
 _PUBLIC_HOST = PUBLIC_URL.split("://")[-1].split("/")[0].lower()
@@ -130,11 +130,11 @@ async def require_login(request: Request, call_next):
             and not request.url.path.startswith(("/api/", "/blink/", "/calendar/", "/healthz", "/brand/", "/approve/"))):
         query = f"?{request.url.query}" if request.url.query else ""
         return RedirectResponse(f"{PUBLIC_URL}{request.url.path}{query}", status_code=301)
-    if LOCKED and request.url.path not in ("/healthz", "/blink/webhook"):
+    if LOCKED and request.url.path not in ("/healthz", "/blink/webhook") and not request.url.path.startswith("/email/inbound/"):
         return HTMLResponse("<p style='font:16px system-ui;text-align:center;margin-top:20vh'>"
                             "Sign-in isn't configured yet — set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.</p>",
                             status_code=503)
-    if request.url.path in PUBLIC_PATHS or request.url.path.startswith(("/calendar/", "/brand/", "/approve/")):  # secret-token links; logo files
+    if request.url.path in PUBLIC_PATHS or request.url.path.startswith(("/calendar/", "/brand/", "/approve/", "/email/inbound/")):  # secret-token links; logo files
         return await call_next(request)
     if ENABLED and (u := request.session.get("user")):
         _ensure_user_row(request, u)

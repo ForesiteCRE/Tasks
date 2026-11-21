@@ -201,6 +201,8 @@ def _init_extras():
     from . import ooo, inspections
     ooo.init()
     inspections.init()
+    from . import inbox
+    inbox.init()
 
 
 def get_setting(key: str) -> str | None:

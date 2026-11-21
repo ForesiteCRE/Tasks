@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import (audit, utilities, ooo, inspections, auth, automations, bids, blink, notify, blockers, fun, helpbot, ourcoi, chat, closeboard, departments, emails, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
+from . import (audit, utilities, ooo, inspections, inbox, auth, automations, bids, blink, notify, blockers, fun, helpbot, ourcoi, chat, closeboard, departments, emails, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
                starter_templates, team, timing, tpl)
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
@@ -265,7 +265,7 @@ def delete_department(did: int):
 @app.get("/api/config")
 def config():
     return {"simulator": SIMULATOR, "blink_mock": blink.MOCK, "plain_english": chat.ai_enabled(),
-            "streetview": bool(photos.MAPS_KEY),
+            "streetview": bool(photos.MAPS_KEY), "inbox_address": inbox.address(),
             "last_backup": get_setting("last_backup"), "last_summary_week": get_setting("last_summary_week")}
 
 
@@ -833,6 +833,7 @@ def get_task(tid: int):
     if not d:
         raise HTTPException(404, "Task not found")
     d["inspection"] = inspections.step_info(tid)
+    d["email"] = inbox.for_task(tid)
     return d
 
 
@@ -2539,6 +2540,96 @@ def inspection_delete(iid: int, request: Request):
 def inspection_report(iid: int, request: Request):
     _insp(iid, request, write=False)
     return HTMLResponse(inspections.report_html(iid))
+
+
+# ---------- email → task ----------
+
+@app.post("/email/inbound/{tok}")
+async def email_inbound(tok: str, request: Request, background: BackgroundTasks):
+    """Called by the inbound-email service (Postmark / SendGrid / Mailgun / raw MIME)."""
+    import secrets as _s
+    if not _s.compare_digest(tok, inbox.token()):
+        raise HTTPException(404, "Not found")
+    ct = request.headers.get("content-type", "")
+    form, files = None, []
+    if "multipart/form-data" in ct or "application/x-www-form-urlencoded" in ct:
+        f = await request.form()
+        form = {}
+        for k, v in f.multi_items():
+            if hasattr(v, "read"):
+                files.append((v.filename or "attachment", v.content_type or "application/octet-stream", await v.read()))
+            else:
+                form[k] = v
+        body = b""
+    else:
+        body = await request.body()
+    if len(body) > 60 * 1024 * 1024:
+        raise HTTPException(413, "Too large")
+    try:
+        e = inbox.normalize(ct, body, form, files)
+    except Exception:
+        logging.getLogger("inbox").exception("couldn't read inbound email")
+        return {"ok": False}
+    background.add_task(_inbox_process, e)
+    return {"ok": True}
+
+
+def _inbox_process(e: dict):
+    try:
+        inbox.process(e)
+    except Exception:
+        logging.getLogger("inbox").exception("inbound email failed")
+
+
+@app.get("/api/inbox")
+def inbox_info(request: Request):
+    _require_manager(request)
+    return inbox.info(auth.PUBLIC_URL or str(request.base_url).rstrip("/"))
+
+
+@app.put("/api/inbox")
+def inbox_save(body: dict, request: Request):
+    if not auth.is_admin(request):
+        raise HTTPException(403, "Only the admin can do that.")
+    try:
+        inbox.set_address(body.get("address") or "")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return inbox.info(auth.PUBLIC_URL or str(request.base_url).rstrip("/"))
+
+
+@app.post("/api/inbox/rotate")
+def inbox_rotate(request: Request):
+    if not auth.is_admin(request):
+        raise HTTPException(403, "Only the admin can do that.")
+    inbox.rotate_token()
+    return inbox.info(auth.PUBLIC_URL or str(request.base_url).rstrip("/"))
+
+
+@app.post("/api/me/email-to-task")
+def inbox_try(body: dict, request: Request):
+    """Try it without setting up email: paste an email and it's processed as if you forwarded it."""
+    me = auth.current_user(request) or {}
+    with tx() as c:
+        u = c.execute("SELECT email FROM users WHERE id=?", (_me_id(request),)).fetchone()
+    text = (body.get("text") or "").strip()
+    if not text:
+        raise HTTPException(400, "Paste the email first.")
+    import uuid as _u
+    r = inbox.process({"from_email": (u["email"] if u and u["email"] else me.get("email") or "").lower(), "from_name": me.get("name"),
+                       "subject": body.get("subject") or "", "text": text, "html": "", "message_id": f"try-{_u.uuid4().hex}",
+                       "headers": {}, "files": []})
+    if r["status"] != "task":
+        raise HTTPException(400, "Only people in the Task Manager can create tasks by email." if r.get("reason") == "sender not in the app" else (r.get("reason") or "Couldn't make a task from that."))
+    return r
+
+
+@app.get("/api/inbox-files/{fid}")
+def inbox_file(fid: int, request: Request):
+    got = inbox.file_path(fid)
+    if not got:
+        raise HTTPException(404, "Not found")
+    return FileResponse(got[1], filename=got[0]["filename"] or "attachment", media_type=got[0]["content_type"] or "application/octet-stream")
 
 
 @app.get("/api/me/reporting")

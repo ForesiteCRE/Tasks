@@ -443,6 +443,7 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
     <div class="qadd"><input id="qTitle" placeholder="What needs doing?" onkeydown="if(event.key==='Enter')quickAdd()">
       <select id="qProp" title="Property (optional)" onchange="qPropChanged()"></select><select id="qProj" title="Project (optional)" onchange="qProjChanged()"></select><select id="qWho"></select><input id="qDue" type="date"><input id="qEst" placeholder="Est. 1h"><select id="qRepeat" title="Repeat"><option value="">Doesn't repeat</option><option value="weekly">🔁 Every week</option><option value="biweekly">🔁 Every 2 weeks</option><option value="monthly">🔁 Every month</option><option value="quarterly">🔁 Every quarter</option><option value="yearly">🔁 Every year</option></select><button class="b" onclick="quickAdd()">Add</button></div>
     <p class="mute" style="margin:6px 0 0;font-size:12.5px">💡 Property and project are optional — pick a property to see its projects, or leave both blank for anything else (office errands, admin, follow-ups). <span class="mgronly">You can still assign it to anyone, and they get a Blink message.</span></p></div>
+  <div class="mute" id="inboxHint" style="font-size:12.5px;margin:-4px 0 10px"></div>
   <div class="toolbar">
     <input type="search" id="tSearch" placeholder="Search tasks…" oninput="renderTasks()">
     <select id="tWho" onchange="renderTasks()"></select><select id="tPropF" onchange="renderTasks()"></select><select id="tProj" onchange="renderTasks()"></select>
@@ -584,6 +585,7 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
     <p class="mute">Sent in Blink every Monday morning to anyone ticked “Weekly summary” on the People tab: overdue, blocked and due-this-week tasks across the team.</p>
     <div class="row"><button class="b ghost" onclick="previewSummary()">Preview</button><button class="b" onclick="sendSummary()">Send now</button><span id="sumInfo" class="mute"></span></div>
     <pre id="sumPreview" class="hidden" style="white-space:pre-wrap;background:#f1f3f6;padding:12px;border-radius:8px;font:13px/1.5 system-ui"></pre></div>
+  <div class="card" id="inboxCard"></div>
   <div class="card"><h2>💾 Backups</h2>
     <p class="mute">A copy of the whole task database is saved automatically every day and kept for 14 days. Download one now and then to keep an off-site copy.</p>
     <div class="row"><button class="b" onclick="runBackup()">Back up now</button><span id="bkInfo" class="mute"></span></div>
@@ -1573,6 +1575,34 @@ async function renderInspections(){const r=await api('/api/inspections');if(!PRO
     <select id="inspProp" style="flex:1;min-width:200px"><option value="">Pick a property…</option>${PROPS.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select><button class="b" onclick="$('#inspProp').value?inspStart(+$('#inspProp').value):toast('Pick a property')">📋 Start</button></div></div></div>
     <div class="panel"><header><h3>Recent inspections</h3><span class="cnt">${r.items.length}</span></header><div class="body">${r.items.map(inspRow).join('')||'<div class="empty">None yet.</div>'}</div></div>`;}
 
+/* ---------- email → task ---------- */
+function inboxHint(){const el=$('#inboxHint');if(!el)return;const a=CFG.inbox_address;
+  el.innerHTML=`📧 ${a?`Forward any email to <b class="tlink" onclick="navigator.clipboard.writeText('${esc(a)}').then(()=>toast('Address copied'))" title="Copy">${esc(a)}</b> and it becomes a task — add a note on top like “for Jackie by Friday”.`:'Email → task: paste an email and Claude turns it into a task.'} <span class="tlink" onclick="inboxTry()">Try it — paste an email</span>`;}
+function inboxTry(){$('#taskDlgBody').innerHTML=`<h2>📧 Email → task</h2>
+  <div class="mute" style="font-size:13px;margin-bottom:8px">${CFG.inbox_address?`Normally you just forward the email to <b>${esc(CFG.inbox_address)}</b>. Here you can paste one instead.`:'Paste an email (or a forwarded one). '} Anything you type above the email — like “for Jackie by Friday” — tells it who and when.</div>
+  <label>Subject<input id="ibSubj" placeholder="e.g. Water leak in Suite 104"></label>
+  <label>Email<textarea id="ibText" rows="10" placeholder="for Jackie by Friday&#10;&#10;---------- Forwarded message ---------&#10;From: Pat Tenant <pat@example.com>&#10;Subject: Water leak in Suite 104&#10;&#10;Hi, water is coming through the ceiling…"></textarea></label>
+  <div class="row" style="justify-content:flex-end;gap:6px;margin-top:10px"><button class="b ghost" onclick="taskDlg.close()">Cancel</button><button class="b" id="ibGo" onclick="inboxTryGo()">📌 Make the task</button></div>`;
+  if(!taskDlg.open)taskDlg.showModal();}
+async function inboxTryGo(){const b=$('#ibGo');b.disabled=true;b.textContent='Reading…';
+  try{const r=await api('/api/me/email-to-task',{method:'POST',body:{subject:$('#ibSubj').value,text:$('#ibText').value}});await refresh();openTask(r.task_id);toast('📌 Task created from the email');}
+  catch(e){b.disabled=false;b.textContent='📌 Make the task';toast(e.message||'Couldn\'t make a task');}}
+async function loadInbox(){const el=$('#inboxCard');if(!el)return;let r;try{r=await api('/api/inbox')}catch(e){el.innerHTML='';return}
+  const st={task:'✅ task',ignored:'🚫 ignored',error:'⚠️ error'};
+  el.innerHTML=`<h2>📧 Email → task</h2>
+    <p class="mute">Anyone on the team forwards (or CC/BCCs) an email to one address and it becomes a task — Claude reads it, picks the property, who it's for (from a note like “for Jackie by Friday”), the due date and the asks, keeps the attachments, and replies in Blink. Only teammates' emails are accepted.</p>
+    <label>The address people forward to<div class="row" style="gap:6px;margin:4px 0 0"><input id="ibAddr" value="${esc(r.address)}" placeholder="e.g. tasks@foresitecre.com"><button class="b" onclick="inboxSave()">Save</button></div></label>
+    <label style="margin-top:10px">Webhook for the inbound-email service <span class="mute">(keep private)</span><div class="copybox"><input readonly value="${esc(r.webhook)}" onclick="this.select()"><button class="b ghost" onclick="navigator.clipboard.writeText(${esc(JSON.stringify(r.webhook))}).then(()=>toast('Copied'))">Copy</button><button class="b ghost" onclick="inboxRotate()" title="Make a new secret link (the old one stops working)">↻ New link</button></div></label>
+    <details style="margin-top:10px"><summary class="tlink">How to set it up (about 15 minutes, once)</summary><ol style="line-height:1.7;font-size:13.5px">
+      <li>Create a free <a href="https://postmarkapp.com" target="_blank" rel="noopener">Postmark</a> account → your Server → <b>Default Inbound Stream</b> → Settings → paste the webhook above as the <b>Webhook URL</b>. Postmark shows an inbound address like <code>abc123@inbound.postmarkapp.com</code>. <span class="mute">(SendGrid Inbound Parse or Mailgun routes work too.)</span></li>
+      <li>In Google Workspace admin, make <b>tasks@foresitecre.com</b> (a group or alias) forward to that Postmark address — or just use the Postmark address as-is.</li>
+      <li>Type the address people should use in the box above and Save — it shows on the Tasks page for everyone.</li>
+      <li>Forward yourself a test email; you'll get a Blink reply with the new task.</li></ol></details>
+    ${r.ai?'':'<div class="warnbox" style="margin-top:8px">Claude isn\'t connected (no API key) — emails still become tasks, using the subject as the title.</div>'}
+    ${r.recent.length?`<h4 style="margin:12px 0 4px">Recent emails</h4>${r.recent.map(x=>`<div class="row2"><div class="grow"><b>${esc(x.subject||'(no subject)')}</b><div class="sub">${esc(x.user_name||x.from_email||'')} · ${fmtDate(x.received_at.slice(0,10))} · ${st[x.status]||x.status}${x.reason?' — '+esc(x.reason):''}</div></div>${x.task_id?`<button class="b ghost sm" onclick="openTask(${x.task_id})">#${x.task_id}</button>`:''}</div>`).join('')}`:''}`;}
+async function inboxSave(){try{await api('/api/inbox',{method:'PUT',body:{address:$('#ibAddr').value}});CFG.inbox_address=$('#ibAddr').value.trim();toast('Saved');loadInbox();inboxHint();}catch(e){toast(e.message)}}
+async function inboxRotate(){if(!confirm('Make a new secret webhook link? You\'ll need to paste the new one into Postmark — the old one stops working right away.'))return;await api('/api/inbox/rotate',{method:'POST'});loadInbox();toast('New link made — update it in Postmark');}
+
 /* ---------- insurance follow-up emails ---------- */
 let EMAILS=[],GMAIL=false;
 function deepLink(){const m=location.hash.match(/^#(task|project|property|vendor|view)-([\w-]+)$/);
@@ -2214,6 +2244,8 @@ async function openTask(id){OPEN_ID=id;const [d,h]=await Promise.all([api(`/api/
    ${d.inspection?`<div class="warnbox okbox" style="margin:10px 0 0">📋 This step is done with the <b>inspection walk-through</b> — finishing the inspection checks it off.
      <div class="row" style="gap:6px;margin:6px 0 0;flex-wrap:wrap">${d.status!=='done'?`<button class="b sm" onclick="taskDlg.close();${d.inspection.draft_id?`inspOpen(${d.inspection.draft_id})`:`inspStart(${d.inspection.property_id})`}">📋 ${d.inspection.draft_id?'Continue':'Start'} inspection</button>`:''}${d.inspection.report_id?`<a class="b ghost sm" href="/inspections/${d.inspection.report_id}/report" target="_blank" rel="noopener">📄 Report (${fmtDate(d.inspection.report_date)})</a>`:''}</div></div>`:''}
    <table style="margin-top:8px"><tr><td style="width:110px">Assignee</td><td>${mg?`<select onchange="patch(${d.id},{assignee_id:+this.value||0}).then(()=>openTask(${d.id}))">${userOpts(d.assignee_id)}</select>`:esc(who)}</td></tr>
+   ${d.email?`<tr><td>📧 Email</td><td><div style="font-size:13px"><b>${esc(d.email.orig_subject||d.email.subject||'')}</b><div class="mute">from ${esc(d.email.orig_from||d.email.from_email||'')}${d.email.orig_date?' · '+esc(d.email.orig_date):''}</div>
+     ${d.email.files.length?`<div class="row" style="gap:6px;flex-wrap:wrap;margin:4px 0 0">${d.email.files.map(f=>`<a class="b ghost sm" href="/api/inbox-files/${f.id}" target="_blank" rel="noopener">📎 ${esc(f.filename||'attachment')}</a>`).join('')}</div>`:''}</div></td></tr>`:''}
    <tr><td>Due</td><td>${mg?`<input type="date" value="${d.due_date||''}" onchange="patch(${d.id},{due_date:this.value||null}).then(()=>openTask(${d.id}))">`:`<span class="${isOver(d)?'over':''}">${fmtDate(d.due_date)||'—'}</span>`}</td></tr>
    <tr><td>Repeats</td><td>${ed?`<select onchange="patch(${d.id},{repeat:this.value}).then(()=>openTask(${d.id}))">${`<option value="">Doesn't repeat</option><option value="weekly">🔁 Every week</option><option value="biweekly">🔁 Every 2 weeks</option><option value="monthly">🔁 Every month</option><option value="quarterly">🔁 Every quarter</option><option value="yearly">🔁 Every year</option>`.replace(`value="${d.repeat||''}"`,`value="${d.repeat||''}" selected`)}</select>`:(d.repeat?'🔁 '+d.repeat:'—')}<span class="mute" style="font-size:12px;margin-left:8px">${d.repeat?'Next one is created when this is marked done':''}</span></td></tr>
    <tr><td>Status</td><td>${statusSel({...d,assignee_id:ed?ME.id:d.assignee_id}).replace(/onchange="setStatus\((\d+),this.value\)"/,`onchange="setStatus($1,this.value).then(()=>openTask($1))"`)}</td></tr></table>
@@ -2496,7 +2528,7 @@ async function demoLoad(){$('#demoLoad').disabled=true;$('#demoLoad').textConten
   finally{$('#demoLoad').disabled=false;$('#demoLoad').textContent='Load demo data';}}
 async function demoRemove(){if(!confirm('Remove all demo data (sample projects, demo teammates, demo reminders and tasks)? Starter templates stay. Your real data is not touched.'))return;
   await api('/api/demo',{method:'DELETE'});await refresh();loadDemo();toast('Demo data removed');}
-async function loadAdmin(){loadDemo();loadAutomations();loadInsights();const c=await api('/api/config');
+async function loadAdmin(){loadDemo();loadAutomations();loadInsights();loadInbox();const c=await api('/api/config');
   $('#sumInfo').textContent=c.last_summary_week?`Last automatic send: ${c.last_summary_week}`:'';
   $('#bkInfo').textContent=c.last_backup?`Last backup: ${c.last_backup}`:'No backup yet';
   $('#aiInfo').innerHTML=c.plain_english?'✅ On — people can reply like “finished the rent roll, still waiting on Joe for CAM” and Claude updates the right tasks.':'Off — add an <code>ANTHROPIC_API_KEY</code> variable in Railway to let people reply in plain English. Commands like <code>done 12</code> work either way.';
@@ -2518,7 +2550,7 @@ async function runReminders(){const r=await api('/api/reminders/run',{method:'PO
 (async()=>{[ME,CFG]=await Promise.all([api('/api/me'),api('/api/config')]);
   $('#me').innerHTML=`${esc(ME.name)} <span class="pill">${{admin:'Admin',manager:'Manager'}[ME.role]||'Staff'}</span>${ME.auth_enabled?'<span class="so"> · <a href="/logout">Sign out</a></span>':''}`;
   if(!isMgr())PF='mine';
-  await loadOOO();await refresh();renderHome();pollUnread();pollEmails();setInterval(()=>{pollUnread();pollEmails();},60000);
+  await loadOOO();await refresh();renderHome();inboxHint();pollUnread();pollEmails();setInterval(()=>{pollUnread();pollEmails();},60000);
   deepLink();window.addEventListener('hashchange',deepLink);
   const c=await api('/api/config');if(!c.simulator)$('#chatTab').remove();})();
 </script>
