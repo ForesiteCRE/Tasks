@@ -381,6 +381,9 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
 .ulogin{background:#f6f8f9;border-radius:8px;padding:8px 10px;margin:6px 0;line-height:2}.uemail{background:#f6f8f9;border-radius:8px;padding:8px 10px;font-size:13px;line-height:1.8}
 @media (prefers-color-scheme:dark){.ulogin,.uemail{background:#ffffff10}}
 @media (max-width:760px){.urow{flex-wrap:wrap}.udots{order:3}.uact{margin-left:auto}}
+.purow{display:flex;gap:10px;padding:10px 0;border-top:1px solid var(--line)}.purow:first-child{border-top:0}.purow.closed{opacity:.6}
+.puacct{font-size:14px;margin:3px 0 2px}.puacct b{font-family:ui-monospace,Menlo,monospace;font-size:14.5px;letter-spacing:.2px}
+.pudates{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;margin-top:3px}
 </style>
 </head>
 <body>
@@ -1335,7 +1338,7 @@ async function utilMark(id,status,note){await api('/api/utilities/'+id+'/bills',
   toast(status==='sent'?'✅ Marked sent':'Saved',()=>utilUndo(id),'Undo');utilRefresh();}
 async function utilUndo(id){await api(`/api/utilities/${id}/bills/${utilFind(id).period}`,{method:'DELETE'});utilRefresh();}
 function utilRefresh(){if(!$('#v-utilities').classList.contains('hidden'))renderUtil();if($('#propUtil'))propUtilLoad(PROP.id);if($('#homeUtil'))renderHomeUtil();}
-async function utilMore(id,v){if(!v)return;if(v==='login')return utilLoginDlg(id);if(v==='edit')return utilEdit(id);if(v==='undo')return utilUndo(id);
+async function utilMore(id,v){if(!v)return;if(v==='sent')return utilMark(id,'sent');if(v==='login')return utilLoginDlg(id);if(v==='edit')return utilEdit(id);if(v==='undo')return utilUndo(id);
   if(v==='other'){const n=prompt('Note for this month (e.g. Deposit, Credit, paid by owner):');if(n===null)return;return utilMark(id,'other',n);}
   if(v==='final'&&!confirm('Mark this as the final bill? The account stops showing up in future months (you can turn it back on with Edit).'))return;
   utilMark(id,v);}
@@ -1419,11 +1422,26 @@ async function utilImportApply(){const mapping={};document.querySelectorAll('#ta
   taskDlg.close();toast(`Imported · ${r.created} added · ${r.updated} updated · ${r.marked} monthly check-offs`);UTIL.mine=null;renderUtil();}
 /* property page */
 let PUTIL=null;
+let PUTIL_CLOSED=false;
+const utilDesc=d=>(d||'').replace(/^\s*(yyyy|mm\/dd\/yy\s*-\s*mm\/dd\/yy|mm\/yy)\s*/i,'').trim();
+const shortDate=iso=>iso?new Date(iso+'T12:00').toLocaleDateString(undefined,{month:'short',day:'numeric'}):'';
+function propUtilRow(a){const svc=a.gl_account?a.gl_account.replace(/^[\d-]+\s*-\s*/,''):'',ds=utilDesc(a.description),w=a.can_work,live=a.status!=='inactive'&&a.status!=='skip';
+  const yearly=a.freq==='annual'?`yearly · ${new Date(2000,(a.bill_month||1)-1,1).toLocaleDateString(undefined,{month:'long'})}`:'';
+  return `<div class="purow ${a.active?'':'closed'}"><div class="grow" style="min-width:0">
+    <div class="row" style="margin:0;gap:6px;flex-wrap:wrap;align-items:center"><b>${esc(a.provider||'Utility')}</b>${svc?`<span class="mute">· ${esc(svc)}</span>`:''}<span class="grow"></span>${a.active?ustChip(a.status):'<span class="vbadge">Closed</span>'}</div>
+    <div class="puacct"><span class="mute">Account #</span> <b>${esc(a.account_no||'—')}</b>${a.account_no?` <span class="tlink sm" onclick="navigator.clipboard.writeText(${esc(JSON.stringify(a.account_no))}).then(()=>toast('Account # copied'))">copy</span>`:''}${a.ref&&a.ref!==a.account_no?` <span class="mute" style="margin-left:8px">AppFolio ref</span> ${esc(a.ref)}`:''}</div>
+    ${ds||a.notes?`<div class="sub">${ds?esc(ds):''}${ds&&a.notes?' · ':''}${a.notes?'<i>'+esc(a.notes)+'</i>':''}</div>`:''}
+    <div class="pudates">${yearly?`<span>📅 ${yearly}</span>`:''}<span>🧾 Bill out ${a.bill_day?`<b>${ordDay(a.bill_day)}</b> <span class="mute">(${shortDate(a.bill_date)})</span>`:'<span class="mute">—</span>'}</span>
+      <span>💲 Due ${a.pay_day?`<b>${ordDay(a.pay_day)}</b> <span class="mute">(${shortDate(a.pay_date)})</span>`:'<span class="mute">—</span>'}</span>
+      ${a.assignee_name?`<span class="mute">👤 ${esc(a.assignee_name.split(' ')[0])}</span>`:''}${a.has_login?'<span class="mute" title="Portal login saved">🔑</span>':''}</div>
+    ${a.bill&&a.bill.has_file?`<div class="sub"><a href="/api/utilities/${a.id}/bills/${a.period}/file" target="_blank" rel="noopener">📄 this month's bill</a></div>`:''}</div>
+    ${w?`<div class="uact" style="align-self:flex-start">${live&&!a.bill?`<button class="b sm" onclick="utilSendDlg(${a.id})">📤 Send</button>`:''}<select class="umore" title="More" onchange="utilMore(${a.id},this.value);this.value=''"><option value="">⋯</option>${a.has_login?'<option value="login">🔑 Show login</option>':''}${a.bill?'<option value="undo">↩ Undo this month</option>':live?'<option value="sent">✓ Mark sent</option><option value="na">N/A this month</option><option value="final">Final bill (close account)</option><option value="other">Other / note…</option>':''}<option value="edit">✎ Edit account</option></select></div>`:''}</div>`;}
 async function propUtilLoad(pid){const el=$('#propUtil');if(!el)return;let r;try{r=await api('/api/utilities?property_id='+pid+'&inactive=1')}catch(e){return}r.accounts.forEach(a=>a.period=r.period);PUTIL=r;
   if(!r.accounts.length&&!isMgr()){el.innerHTML='';return;}
-  const d=r.accounts.filter(a=>a.bill).length,act=r.accounts.filter(a=>a.active).length;
-  el.innerHTML=`<div class="panel"><header><h3>🧾 Utility bills · ${monthName(r.period).split(' ')[0]}</h3><span class="cnt">${d}/${act} sent <button class="b ghost sm" style="margin-left:8px" onclick="UTIL.period=null;show('utilities')">Board</button>${isMgr()?` <button class="b ghost sm" onclick="utilEdit()">＋</button>`:''}</span></header><div class="body">
-    ${r.accounts.map(utilRow).join('')||'<div class="empty">No utility accounts yet.</div>'}</div></div>`;}
+  const act=r.accounts.filter(a=>a.active),closed=r.accounts.filter(a=>!a.active),due=act.filter(a=>a.status!=='skip'),d=due.filter(a=>a.bill).length;
+  el.innerHTML=`<div class="panel"><header><h3>🧾 Utilities</h3><span class="cnt">${act.length} account${act.length===1?'':'s'}${due.length?` · ${d}/${due.length} sent for ${monthName(r.period).split(' ')[0]}`:''} <button class="b ghost sm" style="margin-left:8px" onclick="UTIL.period=null;UTIL.q=${esc(JSON.stringify(PROP.name))};UTIL.filter='all';UTIL.mine=false;show('utilities')">Board</button>${isMgr()?` <button class="b ghost sm" onclick="utilEdit()">＋</button>`:''}</span></header><div class="body">
+    ${act.map(propUtilRow).join('')||'<div class="empty">No utility accounts yet.'+(isMgr()?' Click ＋ to add one, or import the utility list from Properties ▾ → 🧾 Utility bills.':'')+'</div>'}
+    ${closed.length?`<div style="margin-top:6px"><span class="tlink" style="font-size:12.5px" onclick="PUTIL_CLOSED=!PUTIL_CLOSED;propUtilLoad(${pid})">${PUTIL_CLOSED?'Hide':'Show'} ${closed.length} closed account${closed.length>1?'s':''}</span></div>${PUTIL_CLOSED?closed.map(propUtilRow).join(''):''}`:''}</div></div>`;}
 /* home widget */
 async function renderHomeUtil(){const el=$('#homeUtil');if(!el)return;let r;try{r=await api('/api/me/utilities')}catch(e){return}
   if(!r.counts.total){el.innerHTML='';return;}
