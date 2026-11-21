@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import (audit, auth, automations, bids, blink, notify, blockers, fun, helpbot, ourcoi, chat, closeboard, departments, emails, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
+from . import (audit, utilities, auth, automations, bids, blink, notify, blockers, fun, helpbot, ourcoi, chat, closeboard, departments, emails, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
                starter_templates, team, timing, tpl)
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
@@ -34,7 +34,7 @@ async def scheduler_loop():
                 logging.exception("scheduler job %s failed", job.__name__)
         if datetime.now().hour >= REMINDER_HOUR:
             for job in (services.send_reminders, maintenance.send_weekly_summary, automations.overdue_escalation,
-                        extras.send_week_ahead, properties.run_alerts, audit.purge, departments.run_escalations, emails.run):
+                        extras.send_week_ahead, properties.run_alerts, audit.purge, departments.run_escalations, emails.run, utilities.run_daily):
                 try:
                     job()
                 except Exception:
@@ -2208,6 +2208,155 @@ def my_note_delete(nid: int, request: Request):
     if not home.delete_note(_me_id(request), nid):
         raise HTTPException(404, "Note not found")
     return {"ok": True}
+
+
+# ---------- utility bills ----------
+
+def _util_acct(aid: int, request: Request, need_work=True) -> dict:
+    a = utilities.get(aid)
+    if not a:
+        raise HTTPException(404, "Account not found")
+    if need_work and not utilities.can_work(_me_id(request), auth.is_manager(request), a):
+        raise HTTPException(403, "Only managers, the person who sends this bill, or the property's accounting team can do that.")
+    return a
+
+
+@app.get("/api/utilities")
+def utility_board(request: Request, period: str | None = None, mine: bool = False, property_id: int | None = None, inactive: bool = False):
+    uid, mg = _me_id(request), auth.is_manager(request)
+    if period and not re.fullmatch(r"\d{4}-\d{2}", period):
+        raise HTTPException(400, "Bad month")
+    b = utilities.board(period, assignee_id=uid if mine else None, property_id=property_id, include_inactive=inactive)
+    for a in b["accounts"]:
+        a["can_work"] = utilities.can_work(uid, mg, a)
+    with tx() as c:
+        b["people"] = rows(c.execute("SELECT id, name FROM users WHERE email IS NULL OR email NOT LIKE '%demo.example.com' ORDER BY name"))
+    b["mine_count"] = sum(1 for a in b["accounts"] if a["assignee_id"] == uid)
+    b["gmail"] = emails.gmail_connected(uid)
+    return b
+
+
+@app.get("/api/me/utilities")
+def my_utilities(request: Request, all: bool = False):
+    uid = _me_id(request)
+    return utilities.summary_for(None if (all and auth.is_manager(request)) else uid)
+
+
+@app.get("/api/utilities/settings")
+def utility_settings(request: Request):
+    return utilities.settings()
+
+
+@app.put("/api/utilities/settings")
+def utility_settings_save(body: dict, request: Request):
+    _require_manager(request)
+    try:
+        utilities.save_settings(body)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return utilities.settings()
+
+
+@app.post("/api/utilities/import")
+def utility_import(body: dict, request: Request):
+    """Accounting's Utilities sheet (base64 .xlsx). apply=false → preview."""
+    _require_manager(request)
+    import base64
+    try:
+        data = base64.b64decode((body.get("data_b64") or "").split(",")[-1])
+        r = utilities.import_rows(data, apply=bool(body.get("apply")), mapping=body.get("mapping") or {},
+                                  assignee_id=body.get("assignee_id"), history=body.get("history", True) is not False,
+                                  logins=body.get("logins", True) is not False, user_id=_me_id(request))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception:
+        logging.getLogger("utilities").exception("utility import failed")
+        raise HTTPException(400, "Couldn't read that file — please upload the Excel (.xlsx) utility list.")
+    if r["applied"]:
+        audit.log(_me_id(request), "imported utility accounts", "property", None, f"{r['created']} added · {r['updated']} updated")
+    return r
+
+
+@app.post("/api/utilities")
+def utility_create(body: dict, request: Request):
+    uid, mg = _me_id(request), auth.is_manager(request)
+    if not mg and not utilities.can_work(uid, False, {"property_id": body.get("property_id"), "assignee_id": None}):
+        raise HTTPException(403, "Only managers or the property's accounting team can add utility accounts.")
+    try:
+        aid = utilities.create(body)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return utilities.get(aid)
+
+
+@app.patch("/api/utilities/{aid}")
+def utility_update(aid: int, body: dict, request: Request):
+    _util_acct(aid, request)
+    if "assignee_id" in body and not auth.is_manager(request):
+        body.pop("assignee_id")
+    utilities.update(aid, body)
+    if "login_user" in body or "login_pass" in body:
+        audit.log(_me_id(request), "changed a utility login", "property", None, f"account {aid}")
+    return utilities.get(aid)
+
+
+@app.delete("/api/utilities/{aid}")
+def utility_delete(aid: int, request: Request):
+    _require_manager(request)
+    utilities.delete(aid)
+    return {"ok": True}
+
+
+@app.get("/api/utilities/{aid}/login")
+def utility_login(aid: int, request: Request):
+    _util_acct(aid, request)
+    return utilities.login(aid)
+
+
+@app.get("/api/utilities/{aid}/email")
+def utility_email_preview(aid: int, period: str, request: Request):
+    return utilities.email_for(_util_acct(aid, request, need_work=False), period)
+
+
+@app.post("/api/utilities/{aid}/bills")
+def utility_mark(aid: int, body: dict, request: Request):
+    _util_acct(aid, request)
+    period = body.get("period") or utilities.cur_period()
+    fn, fp = utilities.take_pending(aid, period) if body.get("status") == "sent" else (None, None)
+    try:
+        utilities.mark(aid, period, body.get("status") or "sent", body.get("note"), _me_id(request), file_name=fn, file_path=fp)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+@app.delete("/api/utilities/{aid}/bills/{period}")
+def utility_unmark(aid: int, period: str, request: Request):
+    _util_acct(aid, request)
+    utilities.unmark(aid, period)
+    return {"ok": True}
+
+
+@app.post("/api/utilities/{aid}/send")
+def utility_send(aid: int, body: dict, request: Request):
+    _util_acct(aid, request)
+    import base64
+    try:
+        data = base64.b64decode((body.get("data_b64") or "").split(",")[-1])
+        r = utilities.send(aid, body.get("period") or utilities.cur_period(), body.get("filename") or "bill.pdf", data,
+                           body.get("content_type") or "application/pdf", _me_id(request))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return r
+
+
+@app.get("/api/utilities/{aid}/bills/{period}/file")
+def utility_bill_file(aid: int, period: str, request: Request):
+    _util_acct(aid, request, need_work=False)
+    got = utilities.bill_file(aid, period)
+    if not got:
+        raise HTTPException(404, "No file")
+    return FileResponse(got[1], filename=got[0] or "bill.pdf")
 
 
 @app.get("/api/me/reporting")

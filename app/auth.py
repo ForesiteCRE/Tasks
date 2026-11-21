@@ -114,7 +114,7 @@ def _staff_allowed(request: Request) -> bool:
         return True   # vendor endpoints check property/project team membership themselves
     return path.startswith(("/api/tasks", "/api/checklist/", "/api/reminders", "/api/me/", "/api/critical-dates/",
                              "/api/vendors", "/api/vendor-reviews/", "/api/property-vendors/", "/api/project-vendors/", "/api/emails", "/api/wins/", "/api/our-cois/", "/api/help",
-                             "/api/vendor-cois/"))
+                             "/api/vendor-cois/", "/api/utilities"))
 
 
 _PUBLIC_HOST = PUBLIC_URL.split("://")[-1].split("/")[0].lower()

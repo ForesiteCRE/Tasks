@@ -196,6 +196,8 @@ def _init_extras():
     reportpkg.init()
     from . import archive
     archive.init()
+    from . import utilities
+    utilities.init()
 
 
 def get_setting(key: str) -> str | None:

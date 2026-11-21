@@ -373,6 +373,14 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
   .toolbar>*{max-width:100%;min-width:0}.toolbar select{max-width:100%}
   dialog{width:100vw!important;max-width:100vw!important;margin:0;max-height:100dvh;border-radius:0}
 }
+.urow{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}.urow:first-child{border-top:0}
+.urow.late{background:linear-gradient(90deg,#fde8e855,transparent 60%)}.uact{display:flex;gap:4px;align-items:center;flex-shrink:0}select.umore{width:40px!important;min-width:0!important;flex:0 0 40px;padding:3px 4px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:transparent;color:inherit}
+.udots{display:flex;gap:3px;flex-shrink:0}.udots i{width:9px;height:9px;border-radius:50%;background:var(--line)}.udots i.sent{background:#7fb850}.udots i.na,.udots i.final{background:#b8c2c8}.udots i.other{background:#e9b949}
+.ubar{background:var(--card,#fff);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:12px}
+.usteps{margin:6px 0 10px;padding-left:20px;line-height:1.9}.usteps input[type=file]{width:auto;display:inline-block}
+.ulogin{background:#f6f8f9;border-radius:8px;padding:8px 10px;margin:6px 0;line-height:2}.uemail{background:#f6f8f9;border-radius:8px;padding:8px 10px;font-size:13px;line-height:1.8}
+@media (prefers-color-scheme:dark){.ulogin,.uemail{background:#ffffff10}}
+@media (max-width:760px){.urow{flex-wrap:wrap}.udots{order:3}.uact{margin-left:auto}}
 </style>
 </head>
 <body>
@@ -382,6 +390,7 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
   <div class="dd" data-g="properties" data-icon="🏢"><button class="ddb">Properties<span id="emBadge" class="nbadge mail hidden" title="Emails ready to send"></span> <span class="car">▾</span></button><div class="ddm">
     <button data-v="properties">🏢 Properties<small>critical dates, vendors, insurance, team</small></button>
     <button data-v="vendors">🧰 Vendors<small>who we've used — ratings, prices &amp; notes</small></button>
+    <button data-v="utilities">🧾 Utility bills<small>download each month's bills &amp; send them to AppFolio</small></button>
     <button data-v="emails">✉️ Emails to send <span id="emBadge2" class="nbadge mail hidden"></span><small>insurance &amp; approval emails drafted for you</small></button></div></div>
   <div class="dd" data-g="projects" data-icon="📁"><button class="ddb">Projects <span class="car">▾</span></button><div class="ddm">
     <button data-v="projects">📁 Projects<small>start a project, progress, bids &amp; approvals</small></button>
@@ -461,6 +470,12 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
   <div class="card" style="padding:0"><div class="closewrap"><table class="closegrid" id="closeGrid"></table></div></div>
   <div id="closeMissing"></div>
   <div class="row mute" style="font-size:12px;margin-top:8px;gap:10px"><span><i class="cc done">✓</i> Done</span><span><i class="cc in_progress">●</i> In progress</span><span><i class="cc blocked">⛔</i> Blocked</span><span><i class="cc od">!</i> Overdue</span><span><i class="cc todo">○</i> To do</span><span>Click a square to open the task · click a property for its project</span></div>
+</section>
+
+<section id="v-utilities" class="hidden">
+  <div class="pagehead"><div><h2>🧾 Utility bills</h2><div class="pagesub">Each month: log in, download the bill, send it to AppFolio. Ready = the bill is out · Late = 5+ days past the bill date (or close to the payment date).</div></div></div>
+  <div id="utilHead"></div>
+  <div id="utilBody"></div>
 </section>
 
 <section id="v-emails" class="hidden">
@@ -612,7 +627,7 @@ function show(v){const nb=document.querySelector(`#nav button[data-v="${v}"]`);
   document.querySelectorAll('nav button[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   document.querySelectorAll('.dd').forEach(d=>d.classList.remove('open'));markNav(v);
   if(v==='tasks')renderTasks();document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-'+v));
-  if(v==='home')renderHome();if(v==='chat')loadChat();if(v==='admin')loadAdmin();if(v==='calendar')renderCalendar();if(v==='team')renderTeam();if(v==='properties')renderProperties(true);if(v==='history')renderHistory();if(v==='close')closeGo(CLOSE.period);if(v==='vendors')renderVendors(true);if(v==='emails')renderEmails();}
+  if(v==='home')renderHome();if(v==='chat')loadChat();if(v==='admin')loadAdmin();if(v==='calendar')renderCalendar();if(v==='team')renderTeam();if(v==='properties')renderProperties(true);if(v==='history')renderHistory();if(v==='close')closeGo(CLOSE.period);if(v==='vendors')renderVendors(true);if(v==='emails')renderEmails();if(v==='utilities')renderUtil();}
 $('#nav').onclick=e=>{const b=e.target.closest('button');if(!b)return;
   if(b.classList.contains('ddb')&&matchMedia('(max-width:760px)').matches){openNavSheet(b.parentElement);return;}
   if(b.classList.contains('ddb')){const d=b.parentElement,o=!d.classList.contains('open');document.querySelectorAll('.dd').forEach(x=>x.classList.remove('open'));d.classList.toggle('open',o);return;}
@@ -892,7 +907,7 @@ async function addProperty(){const r=await api('/api/properties',{method:'POST',
 async function openProperty(id){const same=PROP&&PROP.id===id;PROP=await api('/api/properties/'+id);LEASE=null;if(!same){PROP_ALL=false;PROP_TEAM_EDIT=false;CT_EDIT=null;}
   document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-property'));
   markNav('property');
-  if(taskDlg.open)taskDlg.close();renderProperty();scrollTo(0,0);}
+  if(taskDlg.open)taskDlg.close();renderProperty();propUtilLoad(id);scrollTo(0,0);}
 function insChip(ins){const m={ok:['ok','🛡 '],not_named:['bad','⚠️ '],unverified:['warn','🛡 '],expired:['bad','⚠️ '],missing:['warn','🛡 ']}[ins.state]||['warn',''];
   return `<span class="pchip ${m[0]}">${m[1]}${esc(ins.label)}${ins.expires&&ins.state!=='missing'?` · exp. ${fmtDate(ins.expires)}`:''}</span>`;}
 const money=n=>'$'+Number(n).toLocaleString(undefined,{maximumFractionDigits:0});
@@ -911,6 +926,7 @@ function renderProperty(){const p=PROP,mg=isMgr(),dis=mg?'':'disabled',open=p.da
       ${p.tasks.length>PROP_TASKS_N?`<div class="row" style="justify-content:center;margin:8px 0 2px"><button class="b ghost sm" onclick="propTasksToggle()">${PROP_ALL?'Show fewer':`View all ${p.tasks.length} tasks`}</button></div>`:''}</div></div>
     <div class="panel"><header><h3>📁 Projects</h3><span class="cnt">${p.projects.length}${mg?` <button class="b ghost sm" style="margin-left:8px" onclick="propNewProject()">＋ New project</button>`:''}</span></header><div class="body">
       ${p.projects.map(x=>{const pct=x.total?Math.round(100*x.done/x.total):0;return `<div class="row2" style="cursor:pointer;display:block" onclick="openProject(${x.id})"><div class="row" style="justify-content:space-between;margin:0"><b>${esc(x.name)}</b><span class="mute" style="font-size:12px">${x.done}/${x.total}${x.status==='done'?' · finished':''}</span></div><div class="bar" style="margin:6px 0 0"><i style="width:${pct}%"></i></div>${x.overdue?`<span class="risk hi" style="margin-top:6px;display:inline-block">${x.overdue} overdue</span>`:''}</div>`}).join('')||'<div class="empty">No projects at this address yet. Projects whose address matches are linked automatically.</div>'}</div></div>
+    <div id="propUtil"></div>
     <div class="panel"><header><h3>⚑ Critical dates</h3><span class="cnt">${open.length} upcoming</span></header><div class="body">
       ${mg?`<div class="row" style="margin:4px 0 8px"><button class="b ghost" onclick="dateForm()">+ Add a date</button></div><div id="cdForm"></div>`:''}
       ${open.map(cdRow).join('')||'<div class="empty">No critical dates yet.'+(mg?' Upload the management agreement or insurance policy, or add one by hand.':'')+'</div>'}
@@ -1279,6 +1295,145 @@ async function coiList(pid,vid,el){const box=el.closest('.vcur').querySelector('
 async function coiSet(id,b){await api('/api/vendor-cois/'+id,{method:'PATCH',body:b});toast('Saved');openProperty(PROP.id);}
 async function coiDel(id){if(!confirm('Delete this certificate?'))return;await api('/api/vendor-cois/'+id,{method:'DELETE'});openProperty(PROP.id);}
 
+/* ---------- utility bills ---------- */
+let UTIL={period:null,mine:null,filter:'todo',q:'',data:null};
+const UST={upcoming:['Upcoming',''],ready:['Ready to send','warn'],late:['Late','bad'],sent:['Sent','good'],na:['N/A',''],final:['Final bill',''],other:['Other','good'],inactive:['Inactive',''],skip:['Not due this month','']};
+const ustChip=s=>{const m=UST[s]||[s,''];return `<span class="vbadge ${m[1]} ust">${s==='late'?'⚠️ ':s==='sent'?'✅ ':''}${m[0]}</span>`;};
+const ordDay=d=>d?d+(['th','st','nd','rd'][(d%100>10&&d%100<14)?0:(d%10<4?d%10:0)]||'th'):'';
+const monthName=p=>new Date(p+'-15T12:00').toLocaleDateString(undefined,{month:'long',year:'numeric'});
+function utilShift(n){const [y,m]=UTIL.period.split('-').map(Number),d=new Date(y,m-1+n,15);UTIL.period=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');renderUtil();}
+async function renderUtil(){const el=$('#utilBody');if(!el)return;
+  const r=await api('/api/utilities'+(UTIL.period?'?period='+UTIL.period:''));r.accounts.forEach(a=>a.period=r.period);UTIL.data=r;UTIL.period=r.period;
+  if(UTIL.mine===null)UTIL.mine=r.mine_count>0;
+  const q=UTIL.q.toLowerCase(),F={todo:a=>a.status==='ready'||a.status==='late',late:a=>a.status==='late',upcoming:a=>a.status==='upcoming',done:a=>!!a.bill,all:()=>true};
+  let A=r.accounts.filter(a=>(!UTIL.mine||a.assignee_id===ME.id)&&F[UTIL.filter](a)
+    &&(!q||[a.property_name,a.property_label,a.provider,a.account_no,a.ref,a.gl_account].join(' ').toLowerCase().includes(q)));
+  const all=r.accounts.filter(a=>!UTIL.mine||a.assignee_id===ME.id),cnt=s=>all.filter(a=>s==='done'?!!a.bill:a.status===s).length;
+  const groups={};A.forEach(a=>{const k=a.property_name||a.property_label||'No property';(groups[k]=groups[k]||[]).push(a);});if(groups['No property']){const n=groups['No property'];delete groups['No property'];groups['No property']=n;}
+  const mg=isMgr(),sent=cnt('done'),tot=all.length;
+  $('#utilHead').innerHTML=`<div class="row" style="gap:6px;margin:0 0 10px;flex-wrap:wrap;align-items:center">
+      <button class="b ghost sm" onclick="utilShift(-1)">‹</button><b style="min-width:120px;text-align:center">${monthName(r.period)}</b><button class="b ghost sm" onclick="utilShift(1)">›</button>
+      <div class="seg" style="margin-left:6px"><button class="${UTIL.mine?'on':''}" onclick="UTIL.mine=true;renderUtil()">Mine${r.mine_count?' ('+r.mine_count+')':''}</button><button class="${UTIL.mine?'':'on'}" onclick="UTIL.mine=false;renderUtil()">Everyone</button></div>
+      <input placeholder="Search property, provider, account #…" value="${esc(UTIL.q)}" oninput="UTIL.q=this.value;clearTimeout(UTIL.t);UTIL.t=setTimeout(renderUtil,250)" style="flex:1;min-width:180px;max-width:320px">
+      <span class="grow"></span>${mg?`<button class="b ghost sm" onclick="utilImportPick()">⬆ Import utility list</button><button class="b ghost sm" onclick="utilSettings()">⚙︎ Settings</button>`:''}<button class="b sm" onclick="utilEdit()">＋ Account</button></div>
+    <div class="ubar"><div class="bar" style="margin:0 0 8px"><i style="width:${tot?Math.round(100*sent/tot):0}%"></i></div>
+    <div class="row" style="gap:6px;margin:0;flex-wrap:wrap">${[['todo',`To do · ${cnt('ready')+cnt('late')}`],['late',`⚠️ Late · ${cnt('late')}`],['upcoming',`Upcoming · ${cnt('upcoming')}`],['done',`✅ Handled · ${sent} of ${tot}`],['all','All']].map(([k,l])=>`<button class="b ghost sm ${UTIL.filter===k?'on':''}" onclick="UTIL.filter='${k}';renderUtil()">${l}</button>`).join('')}</div></div>
+    ${!r.gmail?`<div class="warnbox" style="margin:8px 0 0">📬 <b>Connect Gmail</b> once so <b>Send to AppFolio</b> can email bills from your own address to <b>${esc(r.settings.to_email)}</b>. <a class="b sm" style="margin-left:6px" href="/gmail/connect">Connect Gmail</a></div>`:''}`;
+  el.innerHTML=Object.entries(groups).map(([k,as])=>{const pid=as[0].property_id,d=as.filter(a=>a.bill).length;
+    return `<div class="panel"><header><h3>${pid?`<span class="tlink" onclick="openProperty(${pid})">${esc(k)}</span>`:esc(k)+(k!=='No property'?' <span class="vbadge warn" title="Not linked to a property page — edit the account to pick one">not linked</span>':'')}</h3><span class="cnt">${d}/${as.length} handled</span></header><div class="body">${as.map(utilRow).join('')}</div></div>`;}).join('')
+    ||`<div class="empty" style="padding:30px 0">${r.accounts.length?(UTIL.filter==='todo'?'🎉 Nothing to send right now'+(UTIL.mine?' — switch to Everyone to see the whole team':'')+'.':'Nothing matches.'):'No utility accounts yet.'+(mg?' Click <b>⬆ Import utility list</b> to bring in Accounting\'s Utilities sheet.':'')}</div>`;}
+function utilRow(a){const P=a.period,w=a.can_work;
+  const dots=(a.history||[]).map(h=>`<i class="${h.status||'none'}" title="${monthName(h.period)}: ${h.status?(UST[h.status]||[h.status])[0]:'not marked'}"></i>`).join('');
+  return `<div class="urow ${a.status}"><div class="grow" style="min-width:0">
+      <div class="row" style="margin:0;gap:6px;flex-wrap:wrap;align-items:center">${ustChip(a.status)}<b>${esc(a.provider||'Utility')}</b>${a.account_no?`<span class="mute">#${esc(a.account_no)}</span>`:''}${a.has_login?'<span title="Login saved" class="mute">🔑</span>':''}</div>
+      <div class="sub">${a.gl_account?esc(a.gl_account.replace(/^[\d-]+\s*-\s*/,''))+' · ':''}${a.freq==='annual'?`<b>yearly</b> (${new Date(2000,(a.bill_month||1)-1,1).toLocaleDateString(undefined,{month:'short'})}) · `:''}${a.bill_day?`bill ~${ordDay(a.bill_day)}`:'<span title="Add the bill date so it can go late on time">no bill date</span>'}${a.pay_day?` · pay ${ordDay(a.pay_day)}`:''} · ref <b>${esc(a.ref||'—')}</b>${a.assignee_name&&!UTIL.mine?' · '+esc(a.assignee_name.split(' ')[0]):''}${a.notes?' · <i>'+esc(a.notes)+'</i>':''}</div>
+      ${a.bill?`<div class="sub">${a.bill.status==='sent'?'Sent':esc((UST[a.bill.status]||[a.bill.status])[0])}${a.bill.via==='gmail'?' to AppFolio':a.bill.via==='import'?' (from the spreadsheet)':''}${a.bill.sent_by_name&&a.bill.via!=='import'?' by '+esc(a.bill.sent_by_name.split(' ')[0]):''}${a.bill.via!=='import'?' · '+fmtDate(a.bill.sent_at.slice(0,10)):''}${a.bill.note?' · '+esc(a.bill.note):''}${a.bill.has_file?` · <a href="/api/utilities/${a.id}/bills/${P}/file" target="_blank" rel="noopener">📄 bill</a>`:''}</div>`:''}
+    </div><span class="udots" title="Last 6 months">${dots}</span>
+    <div class="uact">${w&&!a.bill&&a.status!=='inactive'&&a.status!=='skip'?`<button class="b sm" onclick="utilSendDlg(${a.id})">📤 Send</button><button class="b ghost sm" title="Mark sent without uploading here" onclick="utilMark(${a.id},'sent')">✓</button>`:''}
+      ${w?`<select class="umore" title="More" onchange="utilMore(${a.id},this.value);this.value=''"><option value="">⋯</option>${a.has_login?'<option value="login">🔑 Show login</option>':''}${a.bill?'<option value="undo">↩ Undo this month</option>':'<option value="na">N/A this month</option><option value="final">Final bill (close account)</option><option value="other">Other / note…</option>'}<option value="edit">✎ Edit account</option></select>`:''}</div></div>`;}
+async function utilMark(id,status,note){await api('/api/utilities/'+id+'/bills',{method:'POST',body:{period:utilFind(id).period,status,note}});
+  toast(status==='sent'?'✅ Marked sent':'Saved',()=>utilUndo(id),'Undo');utilRefresh();}
+async function utilUndo(id){await api(`/api/utilities/${id}/bills/${utilFind(id).period}`,{method:'DELETE'});utilRefresh();}
+function utilRefresh(){if(!$('#v-utilities').classList.contains('hidden'))renderUtil();if($('#propUtil'))propUtilLoad(PROP.id);if($('#homeUtil'))renderHomeUtil();}
+async function utilMore(id,v){if(!v)return;if(v==='login')return utilLoginDlg(id);if(v==='edit')return utilEdit(id);if(v==='undo')return utilUndo(id);
+  if(v==='other'){const n=prompt('Note for this month (e.g. Deposit, Credit, paid by owner):');if(n===null)return;return utilMark(id,'other',n);}
+  if(v==='final'&&!confirm('Mark this as the final bill? The account stops showing up in future months (you can turn it back on with Edit).'))return;
+  utilMark(id,v);}
+const utilFind=id=>{const L=[UTIL.data,PUTIL];if(!$('#v-property').classList.contains('hidden'))L.reverse();for(const d of L){const a=d&&d.accounts.find(a=>a.id===id);if(a)return a;}return null;};
+const copyBtn=v=>`<button class="b ghost sm" onclick="navigator.clipboard.writeText(${esc(JSON.stringify(v))}).then(()=>toast('Copied'))">Copy</button>`;
+async function utilLoginHTML(id){const L=await api('/api/utilities/'+id+'/login');
+  return `<div class="ulogin">${L.url?`<div><span class="mute">Website</span> <a href="${esc(/^https?:/.test(L.url)?L.url:'https://'+L.url)}" target="_blank" rel="noopener">${esc(L.url)}</a></div>`:''}
+    <div><span class="mute">Username</span> <b>${esc(L.username||'—')}</b> ${L.username?copyBtn(L.username):''}</div>
+    <div><span class="mute">Password</span> <b>${esc(L.password||'—')}</b> ${L.password?copyBtn(L.password):''}</div></div>`;}
+async function utilLoginDlg(id){const a=utilFind(id);$('#taskDlgBody').innerHTML=`<h2>🔑 ${esc(a.provider||'Login')}</h2><div class="mute">${esc(a.property_name||a.property_label||'')} · #${esc(a.account_no||'')}</div>${await utilLoginHTML(id)}
+  <div class="row" style="justify-content:flex-end"><button class="b" onclick="taskDlg.close()">Done</button></div>`;if(!taskDlg.open)taskDlg.showModal();}
+let UFILE=null;
+async function utilSendDlg(id){const a=utilFind(id),P=a.period,em=await api(`/api/utilities/${id}/email?period=${P}`);UFILE=null;
+  $('#taskDlgBody').innerHTML=`<h2>📤 Send bill to AppFolio</h2>
+    <div class="mute" style="margin-bottom:8px">${[esc(a.property_name||a.property_label||''),`<b>${esc(a.provider||'')}</b>`,a.account_no?'#'+esc(a.account_no):''].filter(x=>x&&x!=='<b></b>').join(' · ')} · ${monthName(P)}</div>
+    <ol class="usteps"><li><b>Log in</b> to ${esc(a.provider||'the provider')} ${a.has_login?`<span class="tlink" onclick="utilLoginHTML(${id}).then(h=>{$('#uLogin').innerHTML=h})">🔑 show login</span><div id="uLogin"></div>`:'<span class="mute">(no login saved — add it with ✎ Edit account)</span>'}</li>
+      <li><b>Download</b> this month's bill (PDF)</li>
+      <li><b>Attach it</b> <input type="file" id="uFile" accept=".pdf,image/*" onchange="UFILE=this.files[0]"></li>
+      <li><b>Send</b> — emailed from your Gmail to <b>${esc(em.to)}</b></li></ol>
+    <div class="uemail"><div><span class="mute">Subject</span> ${esc(em.subject)}</div><div><span class="mute">Reference / invoice #</span> <b>${esc(a.ref||'—')}</b> ${a.ref?copyBtn(a.ref):''}</div>${a.gl_account?`<div><span class="mute">GL account</span> ${esc(a.gl_account)}</div>`:''}${a.description?`<div><span class="mute">Description</span> ${esc(a.description)}</div>`:''}</div>
+    <div id="uMsg"></div>
+    <div class="row" style="justify-content:flex-end;gap:6px;margin-top:10px"><button class="b ghost" onclick="taskDlg.close()">Cancel</button><button class="b ghost" onclick="taskDlg.close();utilMark(${id},'sent')">I sent it myself</button><button class="b" id="uSendBtn" onclick="utilSend(${id})">📤 Send to AppFolio</button></div>`;
+  if(!taskDlg.open)taskDlg.showModal();}
+const cur7=()=>new Date().toISOString().slice(0,7);
+async function utilSend(id){if(!UFILE){toast('Attach the bill first');return;}const P=utilFind(id).period,btn=$('#uSendBtn');btn.disabled=true;btn.textContent='Sending…';
+  const data=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(UFILE)});
+  let r;try{r=await api('/api/utilities/'+id+'/send',{method:'POST',body:{period:P,filename:UFILE.name,content_type:UFILE.type||'application/pdf',data_b64:data}});}
+  catch(e){btn.disabled=false;btn.textContent='📤 Send to AppFolio';$('#uMsg').innerHTML=`<div class="warnbox bad">${esc(e.message||'Send failed')}</div>`;return;}
+  if(r.sent){taskDlg.close();toast('✅ Sent to AppFolio');utilRefresh();return;}
+  const g=`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(r.email.to)}&su=${encodeURIComponent(r.email.subject)}&body=${encodeURIComponent(r.email.body)}`;
+  btn.remove();$('#uMsg').innerHTML=`<div class="warnbox">📬 Your Gmail isn't connected, so the app can't send it for you. Either <a href="/gmail/connect">connect Gmail</a> (one time), or <a href="${g}" target="_blank" rel="noopener">open a filled-in Gmail message</a>, attach the bill and send it — then click <b>I sent it myself</b>. The bill you attached is saved with this month either way.</div>`;}
+async function utilEdit(id){const a=id?utilFind(id):{property_id:PROP&&!$('#v-property').classList.contains('hidden')?PROP.id:null,active:1};
+  if(!PROPS.length){try{PROPS=await api('/api/properties')}catch(e){}}
+  const L=id&&a.has_login?await api('/api/utilities/'+id+'/login'):{username:'',password:'',url:a.login_url||''},people=(UTIL.data&&UTIL.data.people)||(await api('/api/utilities')).people,mg=isMgr();
+  const f=(k,l,v,t='text',ph='')=>`<label>${l}<input id="ue_${k}" type="${t}" value="${esc(v==null?'':v)}" placeholder="${ph}"></label>`;
+  $('#taskDlgBody').innerHTML=`<h2>${id?'✎ Edit utility account':'＋ Utility account'}</h2><div class="team-grid">
+    <label>Property<select id="ue_property_id"><option value="">— none —</option>${PROPS.map(p=>`<option value="${p.id}" ${p.id===a.property_id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label>
+    ${f('provider','Provider',a.provider,'text','e.g. CPS Energy')}${f('account_no','Utility account #',a.account_no)}${f('reference','AppFolio reference',a.reference,'text','e.g. 300-4780-103 MMYY')}
+    ${f('gl_account','GL account',a.gl_account,'text','e.g. 6410-0000 - Electricity')}${f('description','Bill description',a.description,'text','mm/dd/yy-mm/dd/yy')}
+    <label>How often<select id="ue_freq"><option value="monthly">Monthly</option><option value="annual" ${a.freq==='annual'?'selected':''}>Yearly</option></select></label>
+    <label>Yearly bill month<select id="ue_bill_month"><option value="">—</option>${[...Array(12)].map((_,i)=>`<option value="${i+1}" ${a.bill_month===i+1?'selected':''}>${new Date(2000,i,1).toLocaleDateString(undefined,{month:'long'})}</option>`).join('')}</select></label>
+    ${f('bill_day','Bill comes out (day of month)',a.bill_day,'number')}${f('pay_day','Payment day',a.pay_day,'number')}
+    <label>Sent by<select id="ue_assignee_id" ${mg?'':'disabled'}><option value="">— nobody —</option>${people.map(p=>`<option value="${p.id}" ${p.id===a.assignee_id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label>
+    ${f('login_url','Login website',L.url,'text','e.g. cpsenergy.com')}${f('login_user','Login username',L.username)}${f('login_pass','Login password',L.password)}
+    ${f('notes','Notes',a.notes)}<label class="row" style="gap:6px;align-items:center;margin-top:18px"><input type="checkbox" id="ue_active" style="width:auto" ${a.active?'checked':''}> Active (shows up each month)</label></div>
+    <div class="mute" style="font-size:12px;margin-top:6px">🔒 Logins are stored encrypted and shown only to managers, the person who sends the bill and the property's accounting team. Use <b>MMYY</b> in the reference — it's filled in with the bill's month.</div>
+    <div class="row" style="justify-content:space-between;margin-top:10px">${id&&mg?`<button class="b ghost" style="color:var(--bad)" onclick="utilDel(${id})">Delete</button>`:'<span></span>'}<span><button class="b ghost" onclick="taskDlg.close()">Cancel</button> <button class="b" onclick="utilSave(${id||0})">Save</button></span></div>`;
+  if(!taskDlg.open)taskDlg.showModal();}
+async function utilSave(id){const b={};['property_id','provider','account_no','reference','gl_account','description','freq','bill_month','bill_day','pay_day','assignee_id','login_url','login_user','login_pass','notes'].forEach(k=>{const e=$('#ue_'+k);if(e&&!e.disabled)b[k]=e.value;});
+  b.active=$('#ue_active').checked;
+  await api('/api/utilities'+(id?'/'+id:''),{method:id?'PATCH':'POST',body:b});taskDlg.close();toast('Saved');utilRefresh();}
+async function utilDel(id){if(!confirm('Delete this utility account and its history?'))return;await api('/api/utilities/'+id,{method:'DELETE'});taskDlg.close();utilRefresh();}
+async function utilSettings(){const s=await api('/api/utilities/settings'),people=(UTIL.data&&UTIL.data.people)||[];
+  $('#taskDlgBody').innerHTML=`<h2>⚙︎ Utility bill settings</h2><div class="team-grid">
+    <label>Send bills to<input id="us_to" value="${esc(s.to_email)}"></label>
+    <label>Default person for new accounts<select id="us_who"><option value="">— nobody —</option>${people.map(p=>`<option value="${p.id}" ${p.id===s.default_assignee?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label></div>
+    <label class="row" style="gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="us_all" style="width:auto"> Also give <b>every</b> existing account to this person</label>
+    <div class="row" style="justify-content:flex-end;margin-top:10px"><button class="b ghost" onclick="taskDlg.close()">Cancel</button> <button class="b" onclick="utilSettingsSave()">Save</button></div>`;
+  if(!taskDlg.open)taskDlg.showModal();}
+async function utilSettingsSave(){const who=$('#us_who').value;await api('/api/utilities/settings',{method:'PUT',body:{to_email:$('#us_to').value,default_assignee:who||null}});
+  if($('#us_all').checked&&who)for(const a of UTIL.data.accounts)if(a.assignee_id!==+who)await api('/api/utilities/'+a.id,{method:'PATCH',body:{assignee_id:+who}});
+  taskDlg.close();toast('Saved');renderUtil();}
+let UTIL_FILE=null,UTIL_PRE=null;
+function utilImportPick(){const i=document.createElement('input');i.type='file';i.accept='.xlsx';i.onchange=async()=>{const f=i.files[0];if(!f)return;
+  UTIL_FILE=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(f)});toast('Reading the utility list…');
+  const r=UTIL_PRE=await api('/api/utilities/import',{method:'POST',body:{data_b64:UTIL_FILE}});
+  const linked=r.labels.filter(l=>l.property_id).length;
+  $('#taskDlgBody').innerHTML=`<h2>⬆ Import utility accounts</h2>
+    <p class="mute"><b>${r.total}</b> accounts (${r.active} active) from ${r.providers.length} providers · <b>${r.with_login}</b> with logins · ${linked} of ${r.labels.length} property names matched. Nothing changes until you click Import.</p>
+    <div class="team-grid"><label>Who sends these bills<select id="uiWho"><option value="">— pick a person —</option>${r.people.map(p=>`<option value="${p.id}" ${p.id===r.assignee_guess?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label></div>
+    <label class="row" style="gap:6px;align-items:center;margin:8px 0 0"><input type="checkbox" id="uiHist" style="width:auto" checked> Bring in the monthly check-offs (${r.history_from?monthName(r.history_from)+' → '+monthName(r.history_to):'none'}, ${r.marks} marks)</label>
+    <label class="row" style="gap:6px;align-items:center;margin:4px 0 8px"><input type="checkbox" id="uiLogin" style="width:auto" checked> Bring in the logins (stored encrypted)</label>
+    <div class="mute" style="font-size:12.5px;margin-bottom:4px">Match each name on the sheet to a property page (unmatched accounts still import — link them later):</div>
+    <div style="max-height:40vh;overflow:auto;border:1px solid var(--line);border-radius:8px"><table class="rpkgtab"><tr><th>On the sheet</th><th>#</th><th>Property page</th></tr>
+      ${r.labels.map((l,i)=>`<tr><td>${esc(l.label||'(blank)')}</td><td>${l.count}</td><td><select data-l="${i}" style="max-width:260px"><option value="">— no property —</option>${r.properties.map(p=>`<option value="${p.id}" ${p.id===l.property_id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></td></tr>`).join('')}</table></div>
+    <div class="row" style="justify-content:flex-end;margin-top:10px;gap:6px"><button class="b ghost" onclick="taskDlg.close()">Cancel</button><button class="b" onclick="utilImportApply()">Import ${r.total} accounts</button></div>`;
+  if(!taskDlg.open)taskDlg.showModal();};i.click();}
+async function utilImportApply(){const mapping={};document.querySelectorAll('#taskDlgBody select[data-l]').forEach(s=>{mapping[UTIL_PRE.labels[+s.dataset.l].label]=s.value||null;});
+  const who=$('#uiWho').value;if(!who&&!confirm('No one is picked to send these bills — import anyway?'))return;
+  const r=await api('/api/utilities/import',{method:'POST',body:{data_b64:UTIL_FILE,apply:true,mapping,assignee_id:who?+who:null,history:$('#uiHist').checked,logins:$('#uiLogin').checked}});
+  taskDlg.close();toast(`Imported · ${r.created} added · ${r.updated} updated · ${r.marked} monthly check-offs`);UTIL.mine=null;renderUtil();}
+/* property page */
+let PUTIL=null;
+async function propUtilLoad(pid){const el=$('#propUtil');if(!el)return;let r;try{r=await api('/api/utilities?property_id='+pid+'&inactive=1')}catch(e){return}r.accounts.forEach(a=>a.period=r.period);PUTIL=r;
+  if(!r.accounts.length&&!isMgr()){el.innerHTML='';return;}
+  const d=r.accounts.filter(a=>a.bill).length,act=r.accounts.filter(a=>a.active).length;
+  el.innerHTML=`<div class="panel"><header><h3>🧾 Utility bills · ${monthName(r.period).split(' ')[0]}</h3><span class="cnt">${d}/${act} sent <button class="b ghost sm" style="margin-left:8px" onclick="UTIL.period=null;show('utilities')">Board</button>${isMgr()?` <button class="b ghost sm" onclick="utilEdit()">＋</button>`:''}</span></header><div class="body">
+    ${r.accounts.map(utilRow).join('')||'<div class="empty">No utility accounts yet.</div>'}</div></div>`;}
+/* home widget */
+async function renderHomeUtil(){const el=$('#homeUtil');if(!el)return;let r;try{r=await api('/api/me/utilities')}catch(e){return}
+  if(!r.counts.total){el.innerHTML='';return;}
+  const c=r.counts,late=r.todo.filter(a=>a.status==='late').length;
+  el.innerHTML=panel('🧾 Utility bills',null,`<div class="row" style="gap:6px;margin:0 0 8px;flex-wrap:wrap"><span class="vbadge warn">${c.ready} ready</span>${late?`<span class="vbadge bad">⚠️ ${late} late</span>`:''}<span class="vbadge">${c.upcoming} upcoming</span><span class="vbadge good">✅ ${c.done}/${c.total} sent</span></div>
+    <div class="bar" style="margin:0 0 8px"><i style="width:${Math.round(100*c.done/c.total)}%"></i></div>
+    ${cap('util',r.todo).map(a=>`<div class="row2" style="cursor:pointer" onclick="UTIL.period=null;UTIL.mine=true;UTIL.filter='todo';show('utilities')">${ustChip(a.status)}<div class="grow"><b>${esc(a.property_name||a.property_label||'')}</b><div class="sub">${esc(a.provider||'')} #${esc(a.account_no||'')}</div></div></div>`).join('')+moreLink('util',r.todo.length,'renderHomeUtil()')
+      ||'<div class="empty">🎉 Every bill that\'s out has been sent.</div>'}
+    <div style="margin-top:8px;font-size:12.5px"><span class="tlink" onclick="UTIL.period=null;show('utilities')">Open the utility board →</span></div>`,`${monthName(r.period).split(' ')[0]}`);}
+
 /* ---------- insurance follow-up emails ---------- */
 let EMAILS=[],GMAIL=false;
 function deepLink(){const m=location.hash.match(/^#(task|project|property|vendor|view)-([\w-]+)$/);
@@ -1554,8 +1709,8 @@ let HOME={layout:null,notes:[],my_properties:[]},HOME_W={},HCUST=false;
 const WIDGETS={today:'🎯 Today ring & streak',kpis:'📊 Numbers (overdue, due today…)',agenda:'📅 Agenda',notes:'📝 Notes',
   nodate:'🗂 Tasks without a due date',projects:'📁 My projects',properties:'🏢 My properties',wins:'🙌 Team wins',
   waiting:'⏳ Waiting on me',blocked:'⛔ Blocked for me',emails:'✉️ Emails ready to send',reminders:'⏰ Reminders',
-  comments:'💬 Comments & mentions',done:'✅ Done this week',reporting:'📊 Reporting status at my properties'};
-const HOME_DEFAULT={top:['today','kpis'],left:['agenda','reporting','nodate','projects','properties'],right:['notes','wins','waiting','blocked','emails','reminders','comments','done'],hidden:[]};
+  comments:'💬 Comments & mentions',done:'✅ Done this week',reporting:'📊 Reporting status at my properties',utilities:'🧾 Utility bills to send'};
+const HOME_DEFAULT={top:['today','kpis'],left:['agenda','utilities','reporting','nodate','projects','properties'],right:['notes','wins','waiting','blocked','emails','reminders','comments','done'],hidden:[]};
 function homeLayout(){const L=HOME.layout||HOME_DEFAULT,out={top:[],left:[],right:[],hidden:[]},seen=new Set();
   for(const z of ['top','left','right','hidden'])for(const id of (L[z]||[]))if(WIDGETS[id]&&!seen.has(id)){seen.add(id);out[z].push(id);}
   for(const z of ['top','left','right'])for(const id of HOME_DEFAULT[z])if(!seen.has(id)){seen.add(id);out[z].push(id);}   // widgets added later show up in their default spot
@@ -1651,6 +1806,7 @@ async function renderHome(){const tok=++HTOK;
         <div class="chips">${p.roles.map(r=>`<span class="chip2">${esc(r)}</span>`).join('')}${p.overdue?`<span class="risk hi">${p.overdue} overdue</span>`:''}</div></div></div>`}).join('')||'<div class="empty">You\'re not on any active projects.</div>'}</div></div>`,
     properties:'<div id="homeProps"></div>',
     reporting:'<div id="homeReporting"></div>',
+    utilities:'<div id="homeUtil"></div>',
     notes:'<div id="homeNotes"></div>',
     wins:'<div id="funTeam"></div>',
     waiting:`${panel('⏳ Waiting on me',d.waiting_on_me.length,cap('wait',d.waiting_on_me).map(w=>`<div class="row2" style="cursor:pointer" onclick="openTask(${w.my_task_id})"><span class="ico">▶️</span><div class="grow"><b>#${w.my_task_id} ${esc(w.my_task_title)}</b><div class="sub">${esc(w.assignee_name)} can't start <i>${esc(w.title)}</i> until this is done${w.my_due?` · due ${fmtDate(w.my_due)}`:''}</div></div></div>`).join('')+moreLink('wait',d.waiting_on_me.length,'renderHome()')||'<div class="empty">Nobody is waiting on you.</div>')}`,
@@ -1662,7 +1818,7 @@ async function renderHome(){const tok=++HTOK;
     done:`${panel('✅ Done this week',d.done_week.length,d.done_week.map(t=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><span class="ico">✓</span><div class="grow">${esc(t.title)}<div class="sub">${esc(t.project_name)}${t.actual_minutes?' · '+fmtMin(t.actual_minutes):' · <span class="over">log time</span>'}</div></div></div>`).join('')||'<div class="empty">Nothing yet this week.</div>')}`};
   HOME_W=W;$('#home').innerHTML=homeLayoutHTML(W);
   if(unread.mentions)api('/api/me/mentions-seen',{method:'POST'}).then(()=>setBadge(0));
-  loadFunToday();loadFunTeam();renderNotes();renderHomeProps();renderHomeReporting();
+  loadFunToday();loadFunTeam();renderNotes();renderHomeProps();renderHomeReporting();renderHomeUtil();
   api('/api/emails').then(r=>{const el=$('#homeEmails');if(!el||!r.drafts.length)return;
     el.innerHTML=panel('✉️ Emails ready to send',r.drafts.length,cap('homeEm',r.drafts).map(d=>`<div class="row2" style="cursor:pointer" onclick="show('emails')"><span class="ico">✉️</span><div class="grow">${esc(d.subject)}<div class="sub">To ${esc(d.to_name||d.to_email||'?')}${d.gmail_draft_id?' · in your Gmail drafts':''}</div></div></div>`).join('')+moreLink('homeEm',r.drafts.length,'renderHome()'));});
 }
