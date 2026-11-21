@@ -174,3 +174,28 @@ def test_import_matches_by_address(mgr):
     assert m["Schertz - Medical"] == (b2, "address")   # shared address → the building whose name matches
     assert m["Mystery Place"] == (None, None) and r["has_address"]
     assert b1 != b2
+
+
+def test_directory_match_column():
+    name, addr, note = utilities._split_dir("Alta Vista - 20079 Stone Oaks Parkway, San Antonio, TX 78258")
+    assert (name, addr, note) == ("Alta Vista", "20079 Stone Oaks Parkway, San Antonio, TX 78258", "")
+    assert utilities._split_dir("NO MATCH IN DIRECTORY - 7000/7002 San Pedro not in directory")[2].startswith("NO MATCH")
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Utilities"
+    ws.append(["Login Info3", None, "Reference", "Property Name", "Account", "Description", None, None, "OCT", "NOV",
+               "Directory Match (Property - Address)"])
+    ws.append([None, None, "SAWS"])
+    ws.append([None, None, "444 MMYY", "UP", "6430-0000 - Water", "svc", 7, 27, "x", None, "Utility Plaza - 1 Utility Way, San Antonio, TX"])
+    ws.append([None, None, "555 MMYY", "Gone", "6430-0000 - Water", "svc", 8, 28, "x", None, "NO MATCH IN DIRECTORY - not in directory"])
+    rv = wb.create_sheet("Property Match Review")
+    rv.append(["Name in utility sheet", "Matched directory property - address", "Confidence", "Note"])
+    rv.append(["UP", "Utility Plaza - 1 Utility Way", "Check", "short name"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    items = utilities.parse(buf.getvalue(), date(2026, 11, 20))
+    assert (items[0]["bill_day"], items[0]["pay_day"]) == ("7", "27")     # address column after the months
+    assert items[0]["review"]["confidence"] == "Check"
+    r = utilities.import_rows(buf.getvalue())
+    m = {l["label"]: (l["property_id"], l["matched_by"]) for l in r["labels"]}
+    assert m["UP"] == (S["pid"], "directory") and m["Gone"] == (None, None)

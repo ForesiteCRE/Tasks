@@ -525,14 +525,15 @@ def parse(data: bytes, today: date | None = None) -> list[dict]:
         else:
             continue
         ci = {k: h.index(k) for k in ("reference", "property name", "account", "description") if k in h}
-        addr_i = next((i for i, x in enumerate(h) if "address" in x), None)
+        addr_i = next((i for i, x in enumerate(h) if "address" in x or "directory match" in x), None)
         ref_i = ci["reference"]
         periods = _periods(list(head), today)
         known = set(ci.values()) | ({addr_i} if addr_i is not None else set())
         login_cols = [i for i in range(0, ref_i) if i not in known]   # the login columns sit left of Reference
         first_month = min(periods) if periods else len(h)
         named = {x: i for i, x in enumerate(h) if x in ("bill date", "payment date", "pay date", "due date")}
-        free = [i for i in range(max(known) + 1, first_month) if not h[i]]   # unlabeled: Bill Date, Payment Date
+        text_cols = set(ci.values()) | ({addr_i} if addr_i is not None and addr_i < first_month else set())
+        free = [i for i in range(max(text_cols) + 1, first_month) if not h[i]]   # unlabeled: Bill Date, Payment Date
         bill_i = named.get("bill date", free[0] if free else None)
         pay_i = named.get("payment date", named.get("pay date", named.get("due date", free[1] if len(free) > 1 else None)))
         out, provider, prov_login = [], "", ("", "")
@@ -567,6 +568,9 @@ def parse(data: bytes, today: date | None = None) -> list[dict]:
                         "description": desc, "bill_day": g(r, bill_i), "pay_day": g(r, pay_i), "login_user": user,
                         "login_pass": pw, "notes": note, "marks": marks, "freq": "annual" if annual else "monthly",
                         "bill_month": (bm[0][0] if bm else 1) if annual else None, "active": not (last and marks[last][0] == "final")})
+        review = _review(wb)
+        for o in out:
+            o["review"] = review.get(o["property_label"].lower()) or review.get(o["address"].lower()) or {}
         return out
     raise ValueError("Couldn't find the Utilities sheet (needs Reference and Property Name columns).")
 
@@ -605,7 +609,49 @@ def _by_address(c, address: str, label: str = ""):
     return None
 
 
+def _review(wb) -> dict:
+    """Optional "Property Match Review" sheet: name on the utility sheet → confidence (High / Check / No match) + note."""
+    for ws in wb.worksheets:
+        if "match review" not in ws.title.lower():
+            continue
+        it = ws.iter_rows(values_only=True)
+        h = [_s(x).lower() for x in next(it, [])]
+        ni = next((i for i, x in enumerate(h) if x.startswith("name")), 0)
+        ci = next((i for i, x in enumerate(h) if "confidence" in x), None)
+        ti = next((i for i, x in enumerate(h) if x == "note"), None)
+        out = {}
+        for r in it:
+            if r and r[ni]:
+                out[_s(r[ni]).lower()] = {"confidence": _s(r[ci]) if ci is not None and ci < len(r) else "",
+                                          "note": _s(r[ti]) if ti is not None and ti < len(r) else ""}
+        return out
+    return {}
+
+
+def _split_dir(cell: str) -> tuple[str, str, str]:
+    """'Alta Vista - 20079 Stone Oaks Parkway, San Antonio, TX' → (directory name, address, '');
+    'NO MATCH IN DIRECTORY - …' → ('', '', note)."""
+    cell = (cell or "").strip()
+    if not cell:
+        return "", "", ""
+    if cell.upper().startswith(("NO MATCH", "AMBIGUOUS", "NOT FOUND")):
+        return "", "", cell
+    from .directory import _split
+    name, addr = _split(cell)
+    if not addr:   # just an address
+        return "", cell, ""
+    return name, addr, ""
+
+
 def _guess_property(c, label: str, address: str = ""):
+    dname, street, note = _split_dir(address)
+    if note:
+        return None, None
+    if dname:
+        r = c.execute("SELECT id FROM properties WHERE archived_at IS NULL AND lower(name)=lower(?)", (dname,)).fetchone()
+        if r:
+            return r[0], "directory"
+    address = street
     if address:
         pid = _by_address(c, address, label)
         if pid:
@@ -648,6 +694,7 @@ def import_rows(data: bytes, apply=False, mapping: dict | None = None, assignee_
            "has_address": any(it["address"] for it in items),
            "labels": [{"key": k, "label": next(it["property_label"] for it in items if it["key"] == k),
                        "address": next(it["address"] for it in items if it["key"] == k), "property_id": v, "matched_by": how[k],
+                       "review": next(it.get("review") or {} for it in items if it["key"] == k),
                        "count": sum(1 for it in items if it["key"] == k)} for k, v in labels.items()],
            "properties": props, "people": people, "assignee_guess": assignee_id or settings()["default_assignee"] or guess,
            "history_from": hist[0] if hist else None, "history_to": hist[-1] if hist else None,
