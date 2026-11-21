@@ -110,11 +110,12 @@ def _staff_allowed(request: Request) -> bool:
             re.fullmatch(r"/api/bids/\d+", path) or \
             re.fullmatch(r"/api/(properties|projects)/\d+/(vendors|vendor-slots)", path) or \
             re.fullmatch(r"/api/properties/\d+/vendors/\d+/coi", path) or \
-            re.fullmatch(r"/api/properties/\d+/our-coi(/request)?", path):
+            re.fullmatch(r"/api/properties/\d+/our-coi(/request)?", path) or \
+            re.fullmatch(r"/api/properties/\d+/inspections", path):
         return True   # vendor endpoints check property/project team membership themselves
     return path.startswith(("/api/tasks", "/api/checklist/", "/api/reminders", "/api/me/", "/api/critical-dates/",
                              "/api/vendors", "/api/vendor-reviews/", "/api/property-vendors/", "/api/project-vendors/", "/api/emails", "/api/wins/", "/api/our-cois/", "/api/help",
-                             "/api/vendor-cois/", "/api/utilities"))
+                             "/api/vendor-cois/", "/api/utilities", "/api/inspections", "/api/inspection-items/", "/api/inspection-photos/"))
 
 
 _PUBLIC_HOST = PUBLIC_URL.split("://")[-1].split("/")[0].lower()

@@ -384,6 +384,16 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
 .purow{display:flex;gap:10px;padding:10px 0;border-top:1px solid var(--line)}.purow:first-child{border-top:0}.purow.closed{opacity:.6}
 .puacct{font-size:14px;margin:3px 0 2px}.puacct b{font-family:ui-monospace,Menlo,monospace;font-size:14.5px;letter-spacing:.2px}
 .pudates{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;margin-top:3px}
+.quietbox{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:center;background:#f3f6f8;border-radius:10px;padding:10px 12px;margin:0 0 12px}.quietbox select{width:auto;display:inline-block;padding:3px 6px}
+.ihead{background:var(--card,#fff);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:12px;position:sticky;top:0;z-index:5}
+.isec{background:var(--card,#fff);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:10px}.isec>summary{display:flex;justify-content:space-between;cursor:pointer;padding:4px 0;font-size:15px}
+.iitem{border-top:1px solid var(--line);padding:10px 0}.iitem.issue{background:linear-gradient(90deg,#fde8e866,transparent 70%)}.ilabel{font-size:14.5px;margin-bottom:6px}
+.ibtns{display:flex;gap:6px;flex-wrap:wrap}.ib{border:1px solid var(--line);background:transparent;color:inherit;border-radius:10px;padding:9px 12px;font-size:14px;min-height:42px;cursor:pointer}
+.ib.good.on{background:#eef6e4;border-color:#7fb850;color:#3d6b1f;font-weight:600}.ib.issue.on{background:#fde8e8;border-color:#e08080;color:#b42318;font-weight:600}.ib.na.on{background:#eef0f2;border-color:#b8c2c8;font-weight:600}
+.ib.cam{padding:9px 10px}.iitem textarea{margin-top:6px}.iphotos{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.ithumb{position:relative}.ithumb img{width:76px;height:76px;object-fit:cover;border-radius:8px;display:block}
+.ithumb button{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:0;background:#3a4750;color:#fff;font-size:11px;cursor:pointer}
+@media (prefers-color-scheme:dark){.quietbox{background:#ffffff10}}
+@media (max-width:760px){.ib{flex:1 1 auto}.ib.cam{flex:0 0 auto}}
 </style>
 </head>
 <body>
@@ -394,6 +404,7 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
     <button data-v="properties">🏢 Properties<small>critical dates, vendors, insurance, team</small></button>
     <button data-v="vendors">🧰 Vendors<small>who we've used — ratings, prices &amp; notes</small></button>
     <button data-v="utilities">🧾 Utility bills<small>download each month's bills &amp; send them to AppFolio</small></button>
+    <button data-v="inspections">📋 Inspections<small>walk a property on your phone — checklist, photos, repair tasks</small></button>
     <button data-v="emails">✉️ Emails to send <span id="emBadge2" class="nbadge mail hidden"></span><small>insurance &amp; approval emails drafted for you</small></button></div></div>
   <div class="dd" data-g="projects" data-icon="📁"><button class="ddb">Projects <span class="car">▾</span></button><div class="ddm">
     <button data-v="projects">📁 Projects<small>start a project, progress, bids &amp; approvals</small></button>
@@ -418,6 +429,7 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
     <div class="hero-actions">
       <div class="seg mgr" id="hSeg"><button class="on" data-s="me" onclick="homeScope('me')">My day</button><button data-s="team" onclick="homeScope('team')">Team</button></div>
       <button class="b ghost" onclick="openReminder()">⏰ Reminder</button>
+      <button class="b ghost" onclick="oooDlg()" title="Going on vacation? Hand your work to someone while you're out">🌴 Out of office</button>
       <button class="b ghost" onclick="openSettings()">⚙︎ My settings</button>
       <button class="b ghost" id="hCustBtn" onclick="homeCustomize()" title="Choose, hide and rearrange the boxes on your Home page">✎ Customize</button>
     </div>
@@ -480,6 +492,12 @@ input[type=checkbox]{accent-color:#7cb342}input[type=checkbox]:checked{animation
   <div id="utilHead"></div>
   <div id="utilBody"></div>
 </section>
+
+<section id="v-inspections" class="hidden">
+  <div class="pagehead"><div><h2>📋 Inspections</h2><div class="pagesub">Walk a property with your phone: mark each item Good / Issue / N/A, snap photos, and issues become repair tasks. Finishing makes a printable report for the owner packet.</div></div></div>
+  <div id="inspList"></div>
+</section>
+<section id="v-inspect" class="hidden"><div id="inspPage"></div></section>
 
 <section id="v-emails" class="hidden">
   <div class="pagehead"><div><h2>✉️ Emails to send</h2><div class="pagesub">Insurance follow-ups and owner-approval emails drafted for you.</div></div><label class="mgr" style="font-size:13px"><input type="checkbox" id="emAll" style="width:auto" onchange="renderEmails()"> Everyone's</label></div>
@@ -630,7 +648,7 @@ function show(v){const nb=document.querySelector(`#nav button[data-v="${v}"]`);
   document.querySelectorAll('nav button[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   document.querySelectorAll('.dd').forEach(d=>d.classList.remove('open'));markNav(v);
   if(v==='tasks')renderTasks();document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-'+v));
-  if(v==='home')renderHome();if(v==='chat')loadChat();if(v==='admin')loadAdmin();if(v==='calendar')renderCalendar();if(v==='team')renderTeam();if(v==='properties')renderProperties(true);if(v==='history')renderHistory();if(v==='close')closeGo(CLOSE.period);if(v==='vendors')renderVendors(true);if(v==='emails')renderEmails();if(v==='utilities')renderUtil();}
+  if(v==='home')renderHome();if(v==='chat')loadChat();if(v==='admin')loadAdmin();if(v==='calendar')renderCalendar();if(v==='team')renderTeam();if(v==='properties')renderProperties(true);if(v==='history')renderHistory();if(v==='close')closeGo(CLOSE.period);if(v==='vendors')renderVendors(true);if(v==='emails')renderEmails();if(v==='utilities')renderUtil();if(v==='inspections')renderInspections();}
 $('#nav').onclick=e=>{const b=e.target.closest('button');if(!b)return;
   if(b.classList.contains('ddb')&&matchMedia('(max-width:760px)').matches){openNavSheet(b.parentElement);return;}
   if(b.classList.contains('ddb')){const d=b.parentElement,o=!d.classList.contains('open');document.querySelectorAll('.dd').forEach(x=>x.classList.remove('open'));d.classList.toggle('open',o);return;}
@@ -681,7 +699,7 @@ async function refresh(){
   tPropFill();
   $('#tWho').innerHTML=`<option value="me">My tasks</option><option value="">Everyone</option><option value="unassigned">Unassigned</option>`+USERS.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('');$('#tWho').value=tw||(isMgr()?'':'me');
   qFill(qp);qProps();
-  $('#qWho').innerHTML=isMgr()?`<option value="">Unassigned</option>`+USERS.map(u=>`<option value="${u.id}" ${u.id===ME.id?'selected':''}>${esc(u.name)}${u.id===ME.id?' (me)':''}</option>`).join(''):`<option value="${ME.id}">Me</option>`;if(qw)$('#qWho').value=qw;
+  $('#qWho').innerHTML=isMgr()?`<option value="">Unassigned</option>`+USERS.map(u=>`<option value="${u.id}" ${u.id===ME.id?'selected':''}>${esc(u.name)}${u.id===ME.id?' (me)':''}${oooTag(u.id)}</option>`).join(''):`<option value="${ME.id}">Me</option>`;if(qw)$('#qWho').value=qw;
   document.querySelectorAll('.mgronly').forEach(el=>el.classList.toggle('hidden',!isMgr()));
   if(!$('#v-tasks').classList.contains('hidden'))renderTasks();
   renderProjects();
@@ -910,7 +928,7 @@ async function addProperty(){const r=await api('/api/properties',{method:'POST',
 async function openProperty(id){const same=PROP&&PROP.id===id;PROP=await api('/api/properties/'+id);LEASE=null;if(!same){PROP_ALL=false;PROP_TEAM_EDIT=false;CT_EDIT=null;}
   document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-property'));
   markNav('property');
-  if(taskDlg.open)taskDlg.close();renderProperty();propUtilLoad(id);scrollTo(0,0);}
+  if(taskDlg.open)taskDlg.close();renderProperty();propUtilLoad(id);propInspLoad(id);scrollTo(0,0);}
 function insChip(ins){const m={ok:['ok','🛡 '],not_named:['bad','⚠️ '],unverified:['warn','🛡 '],expired:['bad','⚠️ '],missing:['warn','🛡 ']}[ins.state]||['warn',''];
   return `<span class="pchip ${m[0]}">${m[1]}${esc(ins.label)}${ins.expires&&ins.state!=='missing'?` · exp. ${fmtDate(ins.expires)}`:''}</span>`;}
 const money=n=>'$'+Number(n).toLocaleString(undefined,{maximumFractionDigits:0});
@@ -930,6 +948,7 @@ function renderProperty(){const p=PROP,mg=isMgr(),dis=mg?'':'disabled',open=p.da
     <div class="panel"><header><h3>📁 Projects</h3><span class="cnt">${p.projects.length}${mg?` <button class="b ghost sm" style="margin-left:8px" onclick="propNewProject()">＋ New project</button>`:''}</span></header><div class="body">
       ${p.projects.map(x=>{const pct=x.total?Math.round(100*x.done/x.total):0;return `<div class="row2" style="cursor:pointer;display:block" onclick="openProject(${x.id})"><div class="row" style="justify-content:space-between;margin:0"><b>${esc(x.name)}</b><span class="mute" style="font-size:12px">${x.done}/${x.total}${x.status==='done'?' · finished':''}</span></div><div class="bar" style="margin:6px 0 0"><i style="width:${pct}%"></i></div>${x.overdue?`<span class="risk hi" style="margin-top:6px;display:inline-block">${x.overdue} overdue</span>`:''}</div>`}).join('')||'<div class="empty">No projects at this address yet. Projects whose address matches are linked automatically.</div>'}</div></div>
     <div id="propUtil"></div>
+    <div id="propInsp"></div>
     <div class="panel"><header><h3>⚑ Critical dates</h3><span class="cnt">${open.length} upcoming</span></header><div class="body">
       ${mg?`<div class="row" style="margin:4px 0 8px"><button class="b ghost" onclick="dateForm()">+ Add a date</button></div><div id="cdForm"></div>`:''}
       ${open.map(cdRow).join('')||'<div class="empty">No critical dates yet.'+(mg?' Upload the management agreement or insurance policy, or add one by hand.':'')+'</div>'}
@@ -1452,6 +1471,108 @@ async function renderHomeUtil(){const el=$('#homeUtil');if(!el)return;let r;try{
       ||'<div class="empty">🎉 Every bill that\'s out has been sent.</div>'}
     <div style="margin-top:8px;font-size:12.5px"><span class="tlink" onclick="UTIL.period=null;show('utilities')">Open the utility board →</span></div>`,`${monthName(r.period).split(' ')[0]}`);}
 
+/* ---------- out of office ---------- */
+let OOO={items:[],out:{}};
+async function loadOOO(){try{OOO=await api('/api/ooo')}catch(e){}return OOO;}
+const oooFmt=d=>new Date(d+'T12:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+const oooTag=uid=>{const o=OOO.out&&OOO.out[uid];return o?` 🌴 out until ${fmtDate(o.until)}`:'';};
+async function oooDlg(edit){await loadOOO();const mg=isMgr(),o=edit?OOO.items.find(x=>x.id===edit):null,tm=new Date();tm.setDate(tm.getDate()+1);
+  const today=new Date().toISOString().slice(0,10);
+  $('#taskDlgBody').innerHTML=`<h2>🌴 ${o?'Change out of office':'Out of office'}</h2>
+    <div class="mute" style="font-size:13px;margin-bottom:10px">On your first day out, your tasks due before you're back move to the person covering (and utility bills you send). Your Blink messages are held. When you're back, anything still open comes back to you with a welcome-back list.</div>
+    <div class="team-grid">
+      ${mg&&!o?`<label>Who's out<select id="oWho" onchange="oooPreview()">${USERS.map(u=>`<option value="${u.id}" ${u.id===ME.id?'selected':''}>${esc(u.name)}${u.id===ME.id?' (me)':''}</option>`).join('')}</select></label>`:''}
+      <label>First day out<input type="date" id="oStart" min="${today}" value="${o?o.start:tm.toISOString().slice(0,10)}" ${o&&o.status==='active'?'disabled':''} onchange="oooPreview()"></label>
+      <label>Last day out<input type="date" id="oEnd" min="${today}" value="${o?o.end:''}" onchange="oooPreview()"></label>
+      <label>Who covers<select id="oBackup" ${o&&o.status==='active'?'disabled':''} onchange="oooPreview()"><option value="">— pick someone —</option>${USERS.filter(u=>!o||u.id!==o.user_id).map(u=>`<option value="${u.id}" ${o&&o.backup_id===u.id?'selected':''}>${esc(u.name)}${oooTag(u.id)}</option>`).join('')}</select></label>
+      <label>Note for the team <input id="oNote" value="${esc(o&&o.note||'')}" placeholder="e.g. Urgent owner issues → call Nancy"></label></div>
+    ${o?'':`<label class="row" style="gap:6px;align-items:center;margin:8px 0 0;font-size:13.5px"><input type="checkbox" id="oProp" style="width:auto" checked onchange="oooPreview()"> At properties where I'm the Property Manager, send that work to the property's <b>Backup Property Manager</b></label>`}
+    <div id="oPrev" class="mute" style="font-size:13px;margin-top:10px"></div>
+    <div class="row" style="justify-content:flex-end;gap:6px;margin-top:12px"><button class="b ghost" onclick="taskDlg.close()">Cancel</button><button class="b" onclick="oooSave(${o?o.id:0})">${o?'Save':'🌴 Set out of office'}</button></div>`;
+  if(!taskDlg.open)taskDlg.showModal();if(!o)oooPreview();}
+async function oooPreview(){const el=$('#oPrev');if(!el||!$('#oEnd').value)return el&&(el.innerHTML='Pick your last day out to see what will be handed over.');
+  const r=await api('/api/me/ooo/preview',{method:'POST',body:{user_id:$('#oWho')?+$('#oWho').value:null,end:$('#oEnd').value,backup_id:+$('#oBackup').value||null,use_property_backups:$('#oProp')?$('#oProp').checked:true}});
+  if(!$('#oBackup').value){el.innerHTML=`<b>${r.tasks}</b> task${r.tasks===1?'':'s'} due before you're back${r.utilities?` and <b>${r.utilities}</b> utility bills`:''} — pick who covers.`;return;}
+  el.innerHTML=r.tasks+r.utilities?`Will hand over: ${r.by_person.map(p=>`<b>${esc(p.name)}</b> — ${p.tasks} task${p.tasks===1?'':'s'}${p.utilities?` + ${p.utilities} utility bills`:''}`).join(' · ')}
+    <div style="max-height:160px;overflow:auto;margin-top:6px">${r.items.map(t=>`<div>• ${esc(t.title)}${t.where?' — '+esc(t.where):''} <span class="mute">(due ${fmtDate(t.due_date)})</span></div>`).join('')}</div>
+    <div style="margin-top:4px">Tasks given to you while you're out move over too. Anything due later stays with you.</div>`:'Nothing due before you\'re back — the person covering will get anything new that comes in.';}
+async function oooSave(id){const b={start:$('#oStart').value,end:$('#oEnd').value,backup_id:+$('#oBackup').value||null,note:$('#oNote').value};
+  if(id)await api('/api/me/ooo/'+id,{method:'PATCH',body:b});
+  else{b.user_id=$('#oWho')?+$('#oWho').value:ME.id;b.use_property_backups=$('#oProp').checked;await api('/api/me/ooo',{method:'POST',body:b});}
+  taskDlg.close();toast('🌴 Out of office saved');await loadOOO();renderHomeAway();}
+async function oooCancel(id,active){if(!confirm(active?'End your out of office now? Everything still open comes back to you.':'Cancel this out-of-office time?'))return;
+  await api('/api/me/ooo/'+id,{method:'DELETE'});toast(active?'👋 Welcome back!':'Cancelled');await loadOOO();renderHomeAway();refresh&&refresh();}
+async function renderHomeAway(){const el=$('#homeAway');if(!el)return;const r=await loadOOO();
+  const items=r.items.filter(o=>o.status!=='ended'||o.user_id===ME.id&&false);if(!items.length){el.innerHTML='';return;}
+  el.innerHTML=panel('🌴 Out of office',items.length,items.map(o=>{const mine=o.user_id===ME.id||o.created_by===ME.id||isMgr(),act=o.status==='active';
+    return `<div class="row2"><span class="ico">${act?'🌴':'🗓'}</span><div class="grow"><b>${esc(o.user_name)}</b> ${act?`is out — back after <b>${oooFmt(o.end)}</b>`:`out ${oooFmt(o.start)} → ${oooFmt(o.end)}`}
+      <div class="sub">${o.backup_name?`${o.backup_id===ME.id?'<b>You\'re</b>':esc(o.backup_name.split(' ')[0])+' is'} covering`:''}${act&&o.moved?` · ${o.moved} item${o.moved>1?'s':''} handed over`:''}${o.note?' · '+esc(o.note):''}</div></div>
+      ${mine?`<span style="white-space:nowrap">${o.user_id===ME.id||isMgr()?`<button class="b ghost sm" onclick="oooDlg(${o.id})">✎</button>`:''}<button class="b ghost sm" onclick="oooCancel(${o.id},${act})">${act?'End now':'Cancel'}</button></span>`:''}</div>`;}).join(''),
+    `<button class="b ghost sm" onclick="oooDlg()">＋ Plan time off</button>`);}
+
+/* ---------- inspections ---------- */
+let INSP=null,INSP_OPEN={};
+const INSP_GENERAL='General photos';
+async function inspStart(pid){const i=await api('/api/properties/'+pid+'/inspections',{method:'POST'});inspOpen(i.id);}
+async function inspOpen(id){INSP=await api('/api/inspections/'+id);document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hidden',s.id!=='v-inspect'));markNav('inspections');renderInsp();scrollTo(0,0);}
+async function inspReload(){INSP=await api('/api/inspections/'+INSP.id);renderInsp();}
+function inspThumbs(itemId){return INSP.photos.filter(p=>(p.item_id||null)===itemId).map(p=>`<span class="ithumb"><a href="/api/inspection-photos/${p.id}" target="_blank" rel="noopener"><img src="/api/inspection-photos/${p.id}" alt="" loading="lazy"></a>${INSP.status==='draft'?`<button onclick="inspPhotoDel(${p.id})" aria-label="Remove photo">✕</button>`:''}</span>`).join('');}
+function inspItem(it){const done=INSP.status!=='draft',np=INSP.photos.filter(p=>p.item_id===it.id).length,showNote=it.rating==='issue'||it.note||INSP_OPEN[it.id];
+  const btn=(r,l)=>`<button class="ib ${r} ${it.rating===r?'on':''}" ${done?'disabled':''} onclick="inspRate(${it.id},'${it.rating===r?'':r}')">${l}</button>`;
+  return `<div class="iitem ${it.rating||''}" id="ii${it.id}"><div class="ilabel">${esc(it.label)}${it.task_id?` <span class="tlink sm" onclick="openTask(${it.task_id})">🔧 task</span>`:''}</div>
+    <div class="ibtns">${btn('good','✓ Good')}${btn('issue','⚠ Issue')}${btn('na','N/A')}
+      ${done?'':`<button class="ib cam" onclick="inspPick(${it.id})" aria-label="Add photo">📷${np?' '+np:''}</button><button class="ib cam" onclick="INSP_OPEN[${it.id}]=1;renderInsp();setTimeout(()=>$('#in${it.id}')&&$('#in${it.id}').focus(),50)" aria-label="Add note">📝</button>`}</div>
+    ${showNote?`<textarea id="in${it.id}" rows="2" placeholder="${it.rating==='issue'?'What\'s wrong, where (e.g. pothole by Suite 104)':'Note'}" ${done?'disabled':''} onchange="inspSet(${it.id},{note:this.value})">${esc(it.note||'')}</textarea>`:''}
+    ${it.rating==='issue'?`<div class="row" style="gap:14px;margin:4px 0 0;font-size:13px;flex-wrap:wrap"><label class="row" style="gap:5px;margin:0"><input type="checkbox" style="width:auto" ${it.urgent?'checked':''} ${done?'disabled':''} onchange="inspSet(${it.id},{urgent:this.checked})"> 🚨 Urgent</label>
+      <label class="row" style="gap:5px;margin:0"><input type="checkbox" style="width:auto" ${it.make_task?'checked':''} ${done?'disabled':''} onchange="inspSet(${it.id},{make_task:this.checked},true)"> 🔧 Make a repair task</label></div>`:''}
+    ${np?`<div class="iphotos">${inspThumbs(it.id)}</div>`:''}</div>`;}
+function renderInsp(){const i=INSP,done=i.status!=='draft',tot=i.items.length,checked=tot-i.counts.unchecked,secs=[...new Set(i.items.map(x=>x.section))];
+  const tasks=i.items.filter(x=>x.rating==='issue'&&x.make_task&&!x.task_id).length;
+  $('#inspPage').innerHTML=`<div class="row" style="margin:0 0 10px;justify-content:space-between;gap:6px;flex-wrap:wrap"><button class="b ghost" onclick="openProperty(${i.property_id})">← ${esc(i.property_name)}</button>${done?`<a class="b" href="/inspections/${i.id}/report" target="_blank" rel="noopener">📄 Report</a>`:''}</div>
+    <div class="ihead"><h2 style="margin:0">📋 Inspection${done?' · finished':''}</h2><div class="mute">${esc(i.property_name)} · ${fmtDate(i.started_at.slice(0,10))} · ${esc(i.inspector||'')}</div>
+      <div class="bar" style="margin:8px 0 4px"><i style="width:${tot?Math.round(100*checked/tot):0}%"></i></div>
+      <div class="mute" style="font-size:12.5px">${checked} of ${tot} checked · <span style="color:var(--bad)">${i.counts.issue} issue${i.counts.issue===1?'':'s'}</span> · 📷 ${i.photos.length}${done?'':' · saves as you go'}</div></div>
+    ${secs.map(sec=>{const its=i.items.filter(x=>x.section===sec),n=its.filter(x=>x.rating).length,iss=its.filter(x=>x.rating==='issue').length;
+      return `<details class="isec" ${INSP_OPEN['s'+sec]!==false?'open':''} ontoggle="INSP_OPEN['s'+${esc(JSON.stringify(sec))}]=this.open"><summary><b>${esc(sec)}</b><span class="mute">${n}/${its.length}${iss?` · <span style="color:var(--bad)">${iss} ⚠</span>`:''}</span></summary>
+        ${its.map(inspItem).join('')}
+        ${done?'':`<div class="row" style="gap:6px;margin:8px 0 4px"><input placeholder="＋ Add something to check here" onkeydown="if(event.key==='Enter')inspAdd(${esc(JSON.stringify(sec))},this)"><button class="b ghost sm" onclick="inspAdd(${esc(JSON.stringify(sec))},this.previousElementSibling)">Add</button></div>`}</details>`;}).join('')}
+    <details class="isec" open><summary><b>📷 ${INSP_GENERAL}</b><span class="mute">${i.photos.filter(p=>!p.item_id).length}</span></summary>
+      <div class="iphotos" style="margin-top:6px">${inspThumbs(null)}</div>${done?'':`<button class="b ghost" style="margin-top:8px" onclick="inspPick(null)">📷 Take or upload photos</button>`}</details>
+    <div class="panel" style="margin-top:12px"><div class="body"><label class="lbl">Overall notes</label><textarea id="inspNotes" rows="3" ${done?'disabled':''} placeholder="Overall condition, things to tell the owner…">${esc(i.notes||'')}</textarea>
+      ${done?`<div class="row" style="margin-top:10px;gap:6px;flex-wrap:wrap"><a class="b" href="/inspections/${i.id}/report" target="_blank" rel="noopener">📄 Open the report (print / save PDF)</a></div>`
+      :`<div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap;align-items:center"><label style="font-size:13px">Repair tasks go to <select id="inspWho" style="width:auto"><option value="">the Property Manager</option>${USERS.map(u=>`<option value="${u.id}">${esc(u.name)}${oooTag(u.id)}</option>`).join('')}</select></label>
+        <span class="grow"></span><button class="b ghost" style="color:var(--bad)" onclick="inspDel()">Discard</button><button class="b" onclick="inspFinish()">✅ Finish${tasks?` & create ${tasks} repair task${tasks>1?'s':''}`:''}</button></div>
+        ${i.counts.unchecked?`<div class="mute" style="font-size:12px;margin-top:6px">${i.counts.unchecked} item${i.counts.unchecked>1?'s':''} not checked yet — they're left off the report.</div>`:''}`}</div></div>`;}
+async function inspRate(id,r){const it=INSP.items.find(x=>x.id===id);it.rating=r||null;renderInsp();await api('/api/inspection-items/'+id,{method:'PATCH',body:{rating:r||null}});
+  INSP.counts=await (async()=>{const c={good:0,issue:0,na:0,unchecked:0};INSP.items.forEach(x=>x.rating?c[x.rating]++:c.unchecked++);return c})();renderInsp();}
+async function inspSet(id,b,redraw){Object.assign(INSP.items.find(x=>x.id===id),b);await api('/api/inspection-items/'+id,{method:'PATCH',body:b});if(redraw)renderInsp();}
+async function inspAdd(sec,inp){const v=inp.value.trim();if(!v)return;INSP=await api('/api/inspections/'+INSP.id+'/items',{method:'POST',body:{section:sec,label:v}});renderInsp();}
+function inspPick(itemId){const i=document.createElement('input');i.type='file';i.accept='image/*';i.multiple=true;
+  i.onchange=async()=>{const fs=[...i.files];if(!fs.length)return;let n=0;
+    for(const f of fs){toast(`Uploading photo ${++n} of ${fs.length}…`);
+      try{const data=await shrinkPhoto(f);await api('/api/inspections/'+INSP.id+'/photos',{method:'POST',body:{item_id:itemId,data_b64:data}});}catch(e){toast('A photo didn\'t upload — try again');}}
+    await inspReload();toast(`📷 ${fs.length} photo${fs.length>1?'s':''} added`);};i.click();}
+async function shrinkPhoto(f,max=1600){const raw=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(f)});
+  try{const img=await new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=rej;im.src=raw;});
+    const k=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight)),cv=document.createElement('canvas');cv.width=Math.round(img.naturalWidth*k);cv.height=Math.round(img.naturalHeight*k);
+    cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);return cv.toDataURL('image/jpeg',0.82);}catch(e){return raw;}}
+async function inspPhotoDel(id){if(!confirm('Remove this photo?'))return;await api('/api/inspection-photos/'+id,{method:'DELETE'});inspReload();}
+async function inspFinish(){const n=INSP.items.filter(x=>x.rating==='issue'&&x.make_task&&!x.task_id).length;
+  if(!confirm(`Finish this inspection${n?` and create ${n} repair task${n>1?'s':''}`:''}?`))return;
+  const r=await api('/api/inspections/'+INSP.id+'/finish',{method:'POST',body:{notes:$('#inspNotes').value,assignee_id:+$('#inspWho').value||null}});
+  toast(`✅ Inspection finished${r.tasks.length?` · ${r.tasks.length} repair task${r.tasks.length>1?'s':''} created`:''}`);await inspReload();refresh&&refresh();}
+async function inspDel(){if(!confirm('Discard this inspection and its photos?'))return;const pid=INSP.property_id;await api('/api/inspections/'+INSP.id,{method:'DELETE'});openProperty(pid);}
+const inspRow=x=>`<div class="row2" style="cursor:pointer" onclick="inspOpen(${x.id})"><span class="ico">${x.status==='draft'?'📝':'📋'}</span><div class="grow"><b>${x.property_name?esc(x.property_name)+' · ':''}${fmtDate((x.finished_at||x.started_at).slice(0,10))}</b>
+  <div class="sub">${esc(x.inspector||'')} · ${x.status==='draft'?'<b>in progress — tap to continue</b>':`${x.issues} issue${x.issues===1?'':'s'} · 📷 ${x.photos}`}</div></div>${x.status==='done'?`<a class="b ghost sm" href="/inspections/${x.id}/report" target="_blank" rel="noopener" onclick="event.stopPropagation()">📄 Report</a>`:''}</div>`;
+async function propInspLoad(pid){const el=$('#propInsp');if(!el)return;let r;try{r=await api('/api/properties/'+pid+'/inspections')}catch(e){return}
+  if(!r.items.length&&!r.can){el.innerHTML='';return;}
+  el.innerHTML=`<div class="panel"><header><h3>📋 Inspections</h3><span class="cnt">${r.items.filter(x=>x.status==='done').length}${r.can?` <button class="b sm" style="margin-left:8px" onclick="inspStart(${pid})">📋 ${r.items.some(x=>x.status==='draft'&&x.user_id===ME.id)?'Continue':'Start'} inspection</button>`:''}</span></header><div class="body">
+    ${r.items.slice(0,5).map(inspRow).join('')||'<div class="empty">No inspections yet. Walk the property with your phone — check each item, snap photos, and issues become repair tasks.</div>'}</div></div>`;}
+async function renderInspections(){const r=await api('/api/inspections');if(!PROPS.length){try{PROPS=await api('/api/properties')}catch(e){}}
+  $('#inspList').innerHTML=`<div class="panel"><header><h3>Start an inspection</h3></header><div class="body"><div class="row" style="gap:6px;margin:0;flex-wrap:wrap">
+    <select id="inspProp" style="flex:1;min-width:200px"><option value="">Pick a property…</option>${PROPS.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select><button class="b" onclick="$('#inspProp').value?inspStart(+$('#inspProp').value):toast('Pick a property')">📋 Start</button></div></div></div>
+    <div class="panel"><header><h3>Recent inspections</h3><span class="cnt">${r.items.length}</span></header><div class="body">${r.items.map(inspRow).join('')||'<div class="empty">None yet.</div>'}</div></div>`;}
+
 /* ---------- insurance follow-up emails ---------- */
 let EMAILS=[],GMAIL=false;
 function deepLink(){const m=location.hash.match(/^#(task|project|property|vendor|view)-([\w-]+)$/);
@@ -1727,8 +1848,8 @@ let HOME={layout:null,notes:[],my_properties:[]},HOME_W={},HCUST=false;
 const WIDGETS={today:'🎯 Today ring & streak',kpis:'📊 Numbers (overdue, due today…)',agenda:'📅 Agenda',notes:'📝 Notes',
   nodate:'🗂 Tasks without a due date',projects:'📁 My projects',properties:'🏢 My properties',wins:'🙌 Team wins',
   waiting:'⏳ Waiting on me',blocked:'⛔ Blocked for me',emails:'✉️ Emails ready to send',reminders:'⏰ Reminders',
-  comments:'💬 Comments & mentions',done:'✅ Done this week',reporting:'📊 Reporting status at my properties',utilities:'🧾 Utility bills to send'};
-const HOME_DEFAULT={top:['today','kpis'],left:['agenda','utilities','reporting','nodate','projects','properties'],right:['notes','wins','waiting','blocked','emails','reminders','comments','done'],hidden:[]};
+  comments:'💬 Comments & mentions',done:'✅ Done this week',reporting:'📊 Reporting status at my properties',utilities:'🧾 Utility bills to send',away:'🌴 Out of office'};
+const HOME_DEFAULT={top:['today','kpis'],left:['agenda','utilities','reporting','nodate','projects','properties'],right:['away','notes','wins','waiting','blocked','emails','reminders','comments','done'],hidden:[]};
 function homeLayout(){const L=HOME.layout||HOME_DEFAULT,out={top:[],left:[],right:[],hidden:[]},seen=new Set();
   for(const z of ['top','left','right','hidden'])for(const id of (L[z]||[]))if(WIDGETS[id]&&!seen.has(id)){seen.add(id);out[z].push(id);}
   for(const z of ['top','left','right'])for(const id of HOME_DEFAULT[z])if(!seen.has(id)){seen.add(id);out[z].push(id);}   // widgets added later show up in their default spot
@@ -1825,6 +1946,7 @@ async function renderHome(){const tok=++HTOK;
     properties:'<div id="homeProps"></div>',
     reporting:'<div id="homeReporting"></div>',
     utilities:'<div id="homeUtil"></div>',
+    away:'<div id="homeAway"></div>',
     notes:'<div id="homeNotes"></div>',
     wins:'<div id="funTeam"></div>',
     waiting:`${panel('⏳ Waiting on me',d.waiting_on_me.length,cap('wait',d.waiting_on_me).map(w=>`<div class="row2" style="cursor:pointer" onclick="openTask(${w.my_task_id})"><span class="ico">▶️</span><div class="grow"><b>#${w.my_task_id} ${esc(w.my_task_title)}</b><div class="sub">${esc(w.assignee_name)} can't start <i>${esc(w.title)}</i> until this is done${w.my_due?` · due ${fmtDate(w.my_due)}`:''}</div></div></div>`).join('')+moreLink('wait',d.waiting_on_me.length,'renderHome()')||'<div class="empty">Nobody is waiting on you.</div>')}`,
@@ -1836,7 +1958,7 @@ async function renderHome(){const tok=++HTOK;
     done:`${panel('✅ Done this week',d.done_week.length,d.done_week.map(t=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><span class="ico">✓</span><div class="grow">${esc(t.title)}<div class="sub">${esc(t.project_name)}${t.actual_minutes?' · '+fmtMin(t.actual_minutes):' · <span class="over">log time</span>'}</div></div></div>`).join('')||'<div class="empty">Nothing yet this week.</div>')}`};
   HOME_W=W;$('#home').innerHTML=homeLayoutHTML(W);
   if(unread.mentions)api('/api/me/mentions-seen',{method:'POST'}).then(()=>setBadge(0));
-  loadFunToday();loadFunTeam();renderNotes();renderHomeProps();renderHomeReporting();renderHomeUtil();
+  loadFunToday();loadFunTeam();renderNotes();renderHomeProps();renderHomeReporting();renderHomeUtil();renderHomeAway();
   api('/api/emails').then(r=>{const el=$('#homeEmails');if(!el||!r.drafts.length)return;
     el.innerHTML=panel('✉️ Emails ready to send',r.drafts.length,cap('homeEm',r.drafts).map(d=>`<div class="row2" style="cursor:pointer" onclick="show('emails')"><span class="ico">✉️</span><div class="grow">${esc(d.subject)}<div class="sub">To ${esc(d.to_name||d.to_email||'?')}${d.gmail_draft_id?' · in your Gmail drafts':''}</div></div></div>`).join('')+moreLink('homeEm',r.drafts.length,'renderHome()'));});
 }
@@ -1855,6 +1977,7 @@ let NOTIF=null;
 async function loadNotif(){NOTIF=await api('/api/me/notifications');renderNotif();}
 function renderNotif(){const N=NOTIF,box=$('#notifBox');if(!box)return;
   const times=[];for(let h=6;h<=21;h++)for(const m of ['00','30'])times.push(`${String(h).padStart(2,'0')}:${m}`);
+  const allTimes=[];for(let h=0;h<24;h++)for(const m of ['00','30'])allTimes.push(`${String(h).padStart(2,'0')}:${m}`);
   const lbl=t=>{const [h,m]=t.split(':').map(Number);return `${(h%12)||12}:${String(m).padStart(2,'0')} ${h<12?'am':'pm'}`;};
   const summaryOn=['daily','twice'].includes(N.frequency);
   box.innerHTML=`<div class="setrow" style="display:block"><h4 style="margin:0 0 4px">🔔 Blink updates</h4>
@@ -1863,6 +1986,12 @@ function renderNotif(){const N=NOTIF,box=$('#notifBox');if(!box)return;
       <label class="mute" style="font-size:13px">How often<select id="nfFreq" style="margin-left:6px" onchange="notifSave({frequency:this.value})">${Object.entries(N.frequencies).map(([k,v])=>`<option value="${k}" ${k===N.frequency?'selected':''}>${esc(v)}</option>`).join('')}</select></label>
       ${summaryOn?`<label class="mute" style="font-size:13px">Summary at<select style="margin-left:6px" onchange="notifSave({time:this.value})">${times.map(t=>`<option value="${t}" ${t===N.time?'selected':''}>${lbl(t)}</option>`).join('')}</select></label>
       <label class="mute" style="font-size:13px;display:flex;gap:5px;align-items:center"><input type="checkbox" ${N.weekdays_only?'checked':''} onchange="notifSave({weekdays_only:this.checked})"> Weekdays only</label>`:''}</div>
+    <div class="quietbox"><label class="row" style="gap:6px;margin:0;align-items:center"><input type="checkbox" style="width:auto" ${N.quiet.on?'checked':''} onchange="notifSave({quiet:{on:this.checked}})"> <b>🌙 Quiet hours</b></label>
+      ${N.quiet.on?`<span class="mute" style="font-size:13px">from <select onchange="notifSave({quiet:{start:this.value}})">${allTimes.map(t=>`<option value="${t}" ${t===N.quiet.start?'selected':''}>${lbl(t)}</option>`).join('')}</select>
+        to <select onchange="notifSave({quiet:{end:this.value}})">${allTimes.map(t=>`<option value="${t}" ${t===N.quiet.end?'selected':''}>${lbl(t)}</option>`).join('')}</select></span>`:''}
+      <label class="row" style="gap:6px;margin:0;align-items:center"><input type="checkbox" style="width:auto" ${N.quiet.weekends?'checked':''} onchange="notifSave({quiet:{weekends:this.checked}})"> Weekends off</label>
+      ${N.quiet.on||N.quiet.weekends?`<label class="row" style="gap:6px;margin:0;align-items:center"><input type="checkbox" style="width:auto" ${N.quiet.mentions?'checked':''} onchange="notifSave({quiet:{mentions:this.checked}})"> Let @mentions through</label>`:''}
+      <div class="mute" style="font-size:12px;width:100%">No Blink messages ${N.quiet.on?`between ${lbl(N.quiet.start)} and ${lbl(N.quiet.end)}`:''}${N.quiet.on&&N.quiet.weekends?' or ':''}${N.quiet.weekends?'on Saturdays & Sundays':''}${!N.quiet.on&&!N.quiet.weekends?'during your off hours':''} — they wait and arrive together in one “While you were offline” message when quiet hours end. A summary scheduled inside quiet hours waits too. Your own reminders still come on time.</div></div>
     <table class="nftab"><tr><th></th><th>Instant</th><th>In summary</th><th>Off</th></tr>
     ${N.categories.map(c=>`<tr><td><b>${esc(c.label)}</b><div class="mute">${esc(c.help)}</div></td>${['instant','summary','off'].map(m=>{
         const dis=(c.id==='recap'&&m==='instant')||(m==='summary'&&!summaryOn&&N.frequency==='none');
@@ -2387,7 +2516,7 @@ async function runReminders(){const r=await api('/api/reminders/run',{method:'PO
 (async()=>{[ME,CFG]=await Promise.all([api('/api/me'),api('/api/config')]);
   $('#me').innerHTML=`${esc(ME.name)} <span class="pill">${{admin:'Admin',manager:'Manager'}[ME.role]||'Staff'}</span>${ME.auth_enabled?'<span class="so"> · <a href="/logout">Sign out</a></span>':''}`;
   if(!isMgr())PF='mine';
-  await refresh();renderHome();pollUnread();pollEmails();setInterval(()=>{pollUnread();pollEmails();},60000);
+  await loadOOO();await refresh();renderHome();pollUnread();pollEmails();setInterval(()=>{pollUnread();pollEmails();},60000);
   deepLink();window.addEventListener('hashchange',deepLink);
   const c=await api('/api/config');if(!c.simulator)$('#chatTab').remove();})();
 </script>

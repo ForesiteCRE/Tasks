@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import (audit, utilities, auth, automations, bids, blink, notify, blockers, fun, helpbot, ourcoi, chat, closeboard, departments, emails, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
+from . import (audit, utilities, ooo, inspections, auth, automations, bids, blink, notify, blockers, fun, helpbot, ourcoi, chat, closeboard, departments, emails, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
                starter_templates, team, timing, tpl)
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
@@ -26,7 +26,7 @@ async def scheduler_loop():
     """Every 10 min: daily backup, spawn due monthly projects; after REMINDER_HOUR send daily
     reminders (once/day/task) and, on the summary weekday, the weekly summary (once/week)."""
     while True:
-        for job in (maintenance.daily_backup, services.run_recurrences, dashboard.send_due_reminders,
+        for job in (maintenance.daily_backup, services.run_recurrences, dashboard.send_due_reminders, ooo.run,
                     notify.run_summaries, fun.run_daily, demo.refresh_wins):
             try:
                 job()
@@ -2357,6 +2357,187 @@ def utility_bill_file(aid: int, period: str, request: Request):
     if not got:
         raise HTTPException(404, "No file")
     return FileResponse(got[1], filename=got[0] or "bill.pdf")
+
+
+# ---------- out of office ----------
+
+@app.get("/api/ooo")
+def ooo_list(request: Request):
+    return {"items": ooo.listing(), "out": {str(k): v for k, v in ooo.out_map().items()}}
+
+
+@app.post("/api/me/ooo/preview")
+def ooo_preview(body: dict, request: Request):
+    uid = int(body.get("user_id") or _me_id(request))
+    if uid != _me_id(request):
+        _require_manager(request)
+    if not body.get("end"):
+        raise HTTPException(400, "Pick the last day out")
+    return ooo.preview(uid, body["end"], int(body["backup_id"]) if body.get("backup_id") else None, body.get("use_property_backups", True) is not False)
+
+
+@app.post("/api/me/ooo")
+def ooo_create(body: dict, request: Request):
+    me = _me_id(request)
+    if body.get("user_id") and int(body["user_id"]) != me:
+        _require_manager(request)
+    try:
+        oid = ooo.create(body, me)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    o = ooo.get(oid)
+    audit.log(me, "set out of office", "user", o["user_id"], f"{o['start']} → {o['end']}, {o['backup_name'] or ''} covering")
+    return o
+
+
+def _ooo_mine(oid: int, request: Request) -> dict:
+    o = ooo.get(oid)
+    if not o:
+        raise HTTPException(404, "Not found")
+    if o["user_id"] != _me_id(request) and o["created_by"] != _me_id(request):
+        _require_manager(request)
+    return o
+
+
+@app.patch("/api/me/ooo/{oid}")
+def ooo_update(oid: int, body: dict, request: Request):
+    _ooo_mine(oid, request)
+    try:
+        ooo.update(oid, body)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return ooo.get(oid)
+
+
+@app.delete("/api/me/ooo/{oid}")
+def ooo_cancel(oid: int, request: Request):
+    _ooo_mine(oid, request)
+    ooo.cancel(oid)
+    return ooo.get(oid)
+
+
+# ---------- inspections ----------
+
+def _insp(iid: int, request: Request, write=True) -> dict:
+    i = inspections.get(iid)
+    if not i:
+        raise HTTPException(404, "Inspection not found")
+    if not inspections.can_inspect(_me_id(request), auth.is_manager(request), i["property_id"]):
+        raise HTTPException(403, "Only managers and the property's team can do inspections here.")
+    if write and i["status"] == "done" and not auth.is_manager(request) and i["user_id"] != _me_id(request):
+        raise HTTPException(403, "This inspection is finished.")
+    return i
+
+
+@app.get("/api/inspections")
+def inspections_recent(request: Request):
+    return {"items": inspections.recent()}
+
+
+@app.get("/api/properties/{pid}/inspections")
+def inspections_for_property(pid: int, request: Request):
+    return {"items": inspections.for_property(pid),
+            "can": inspections.can_inspect(_me_id(request), auth.is_manager(request), pid)}
+
+
+@app.post("/api/properties/{pid}/inspections")
+def inspection_start(pid: int, request: Request):
+    if not properties.get(pid):
+        raise HTTPException(404, "Property not found")
+    if not inspections.can_inspect(_me_id(request), auth.is_manager(request), pid):
+        raise HTTPException(403, "Only managers and the property's team can do inspections here.")
+    return inspections.get(inspections.start(pid, _me_id(request)))
+
+
+@app.get("/api/inspections/{iid}")
+def inspection_get(iid: int, request: Request):
+    return _insp(iid, request, write=False)
+
+
+@app.post("/api/inspections/{iid}/items")
+def inspection_add_item(iid: int, body: dict, request: Request):
+    _insp(iid, request)
+    try:
+        inspections.add_item(iid, body.get("section") or "Other", body.get("label") or "")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return inspections.get(iid)
+
+
+@app.patch("/api/inspection-items/{item_id}")
+def inspection_item_update(item_id: int, body: dict, request: Request):
+    iid = inspections.item_owner(item_id)
+    if not iid:
+        raise HTTPException(404, "Not found")
+    _insp(iid, request)
+    inspections.update_item(item_id, body)
+    return {"ok": True}
+
+
+@app.delete("/api/inspection-items/{item_id}")
+def inspection_item_delete(item_id: int, request: Request):
+    iid = inspections.item_owner(item_id)
+    if not iid:
+        raise HTTPException(404, "Not found")
+    _insp(iid, request)
+    inspections.delete_item(item_id)
+    return {"ok": True}
+
+
+@app.post("/api/inspections/{iid}/photos")
+def inspection_photo_add(iid: int, body: dict, request: Request):
+    _insp(iid, request)
+    import base64
+    try:
+        pid = inspections.add_photo(iid, body.get("item_id"), base64.b64decode((body.get("data_b64") or "").split(",")[-1]), body.get("caption"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"id": pid}
+
+
+@app.get("/api/inspection-photos/{photo_id}")
+def inspection_photo(photo_id: int, request: Request):
+    iid = inspections.photo_owner(photo_id)
+    p = inspections.photo_path(photo_id) if iid else None
+    if not p:
+        raise HTTPException(404, "Not found")
+    return FileResponse(p, headers={"Cache-Control": "private, max-age=604800"})
+
+
+@app.delete("/api/inspection-photos/{photo_id}")
+def inspection_photo_delete(photo_id: int, request: Request):
+    iid = inspections.photo_owner(photo_id)
+    if not iid:
+        raise HTTPException(404, "Not found")
+    _insp(iid, request)
+    inspections.delete_photo(photo_id)
+    return {"ok": True}
+
+
+@app.post("/api/inspections/{iid}/finish")
+def inspection_finish(iid: int, body: dict, request: Request):
+    i = _insp(iid, request)
+    try:
+        r = inspections.finish(iid, _me_id(request), body.get("notes"), body.get("assignee_id"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    audit.log(_me_id(request), "finished an inspection", "property", i["property_id"], f"{len(r['tasks'])} repair tasks")
+    return r
+
+
+@app.delete("/api/inspections/{iid}")
+def inspection_delete(iid: int, request: Request):
+    i = _insp(iid, request)
+    if i["status"] == "done":
+        _require_manager(request)
+    inspections.delete(iid)
+    return {"ok": True}
+
+
+@app.get("/inspections/{iid}/report")
+def inspection_report(iid: int, request: Request):
+    _insp(iid, request, write=False)
+    return HTMLResponse(inspections.report_html(iid))
 
 
 @app.get("/api/me/reporting")

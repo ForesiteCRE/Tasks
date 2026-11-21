@@ -198,6 +198,9 @@ def _init_extras():
     archive.init()
     from . import utilities
     utilities.init()
+    from . import ooo, inspections
+    ooo.init()
+    inspections.init()
 
 
 def get_setting(key: str) -> str | None:
