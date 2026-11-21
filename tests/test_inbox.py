@@ -129,3 +129,81 @@ def test_try_it_and_admin_setup(mgr, staff):
     assert mgr.get("/api/config").json()["inbox_address"] == "tasks@foresitecre.com"
     old = inbox.token()
     assert mgr.post("/api/inbox/rotate").json()["webhook"] != i["webhook"] and inbox.token() != old
+
+
+def _fake_token(email, refresh="r-tok"):
+    import types
+    payload = base64.urlsafe_b64encode(json.dumps({"email": email}).encode()).decode().rstrip("=")
+    return lambda url, **kw: types.SimpleNamespace(status_code=200, json=lambda: {"id_token": f"h.{payload}.s", "refresh_token": refresh,
+                                                                                 "access_token": "a-tok", "expires_in": 3600})
+
+
+def test_connect_task_mailbox(mgr, staff, monkeypatch):
+    from urllib.parse import parse_qs, urlparse
+    from app import auth
+    assert staff.get("/inbox/connect", follow_redirects=False).headers["location"] == "/"     # admin only
+    def go(email):
+        loc = mgr.get("/inbox/connect", follow_redirects=False).headers["location"]
+        q = parse_qs(urlparse(loc).query)
+        assert "gmail.modify" in q["scope"][0] and q["login_hint"][0].startswith("tasks@")
+        monkeypatch.setattr(auth.httpx, "post", _fake_token(email))
+        return mgr.get(f"/auth/callback?code=x&state={q['state'][0]}", follow_redirects=False).headers["location"]
+    assert "inbox=personal" in go(mgr.me["email"])            # a teammate's own inbox is refused
+    assert "inbox=wrong-account" in go("tasks@gmail.com")
+    assert "inbox=connected" in go("tasks@foresitecre.com")
+    m = mgr.get("/api/inbox").json()["mailbox"]
+    assert m["connected"] and m["address"] == "tasks@foresitecre.com"
+    assert mgr.get("/api/config").json()["inbox_address"] == "tasks@foresitecre.com"
+    with tx() as c:
+        raw = c.execute("SELECT value FROM settings WHERE key='inbox.gmail_token'").fetchone()[0]
+    assert raw and "r-tok" not in raw                          # stored encrypted
+
+
+def test_poll_mailbox(mgr, monkeypatch):
+    import types
+    import httpx
+    m = EmailMessage()
+    m["From"] = f"Boss <{mgr.me['email']}>"
+    m["Subject"] = "Fwd: Inbox Plaza gutter"
+    m["Message-ID"] = "<poll-1@x>"
+    m.set_content("Gutter is falling off at Inbox Plaza.")
+    raw = base64.urlsafe_b64encode(m.as_bytes()).decode()
+    stranger = EmailMessage()
+    stranger["From"] = "Newsletter <news@example.com>"
+    stranger["Subject"] = "Deals"
+    stranger["Message-ID"] = "<poll-2@x>"
+    stranger.set_content("Buy now")
+    raw2 = base64.urlsafe_b64encode(stranger.as_bytes()).decode()
+    calls = []
+
+    class Fake:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def get(self, url, headers=None, params=None):
+            calls.append(("GET", url))
+            if url.endswith("/messages"):
+                body = {"messages": [{"id": "m1"}, {"id": "m2"}]}
+            elif url.endswith("/labels"):
+                body = {"labels": [{"name": "Task Manager/Made a task", "id": "L1"}]}
+            else:
+                body = {"raw": raw if url.endswith("m1") else raw2}
+            return types.SimpleNamespace(status_code=200, json=lambda: body)
+        def post(self, url, headers=None, json=None):
+            calls.append(("POST", url, json))
+            return types.SimpleNamespace(status_code=200, json=lambda: {"id": "L-new"})
+    from app import chat
+    monkeypatch.setattr(chat, "ai_enabled", lambda: False)
+    monkeypatch.setattr(inbox, "_access", lambda: "a-tok")
+    monkeypatch.setattr(httpx, "Client", Fake)
+    inbox._set("inbox.labels", "")
+    assert inbox.poll() == 1
+    mods = {c[1].split("/")[-2]: c[2] for c in calls if c[0] == "POST" and c[1].endswith("/modify")}
+    assert mods["m1"] == {"addLabelIds": ["L1"], "removeLabelIds": ["INBOX", "UNREAD"]}
+    assert mods["m2"]["addLabelIds"] == ["L-new"] and "INBOX" in mods["m2"]["removeLabelIds"]   # skipped, archived, not deleted
+    assert not any("DELETE" == c[0] or "trash" in c[1] for c in calls)
+    with tx() as c:
+        t = c.execute("""SELECT t.title FROM inbound_emails e JOIN tasks t ON t.id=e.task_id WHERE e.message_id='<poll-1@x>'""").fetchone()
+    assert t["title"] == "Inbox Plaza gutter"
+    assert mgr.delete("/api/inbox/mailbox").json()["mailbox"]["connected"] is False
+    assert inbox.poll() == 0

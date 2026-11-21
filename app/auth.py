@@ -234,6 +234,43 @@ def gmail_connect(request: Request):
         "include_granted_scopes": "true", "login_hint": me["email"], "hd": DOMAIN}))
 
 
+@router.get("/inbox/connect")
+def inbox_connect(request: Request):
+    """Admin: connect the shared task mailbox (e.g. tasks@foresitecre.com) so emails sent to it become tasks.
+    gmail.modify lets the app read new mail and label/archive what it has handled (it never deletes or sends)."""
+    me = current_user(request)
+    if not ENABLED or not me or not at_least(me, "admin"):
+        return RedirectResponse("/")
+    state = "inbox:" + secrets.token_urlsafe(24)
+    request.session["oauth_state"] = state
+    return RedirectResponse("https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({
+        "client_id": CLIENT_ID, "redirect_uri": _redirect_uri(request), "response_type": "code",
+        "scope": "openid email https://www.googleapis.com/auth/gmail.modify", "state": state, "access_type": "offline",
+        "prompt": "consent select_account", "login_hint": f"tasks@{DOMAIN}", "hd": DOMAIN}))
+
+
+def _inbox_callback(request: Request, code: str):
+    me = current_user(request)
+    r = httpx.post("https://oauth2.googleapis.com/token", timeout=15, data={
+        "code": code, "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
+        "redirect_uri": _redirect_uri(request), "grant_type": "authorization_code"})
+    if not me or not at_least(me, "admin") or r.status_code != 200:
+        return RedirectResponse("/?inbox=failed#view-admin")
+    tok = r.json()
+    payload = tok.get("id_token", "..").split(".")[1]
+    claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)) or b"{}")
+    email = (claims.get("email") or "").lower()
+    if not email.endswith("@" + DOMAIN) or not tok.get("refresh_token"):
+        return RedirectResponse("/?inbox=wrong-account#view-admin")
+    with tx() as c:
+        person = c.execute("SELECT 1 FROM users WHERE lower(email)=?", (email,)).fetchone()
+    if person:   # a teammate's own inbox would turn all their mail into tasks
+        return RedirectResponse("/?inbox=personal#view-admin")
+    from . import inbox
+    inbox.save_mailbox(email, tok["refresh_token"])
+    return RedirectResponse("/?inbox=connected#view-admin")
+
+
 def _gmail_callback(request: Request, code: str):
     me = current_user(request)
     r = httpx.post("https://oauth2.googleapis.com/token", timeout=15, data={
@@ -254,6 +291,8 @@ def _gmail_callback(request: Request, code: str):
 @router.get("/auth/callback")
 def callback(request: Request, code: str = "", state: str = "", error: str = ""):
     expected = request.session.pop("oauth_state", None)
+    if expected and expected.startswith("inbox:") and state == expected:
+        return _inbox_callback(request, code) if code and not error else RedirectResponse("/?inbox=cancelled#view-admin")
     if expected and expected.startswith("gmail:") and state == expected:
         return _gmail_callback(request, code) if code and not error else RedirectResponse("/#emails?gmail=cancelled")
     if error or not code or state != expected:

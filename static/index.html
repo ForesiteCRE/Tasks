@@ -1588,18 +1588,24 @@ async function inboxTryGo(){const b=$('#ibGo');b.disabled=true;b.textContent='Re
   try{const r=await api('/api/me/email-to-task',{method:'POST',body:{subject:$('#ibSubj').value,text:$('#ibText').value}});await refresh();openTask(r.task_id);toast('📌 Task created from the email');}
   catch(e){b.disabled=false;b.textContent='📌 Make the task';toast(e.message||'Couldn\'t make a task');}}
 async function loadInbox(){const el=$('#inboxCard');if(!el)return;let r;try{r=await api('/api/inbox')}catch(e){el.innerHTML='';return}
-  const st={task:'✅ task',ignored:'🚫 ignored',error:'⚠️ error'};
+  const st={task:'✅ task',ignored:'🚫 skipped',error:'⚠️ error'},m=r.mailbox,adm=isAdmin();
   el.innerHTML=`<h2>📧 Email → task</h2>
-    <p class="mute">Anyone on the team forwards (or CC/BCCs) an email to one address and it becomes a task — Claude reads it, picks the property, who it's for (from a note like “for Jackie by Friday”), the due date and the asks, keeps the attachments, and replies in Blink. Only teammates' emails are accepted.</p>
-    <label>The address people forward to<div class="row" style="gap:6px;margin:4px 0 0"><input id="ibAddr" value="${esc(r.address)}" placeholder="e.g. tasks@foresitecre.com"><button class="b" onclick="inboxSave()">Save</button></div></label>
-    <label style="margin-top:10px">Webhook for the inbound-email service <span class="mute">(keep private)</span><div class="copybox"><input readonly value="${esc(r.webhook)}" onclick="this.select()"><button class="b ghost" onclick="navigator.clipboard.writeText(${esc(JSON.stringify(r.webhook))}).then(()=>toast('Copied'))">Copy</button><button class="b ghost" onclick="inboxRotate()" title="Make a new secret link (the old one stops working)">↻ New link</button></div></label>
-    <details style="margin-top:10px"><summary class="tlink">How to set it up (about 15 minutes, once)</summary><ol style="line-height:1.7;font-size:13.5px">
-      <li>Create a free <a href="https://postmarkapp.com" target="_blank" rel="noopener">Postmark</a> account → your Server → <b>Default Inbound Stream</b> → Settings → paste the webhook above as the <b>Webhook URL</b>. Postmark shows an inbound address like <code>abc123@inbound.postmarkapp.com</code>. <span class="mute">(SendGrid Inbound Parse or Mailgun routes work too.)</span></li>
-      <li>In Google Workspace admin, make <b>tasks@foresitecre.com</b> (a group or alias) forward to that Postmark address — or just use the Postmark address as-is.</li>
-      <li>Type the address people should use in the box above and Save — it shows on the Tasks page for everyone.</li>
-      <li>Forward yourself a test email; you'll get a Blink reply with the new task.</li></ol></details>
+    <p class="mute">Anyone on the team forwards (or CC/BCCs) an email to the task mailbox and it becomes a task — Claude reads it, picks the property, who it's for (from a note like “for Jackie by Friday”), the due date and the asks, keeps the attachments, and replies in Blink. Only teammates' emails are accepted.</p>
+    ${m.connected?`<div class="warnbox okbox">✅ Connected to <b>${esc(m.address)}</b> — checked every minute${m.last_check?` · last check ${esc(m.last_check.slice(11))}`:''}. Handled emails are labeled <b>Task Manager/…</b> and archived (never deleted).
+        <div class="row" style="gap:6px;margin:6px 0 0"><button class="b ghost sm" onclick="inboxCheck()">Check now</button>${adm?`<a class="b ghost sm" href="/inbox/connect">Reconnect</a><button class="b ghost sm" onclick="inboxDisconnect()">Disconnect</button>`:''}</div></div>
+      ${m.last_error?`<div class="warnbox bad" style="margin-top:6px">⚠️ ${esc(m.last_error)}</div>`:''}`
+    :`<div class="warnbox">📬 <b>Not connected yet.</b> Two steps, once:
+        <ol style="margin:6px 0 4px;line-height:1.7"><li>In Google Workspace admin, add a user <b>tasks@foresitecre.com</b> (a shared mailbox, not a person's).</li>
+        <li>${adm?`Click <a class="b sm" href="/inbox/connect">Connect the task mailbox</a> and, in the Google window, <b>sign in as tasks@foresitecre.com</b> (not your own account) and allow access.`:'Ask the admin to connect it here.'}</li></ol>
+        <div class="mute" style="font-size:12px">The app reads new mail in that one mailbox, makes tasks, then labels and archives each email. It never sends or deletes mail.</div></div>`}
+    <label style="margin-top:10px">Address shown to the team<div class="row" style="gap:6px;margin:4px 0 0"><input id="ibAddr" value="${esc(r.address)}" placeholder="tasks@foresitecre.com" ${adm?'':'disabled'}>${adm?'<button class="b" onclick="inboxSave()">Save</button>':''}</div></label>
+    <details style="margin-top:10px"><summary class="tlink">Other option: an inbound-email service (Postmark, SendGrid, Mailgun)</summary>
+      <div class="mute" style="font-size:13px;margin:6px 0">Only if you'd rather not use a Google mailbox: point the service's inbound webhook at this private link.</div>
+      <div class="copybox"><input readonly value="${esc(r.webhook)}" onclick="this.select()"><button class="b ghost" onclick="navigator.clipboard.writeText(${esc(JSON.stringify(r.webhook))}).then(()=>toast('Copied'))">Copy</button>${adm?'<button class="b ghost" onclick="inboxRotate()" title="Make a new secret link (the old one stops working)">↻ New link</button>':''}</div></details>
     ${r.ai?'':'<div class="warnbox" style="margin-top:8px">Claude isn\'t connected (no API key) — emails still become tasks, using the subject as the title.</div>'}
     ${r.recent.length?`<h4 style="margin:12px 0 4px">Recent emails</h4>${r.recent.map(x=>`<div class="row2"><div class="grow"><b>${esc(x.subject||'(no subject)')}</b><div class="sub">${esc(x.user_name||x.from_email||'')} · ${fmtDate(x.received_at.slice(0,10))} · ${st[x.status]||x.status}${x.reason?' — '+esc(x.reason):''}</div></div>${x.task_id?`<button class="b ghost sm" onclick="openTask(${x.task_id})">#${x.task_id}</button>`:''}</div>`).join('')}`:''}`;}
+async function inboxCheck(){toast('Checking the mailbox…');const r=await api('/api/inbox/check',{method:'POST'});toast(r.made?`📌 ${r.made} new task${r.made>1?'s':''} from email`:'No new email');loadInbox();}
+async function inboxDisconnect(){if(!confirm('Disconnect the task mailbox? Emails sent to it will stop becoming tasks until you connect it again.'))return;await api('/api/inbox/mailbox',{method:'DELETE'});loadInbox();}
 async function inboxSave(){try{await api('/api/inbox',{method:'PUT',body:{address:$('#ibAddr').value}});CFG.inbox_address=$('#ibAddr').value.trim();toast('Saved');loadInbox();inboxHint();}catch(e){toast(e.message)}}
 async function inboxRotate(){if(!confirm('Make a new secret webhook link? You\'ll need to paste the new one into Postmark — the old one stops working right away.'))return;await api('/api/inbox/rotate',{method:'POST'});loadInbox();toast('New link made — update it in Postmark');}
 
@@ -2552,6 +2558,8 @@ async function runReminders(){const r=await api('/api/reminders/run',{method:'PO
   if(!isMgr())PF='mine';
   await loadOOO();await refresh();renderHome();inboxHint();pollUnread();pollEmails();setInterval(()=>{pollUnread();pollEmails();},60000);
   deepLink();window.addEventListener('hashchange',deepLink);
+  {const q=new URLSearchParams(location.search).get('inbox');if(q){history.replaceState(null,'',location.pathname);show('admin');
+    toast({connected:'✅ Task mailbox connected — emails sent to it now become tasks','wrong-account':'Please sign in with a @foresitecre.com mailbox',personal:'That\'s a teammate\'s own inbox — sign in as the shared tasks@ mailbox instead',failed:'Connecting the mailbox failed — try again',cancelled:'Connecting the mailbox was cancelled'}[q]||'');}}
   const c=await api('/api/config');if(!c.simulator)$('#chatTab').remove();})();
 </script>
 <div id="navSheet" class="hidden"><div class="sheet"></div></div>

@@ -26,7 +26,7 @@ async def scheduler_loop():
     """Every 10 min: daily backup, spawn due monthly projects; after REMINDER_HOUR send daily
     reminders (once/day/task) and, on the summary weekday, the weekly summary (once/week)."""
     while True:
-        for job in (maintenance.daily_backup, services.run_recurrences, dashboard.send_due_reminders, ooo.run,
+        for job in (maintenance.daily_backup, services.run_recurrences, dashboard.send_due_reminders, ooo.run, inbox.poll,
                     notify.run_summaries, fun.run_daily, demo.refresh_wins):
             try:
                 job()
@@ -2595,6 +2595,21 @@ def inbox_save(body: dict, request: Request):
         inbox.set_address(body.get("address") or "")
     except ValueError as e:
         raise HTTPException(400, str(e))
+    return inbox.info(auth.PUBLIC_URL or str(request.base_url).rstrip("/"))
+
+
+@app.post("/api/inbox/check")
+def inbox_check(request: Request):
+    _require_manager(request)
+    n = inbox.poll()
+    return {"made": n, **inbox.info(auth.PUBLIC_URL or str(request.base_url).rstrip("/"))}
+
+
+@app.delete("/api/inbox/mailbox")
+def inbox_disconnect(request: Request):
+    if not auth.is_admin(request):
+        raise HTTPException(403, "Only the admin can do that.")
+    inbox.disconnect_mailbox()
     return inbox.info(auth.PUBLIC_URL or str(request.base_url).rstrip("/"))
 
 

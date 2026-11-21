@@ -1,8 +1,8 @@
 """Email → task. Forward (or CC/BCC) any email to the team's task address and it becomes a task.
 
-How mail gets here: an inbound-email service (Postmark recommended; SendGrid Inbound Parse and Mailgun routes also
-work, as does anything that POSTs the raw message) calls POST /email/inbound/<secret>. Google Workspace can forward
-tasks@foresitecre.com to the service's address.
+How mail gets here: a shared Google Workspace mailbox (tasks@foresitecre.com) is connected once by the admin; the app
+checks its inbox every minute, makes a task from each new email, then labels it "Task Manager/…" and archives it.
+(Alternatively an inbound-email service — Postmark, SendGrid, Mailgun — can POST to /email/inbound/<secret>.)
 
 What happens:
   • only people in the app can create tasks this way (the sender must match a teammate's email; mail that fails
@@ -83,7 +83,113 @@ def set_address(a: str):
 
 def info(public_url: str) -> dict:
     return {"address": address(), "webhook": f"{public_url}/email/inbound/{token()}", "ai": chat.ai_enabled(),
+            "mailbox": {"address": _get("inbox.gmail_address", ""), "connected": bool(_get("inbox.gmail_token")),
+                        "last_check": _get("inbox.last_check", ""), "last_error": _get("inbox.last_error", "")},
             "recent": rows_recent()}
+
+
+# ---------- the shared Google mailbox (tasks@…) ----------
+
+GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me"
+LABELS = {"done": "Task Manager/Made a task", "skipped": "Task Manager/Skipped", "error": "Task Manager/Couldn't read"}
+
+
+def _crypt():
+    from .emails import _fernet
+    return _fernet()
+
+
+def save_mailbox(email_addr: str, refresh_token: str):
+    _set("inbox.gmail_token", _crypt().encrypt(refresh_token.encode()).decode())
+    _set("inbox.gmail_address", email_addr)
+    _set("inbox.last_error", "")
+    _set("inbox.address", email_addr)
+    _set("inbox.labels", "")
+    _TOK.update(v=None, exp=0.0)
+
+
+def disconnect_mailbox():
+    for k in ("inbox.gmail_token", "inbox.gmail_address", "inbox.last_error", "inbox.labels"):
+        _set(k, "")
+    _TOK.update(v=None, exp=0.0)
+
+
+_TOK = {"v": None, "exp": 0.0}
+
+
+def _access() -> str | None:
+    import time
+    import httpx
+    if _TOK["v"] and time.time() < _TOK["exp"]:
+        return _TOK["v"]
+    raw = _get("inbox.gmail_token")
+    if not raw:
+        return None
+    try:
+        refresh = _crypt().decrypt(raw.encode()).decode()
+    except Exception:
+        _set("inbox.last_error", "The saved connection can't be read — connect the mailbox again.")
+        return None
+    r = httpx.post("https://oauth2.googleapis.com/token", timeout=15, data={
+        "client_id": os.getenv("GOOGLE_CLIENT_ID", ""), "client_secret": os.getenv("GOOGLE_CLIENT_SECRET", ""),
+        "refresh_token": refresh, "grant_type": "refresh_token"})
+    if r.status_code != 200:
+        _set("inbox.last_error", "Google refused the connection — connect the mailbox again." if r.status_code in (400, 401)
+             else f"Google sign-in error ({r.status_code})")
+        return None
+    _TOK.update(v=r.json().get("access_token"), exp=time.time() + int(r.json().get("expires_in", 3600)) - 300)
+    return _TOK["v"]
+
+
+def _labels(http, h) -> dict:
+    cached = _get("inbox.labels")
+    if cached:
+        return json.loads(cached)
+    have = {l["name"]: l["id"] for l in http.get(f"{GMAIL}/labels", headers=h).json().get("labels", [])}
+    out = {}
+    for k, name in LABELS.items():
+        if name not in have:
+            r = http.post(f"{GMAIL}/labels", headers=h, json={"name": name, "labelListVisibility": "labelShow",
+                                                               "messageListVisibility": "show"})
+            have[name] = r.json().get("id")
+        out[k] = have[name]
+    _set("inbox.labels", json.dumps(out))
+    return out
+
+
+def poll(limit: int = 20) -> int:
+    """Read new mail in the task mailbox, make tasks, then label + archive each message (never deletes)."""
+    if not _get("inbox.gmail_token"):
+        return 0
+    import httpx
+    from datetime import datetime
+    tok = _access()
+    if not tok:
+        return 0
+    h = {"Authorization": f"Bearer {tok}"}
+    made = 0
+    try:
+        with httpx.Client(timeout=30) as http:
+            ids = [m["id"] for m in http.get(f"{GMAIL}/messages", headers=h,
+                                             params={"q": "in:inbox", "maxResults": limit}).json().get("messages", [])]
+            labels = _labels(http, h) if ids else {}
+            for mid in ids:
+                kind = "error"
+                try:
+                    raw = http.get(f"{GMAIL}/messages/{mid}", headers=h, params={"format": "raw"}).json()["raw"]
+                    r = process(_from_mime(base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4))))
+                    kind = "done" if r["status"] in ("task", "duplicate") else "skipped"
+                    made += r["status"] == "task"
+                except Exception:
+                    log.exception("mailbox message %s failed", mid)
+                http.post(f"{GMAIL}/messages/{mid}/modify", headers=h,
+                          json={"addLabelIds": [labels[kind]] if labels.get(kind) else [], "removeLabelIds": ["INBOX", "UNREAD"]})
+        _set("inbox.last_error", "")
+    except Exception as e:
+        log.exception("mailbox check failed")
+        _set("inbox.last_error", f"Couldn't check the mailbox ({type(e).__name__})")
+    _set("inbox.last_check", datetime.now().strftime("%Y-%m-%d %H:%M"))
+    return made
 
 
 def rows_recent(limit=20) -> list[dict]:
