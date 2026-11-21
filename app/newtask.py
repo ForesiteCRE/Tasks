@@ -118,6 +118,8 @@ def handle(user: dict, desc: str) -> str:
                         (proj["id"] if proj else team.general_project_id(), title, who["id"],
                          due and due.isoformat(), prop and prop["id"])).lastrowid
         target = c.execute("SELECT blink_user_id FROM users WHERE id=?", (who["id"],)).fetchone()
+    from . import watchers
+    watchers.auto_watch(tid, user["id"], who["id"])
     if d.get("estimate"):
         mins = timing.parse_duration(d["estimate"])
         if mins:

@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import (audit, utilities, ooo, inspections, inbox, auth, automations, bids, blink, notify, blockers, fun, helpbot, ourcoi, chat, closeboard, departments, emails, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
+from . import (audit, utilities, ooo, inspections, inbox, watchers, auth, automations, bids, blink, notify, blockers, fun, helpbot, ourcoi, chat, closeboard, departments, emails, vendors, collab, dashboard, demo, extras, intake, maintenance, photos, properties, recur, services,
                starter_templates, team, timing, tpl)
 from .db import DB_PATH, get_setting, init_db, rows, tx
 
@@ -722,6 +722,7 @@ def create_task(t: TaskIn, background: BackgroundTasks, request: Request):
         kind = "subtask" if t.parent_id else "task"
         text = f"📌 New {kind} assigned: #{tid} {t.title}" + (f" – due {t.due_date:%b %d}" if t.due_date else "")
         background.add_task(_notify, u["blink_user_id"], text)
+    watchers.auto_watch(tid, me.get("id"), t.assignee_id)
     return {"id": tid}
 
 
@@ -834,7 +835,35 @@ def get_task(tid: int):
         raise HTTPException(404, "Task not found")
     d["inspection"] = inspections.step_info(tid)
     d["email"] = inbox.for_task(tid)
+    d["watchers"] = watchers.for_task(tid)
     return d
+
+
+@app.post("/api/tasks/{tid}/watchers")
+def task_watch(tid: int, body: dict, request: Request):
+    me = _me_id(request)
+    uid = int(body.get("user_id") or me)
+    with tx() as c:
+        t = c.execute("SELECT assignee_id FROM tasks WHERE id=?", (tid,)).fetchone()
+    if not t:
+        raise HTTPException(404, "Task not found")
+    if uid != me and not auth.is_manager(request) and me not in [w["user_id"] for w in watchers.for_task(tid)] + [t["assignee_id"]]:
+        raise HTTPException(403, "Only managers, the assignee or a watcher can add someone else.")
+    watchers.add(tid, uid, me)
+    return {"watchers": watchers.for_task(tid)}
+
+
+@app.delete("/api/tasks/{tid}/watchers/{uid}")
+def task_unwatch(tid: int, uid: int, request: Request):
+    if uid != _me_id(request):
+        _require_manager(request)
+    watchers.remove(tid, uid)
+    return {"watchers": watchers.for_task(tid)}
+
+
+@app.get("/api/me/watching")
+def my_watching(request: Request):
+    return watchers.mine(_me_id(request))
 
 
 @app.delete("/api/tasks/{tid}")

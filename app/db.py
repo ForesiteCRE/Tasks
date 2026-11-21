@@ -203,6 +203,8 @@ def _init_extras():
     inspections.init()
     from . import inbox
     inbox.init()
+    from . import watchers
+    watchers.init()
 
 
 def get_setting(key: str) -> str | None:

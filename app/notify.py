@@ -23,6 +23,7 @@ log = logging.getLogger("notify")
 CATEGORIES = {
     "recap":      ("Daily recap", "what's due, overdue and done today — the heart of your summary", "summary", "all"),
     "mentions":   ("When someone @mentions me", "a teammate tags you in a comment", "instant", "all"),
+    "watching":   ("Tasks I'm watching", "a task you created for someone (or chose to watch) is finished, blocked, or gets a comment", "instant", "all"),
     "comments":   ("Comments on my tasks", "someone else comments on a task assigned to you", "summary", "all"),
     "assigned":   ("New tasks & projects assigned to me", "including tasks added for you in Blink", "summary", "all"),
     "your_turn":  ("It's my turn", "a task you were waiting on is done, so yours can start", "summary", "all"),

@@ -456,6 +456,8 @@ def process(e: dict, today: date | None = None) -> dict:
                 c.execute("INSERT INTO task_checklist(task_id, text, position) VALUES(?,?,?)", (tid, str(item).strip()[:200], n))
         c.execute("INSERT INTO task_updates(task_id, user_id, source, note) VALUES(?,?,?,?)",
                   (tid, user["id"], "web", f"📧 Created from an email forwarded by {user['name']}"))
+    from . import watchers
+    watchers.auto_watch(tid, user["id"], who["id"])
     eid = _log(e, "task", None, user["id"])
     saved = 0
     if eid:

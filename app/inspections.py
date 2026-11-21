@@ -197,6 +197,8 @@ def finish(iid: int, uid, notes: str | None = None, assignee_id=None, today: dat
                                VALUES(?,?,?,?,?,999,?)""", (gp, ("🚨 " if it["urgent"] else "") + f"Fix: {it['label']}", desc, who,
                                                             due.isoformat(), i["property_id"])).lastrowid
             c.execute("UPDATE inspection_items SET task_id=? WHERE id=?", (tid, it["id"]))
+            if uid and uid != who:   # the inspector hears when the repair is done
+                c.execute("INSERT OR IGNORE INTO task_watchers(task_id, user_id, added_by) VALUES(?,?,?)", (tid, uid, uid))
             made.append(tid)
         c.execute("UPDATE projects SET status='active' WHERE id=?", (gp,))
         c.execute("UPDATE inspections SET status='done', finished_at=datetime('now'), notes=COALESCE(?, notes) WHERE id=?",

@@ -128,6 +128,9 @@ def add_comment(task_id: int, user_id, body: str, source: str = "web") -> dict:
                "Just reply here to answer on the task.")
         automations._send([t["assignee_blink"]], msg, cat="comments")
         chat.remember(t["assignee_id"], "", msg)
+    from . import watchers
+    watchers.notify(task_id, f"💬 **{author} commented** on #{t['id']} {t['title']} (you're watching)\n“{snippet}”",
+                    skip={user_id, t["assignee_id"], *notified})
     return {"id": cid, "mentioned": [u["name"] for u in mentioned]}
 
 

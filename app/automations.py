@@ -79,6 +79,11 @@ def on_status_change(task_id: int, old: str | None, new: str | None, actor_id, n
         return
     t = _task(task_id)
     who = _user_name(actor_id)
+    try:
+        from . import watchers
+        watchers.on_status(t, new, actor_id, who, note)
+    except Exception:
+        log.exception("watcher notice failed")
 
     if new == "blocked" and _on("blocked"):
         from .blockers import text as blocked_text

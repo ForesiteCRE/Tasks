@@ -1609,6 +1609,20 @@ async function inboxDisconnect(){if(!confirm('Disconnect the task mailbox? Email
 async function inboxSave(){try{await api('/api/inbox',{method:'PUT',body:{address:$('#ibAddr').value}});CFG.inbox_address=$('#ibAddr').value.trim();toast('Saved');loadInbox();inboxHint();}catch(e){toast(e.message)}}
 async function inboxRotate(){if(!confirm('Make a new secret webhook link? You\'ll need to paste the new one into Postmark — the old one stops working right away.'))return;await api('/api/inbox/rotate',{method:'POST'});loadInbox();toast('New link made — update it in Postmark');}
 
+/* ---------- watchers ---------- */
+function watchRow(d){const W=d.watchers||[],me=W.some(w=>w.user_id===ME.id),mg=isMgr(),canAdd=mg||me||d.assignee_id===ME.id;
+  return `<tr><td>👀 Watchers</td><td><div class="row" style="gap:6px;margin:0;flex-wrap:wrap;align-items:center">
+    ${W.map(w=>`<span class="chip2">${esc(w.name)}${w.user_id===ME.id||mg?` <span class="tlink" title="Remove" onclick="unwatch(${d.id},${w.user_id})">✕</span>`:''}</span>`).join('')||'<span class="mute" style="font-size:12.5px">Nobody — watchers hear when it\'s done, blocked or commented on</span>'}
+    ${me?'':`<button class="b ghost sm" onclick="watchTask(${d.id})">👀 Watch</button>`}
+    ${canAdd?`<select class="umore" style="width:auto!important;flex:0 0 auto" onchange="if(this.value)watchTask(${d.id},+this.value);this.value=''"><option value="">＋ Add…</option>${USERS.filter(u=>!W.some(w=>w.user_id===u.id)&&u.id!==ME.id).map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('')}</select>`:''}</div></td></tr>`;}
+async function watchTask(id,uid){await api(`/api/tasks/${id}/watchers`,{method:'POST',body:uid?{user_id:uid}:{}});toast(uid?'Watcher added':'👀 You\'re watching — you\'ll hear when it\'s done');openTask(id);}
+async function unwatch(id,uid){await api(`/api/tasks/${id}/watchers/${uid}`,{method:'DELETE'});openTask(id);}
+async function renderHomeWatching(){const el=$('#homeWatch');if(!el)return;let r;try{r=await api('/api/me/watching')}catch(e){return}
+  if(!r.open.length&&!r.done.length){el.innerHTML='';return;}
+  const row=t=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><span class="pill ${t.status}">${LBL[t.status]}</span><div class="grow">${esc(t.title)}<div class="sub">${esc((t.assignee_name||'Unassigned').split(' (')[0])}${t.property_name?' · '+esc(t.property_name):''}${t.status==='done'&&t.done_at?' · done '+fmtDate(t.done_at.slice(0,10)):''}</div></div><span class="${t.status!=='done'&&isOver(t)?'over':'mute'}" style="white-space:nowrap">${t.status==='done'?'✅':fmtDate(t.due_date)||'—'}</span></div>`;
+  el.innerHTML=panel('👀 Watching',r.open.length,cap('watch',r.open).map(row).join('')+moreLink('watch',r.open.length,'renderHomeWatching()')
+    +(r.done.length?`<div class="mute" style="font-size:12px;margin:8px 0 2px">Finished this week</div>${r.done.slice(0,5).map(row).join('')}`:''));}
+
 /* ---------- insurance follow-up emails ---------- */
 let EMAILS=[],GMAIL=false;
 function deepLink(){const m=location.hash.match(/^#(task|project|property|vendor|view)-([\w-]+)$/);
@@ -1884,8 +1898,8 @@ let HOME={layout:null,notes:[],my_properties:[]},HOME_W={},HCUST=false;
 const WIDGETS={today:'🎯 Today ring & streak',kpis:'📊 Numbers (overdue, due today…)',agenda:'📅 Agenda',notes:'📝 Notes',
   nodate:'🗂 Tasks without a due date',projects:'📁 My projects',properties:'🏢 My properties',wins:'🙌 Team wins',
   waiting:'⏳ Waiting on me',blocked:'⛔ Blocked for me',emails:'✉️ Emails ready to send',reminders:'⏰ Reminders',
-  comments:'💬 Comments & mentions',done:'✅ Done this week',reporting:'📊 Reporting status at my properties',utilities:'🧾 Utility bills to send',away:'🌴 Out of office'};
-const HOME_DEFAULT={top:['today','kpis'],left:['agenda','utilities','reporting','nodate','projects','properties'],right:['away','notes','wins','waiting','blocked','emails','reminders','comments','done'],hidden:[]};
+  comments:'💬 Comments & mentions',done:'✅ Done this week',reporting:'📊 Reporting status at my properties',utilities:'🧾 Utility bills to send',away:'🌴 Out of office',watching:'👀 Tasks I\'m watching'};
+const HOME_DEFAULT={top:['today','kpis'],left:['agenda','utilities','reporting','nodate','projects','properties'],right:['away','notes','watching','wins','waiting','blocked','emails','reminders','comments','done'],hidden:[]};
 function homeLayout(){const L=HOME.layout||HOME_DEFAULT,out={top:[],left:[],right:[],hidden:[]},seen=new Set();
   for(const z of ['top','left','right','hidden'])for(const id of (L[z]||[]))if(WIDGETS[id]&&!seen.has(id)){seen.add(id);out[z].push(id);}
   for(const z of ['top','left','right'])for(const id of HOME_DEFAULT[z])if(!seen.has(id)){seen.add(id);out[z].push(id);}   // widgets added later show up in their default spot
@@ -1983,6 +1997,7 @@ async function renderHome(){const tok=++HTOK;
     reporting:'<div id="homeReporting"></div>',
     utilities:'<div id="homeUtil"></div>',
     away:'<div id="homeAway"></div>',
+    watching:'<div id="homeWatch"></div>',
     notes:'<div id="homeNotes"></div>',
     wins:'<div id="funTeam"></div>',
     waiting:`${panel('⏳ Waiting on me',d.waiting_on_me.length,cap('wait',d.waiting_on_me).map(w=>`<div class="row2" style="cursor:pointer" onclick="openTask(${w.my_task_id})"><span class="ico">▶️</span><div class="grow"><b>#${w.my_task_id} ${esc(w.my_task_title)}</b><div class="sub">${esc(w.assignee_name)} can't start <i>${esc(w.title)}</i> until this is done${w.my_due?` · due ${fmtDate(w.my_due)}`:''}</div></div></div>`).join('')+moreLink('wait',d.waiting_on_me.length,'renderHome()')||'<div class="empty">Nobody is waiting on you.</div>')}`,
@@ -1994,7 +2009,7 @@ async function renderHome(){const tok=++HTOK;
     done:`${panel('✅ Done this week',d.done_week.length,d.done_week.map(t=>`<div class="row2" style="cursor:pointer" onclick="openTask(${t.id})"><span class="ico">✓</span><div class="grow">${esc(t.title)}<div class="sub">${esc(t.project_name)}${t.actual_minutes?' · '+fmtMin(t.actual_minutes):' · <span class="over">log time</span>'}</div></div></div>`).join('')||'<div class="empty">Nothing yet this week.</div>')}`};
   HOME_W=W;$('#home').innerHTML=homeLayoutHTML(W);
   if(unread.mentions)api('/api/me/mentions-seen',{method:'POST'}).then(()=>setBadge(0));
-  loadFunToday();loadFunTeam();renderNotes();renderHomeProps();renderHomeReporting();renderHomeUtil();renderHomeAway();
+  loadFunToday();loadFunTeam();renderNotes();renderHomeProps();renderHomeReporting();renderHomeUtil();renderHomeAway();renderHomeWatching();
   api('/api/emails').then(r=>{const el=$('#homeEmails');if(!el||!r.drafts.length)return;
     el.innerHTML=panel('✉️ Emails ready to send',r.drafts.length,cap('homeEm',r.drafts).map(d=>`<div class="row2" style="cursor:pointer" onclick="show('emails')"><span class="ico">✉️</span><div class="grow">${esc(d.subject)}<div class="sub">To ${esc(d.to_name||d.to_email||'?')}${d.gmail_draft_id?' · in your Gmail drafts':''}</div></div></div>`).join('')+moreLink('homeEm',r.drafts.length,'renderHome()'));});
 }
@@ -2250,6 +2265,7 @@ async function openTask(id){OPEN_ID=id;const [d,h]=await Promise.all([api(`/api/
    ${d.inspection?`<div class="warnbox okbox" style="margin:10px 0 0">📋 This step is done with the <b>inspection walk-through</b> — finishing the inspection checks it off.
      <div class="row" style="gap:6px;margin:6px 0 0;flex-wrap:wrap">${d.status!=='done'?`<button class="b sm" onclick="taskDlg.close();${d.inspection.draft_id?`inspOpen(${d.inspection.draft_id})`:`inspStart(${d.inspection.property_id})`}">📋 ${d.inspection.draft_id?'Continue':'Start'} inspection</button>`:''}${d.inspection.report_id?`<a class="b ghost sm" href="/inspections/${d.inspection.report_id}/report" target="_blank" rel="noopener">📄 Report (${fmtDate(d.inspection.report_date)})</a>`:''}</div></div>`:''}
    <table style="margin-top:8px"><tr><td style="width:110px">Assignee</td><td>${mg?`<select onchange="patch(${d.id},{assignee_id:+this.value||0}).then(()=>openTask(${d.id}))">${userOpts(d.assignee_id)}</select>`:esc(who)}</td></tr>
+   ${watchRow(d)}
    ${d.email?`<tr><td>📧 Email</td><td><div style="font-size:13px"><b>${esc(d.email.orig_subject||d.email.subject||'')}</b><div class="mute">from ${esc(d.email.orig_from||d.email.from_email||'')}${d.email.orig_date?' · '+esc(d.email.orig_date):''}</div>
      ${d.email.files.length?`<div class="row" style="gap:6px;flex-wrap:wrap;margin:4px 0 0">${d.email.files.map(f=>`<a class="b ghost sm" href="/api/inbox-files/${f.id}" target="_blank" rel="noopener">📎 ${esc(f.filename||'attachment')}</a>`).join('')}</div>`:''}</div></td></tr>`:''}
    <tr><td>Due</td><td>${mg?`<input type="date" value="${d.due_date||''}" onchange="patch(${d.id},{due_date:this.value||null}).then(()=>openTask(${d.id}))">`:`<span class="${isOver(d)?'over':''}">${fmtDate(d.due_date)||'—'}</span>`}</td></tr>
