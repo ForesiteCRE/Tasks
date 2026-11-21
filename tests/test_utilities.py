@@ -145,3 +145,32 @@ def test_yearly_bills():
     assert st("2026-11", date(2026, 11, 20)) == "skip"
     assert st("2027-01", date(2027, 1, 3)) == "ready"
     utilities.delete(aid)
+
+
+def test_import_matches_by_address(mgr):
+    from app import properties
+    a = properties.create("777 Sonterra Blvd, San Antonio, TX 78258", name="Sonterra Office")
+    b1 = properties.create("5009 Schertz Pkwy, Schertz, TX 78154", name="Schertz Retail A")
+    with tx() as c:   # a second building at the same address (the directory import suffixes its norm)
+        b2 = c.execute("INSERT INTO properties(name, address, norm) VALUES('Schertz Medical B', '5009 Schertz Pkwy, Schertz, TX 78154', ?)",
+                       (properties.norm("5009 Schertz Pkwy, Schertz, TX 78154") + " #schertz-medical-b",)).lastrowid
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Utilities"
+    ws.append(["Login Info3", None, "Reference", "Property Name", "Property Address", "Account", "Description", None, None, "OCT", "NOV"])
+    ws.append([None, None, "CPS Energy"])
+    ws.append(["u1", "p1", "111 MMYY", "Sonterra HQ", "777 Sonterra Boulevard", "6410-0000 - Electricity", "svc", 3, 20, "x", None])
+    ws.append([None, None, "222 MMYY", "Schertz - Medical", "5009 Schertz Pkwy", "6410-0000 - Electricity", "svc", 4, 21, "x", None])
+    ws.append([None, None, "333 MMYY", "Mystery Place", "1 Nowhere Ln", "6410-0000 - Electricity", "svc", 5, 22, None, None])
+    buf = io.BytesIO()
+    wb.save(buf)
+    data = buf.getvalue()
+    items = utilities.parse(data, date(2026, 11, 20))
+    assert items[0]["address"] == "777 Sonterra Boulevard" and items[0]["bill_day"] == "3" and items[0]["pay_day"] == "20"
+    assert items[0]["login_user"] == "u1" and items[0]["marks"] == {"2026-10": ("sent", None)}
+    r = mgr.post("/api/utilities/import", json={"data_b64": base64.b64encode(data).decode()}).json()
+    m = {l["label"]: (l["property_id"], l["matched_by"]) for l in r["labels"]}
+    assert m["Sonterra HQ"] == (a, "address")          # "Boulevard" vs "Blvd", no city on the sheet
+    assert m["Schertz - Medical"] == (b2, "address")   # shared address → the building whose name matches
+    assert m["Mystery Place"] == (None, None) and r["has_address"]
+    assert b1 != b2

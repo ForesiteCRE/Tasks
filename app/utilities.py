@@ -525,20 +525,26 @@ def parse(data: bytes, today: date | None = None) -> list[dict]:
         else:
             continue
         ci = {k: h.index(k) for k in ("reference", "property name", "account", "description") if k in h}
+        addr_i = next((i for i, x in enumerate(h) if "address" in x), None)
         ref_i = ci["reference"]
-        login_cols = list(range(0, ref_i))          # the login columns sit left of Reference
-        after = ci.get("description", ref_i + 3) + 1
-        bill_i, pay_i = after, after + 1            # unlabeled: Bill Date, Payment Date
         periods = _periods(list(head), today)
+        known = set(ci.values()) | ({addr_i} if addr_i is not None else set())
+        login_cols = [i for i in range(0, ref_i) if i not in known]   # the login columns sit left of Reference
+        first_month = min(periods) if periods else len(h)
+        named = {x: i for i, x in enumerate(h) if x in ("bill date", "payment date", "pay date", "due date")}
+        free = [i for i in range(max(known) + 1, first_month) if not h[i]]   # unlabeled: Bill Date, Payment Date
+        bill_i = named.get("bill date", free[0] if free else None)
+        pay_i = named.get("payment date", named.get("pay date", named.get("due date", free[1] if len(free) > 1 else None)))
         out, provider, prov_login = [], "", ("", "")
         g = lambda r, i: _s(r[i]) if i is not None and i < len(r) else ""
         for r in it:
             ref, prop, gl, desc = g(r, ref_i), g(r, ci.get("property name")), g(r, ci.get("account")), g(r, ci.get("description"))
+            addr = g(r, addr_i)
             lg = [g(r, i) for i in login_cols] + ["", ""]
-            if ref and not prop and not gl and "MMYY" not in ref.upper() and not re.match(r"^[\d-]{5,}", ref):
+            if ref and not prop and not gl and not addr and "MMYY" not in ref.upper() and not re.match(r"^[\d-]{5,}", ref):
                 provider, prov_login = ref, (lg[0], lg[1])   # a provider heading row
                 continue
-            if not (ref or prop or gl):
+            if not (ref or prop or gl or addr):
                 if desc and out:                           # a note under the previous account
                     out[-1]["notes"] = (out[-1]["notes"] + " · " if out[-1]["notes"] else "") + desc
                 continue
@@ -556,7 +562,8 @@ def parse(data: bytes, today: date | None = None) -> list[dict]:
             from collections import Counter
             bm = Counter(int(p[5:7]) for p, (st, _) in marks.items() if st != "na").most_common(1)
             last = max(marks) if marks else None
-            out.append({"provider": provider, "property_label": prop, "reference": ref, "account_no": acct_no, "gl_account": gl,
+            out.append({"provider": provider, "property_label": prop, "address": addr,
+                        "key": f"{prop} | {addr}" if addr else prop, "reference": ref, "account_no": acct_no, "gl_account": gl,
                         "description": desc, "bill_day": g(r, bill_i), "pay_day": g(r, pay_i), "login_user": user,
                         "login_pass": pw, "notes": note, "marks": marks, "freq": "annual" if annual else "monthly",
                         "bill_month": (bm[0][0] if bm else 1) if annual else None, "active": not (last and marks[last][0] == "final")})
@@ -564,7 +571,50 @@ def parse(data: bytes, today: date | None = None) -> list[dict]:
     raise ValueError("Couldn't find the Utilities sheet (needs Reference and Property Name columns).")
 
 
-def _guess_property(c, label: str):
+def _street(a: str) -> str:
+    from . import properties
+    return properties.norm((a or "").split(",")[0])
+
+
+def _by_address(c, address: str, label: str = ""):
+    """Match the sheet's address to a property page: exact, else the street part (number + street) — and if several
+    buildings share it, the one whose name looks like the sheet's property name."""
+    from . import properties
+    if not address:
+        return None
+    n = properties.norm(address)
+    ps = rows(c.execute("SELECT id, name, address, norm FROM properties WHERE archived_at IS NULL"))
+    hits = [p for p in ps if p["norm"] == n or (p["norm"] or "").startswith(n + " #")]
+    if not hits:
+        st = _street(address)
+        num = st.split(" ")[0] if st else ""
+        if not st or not num[:1].isdigit():
+            return None
+        def same(p):
+            ps_ = _street(p["address"])
+            return ps_.split(" ")[0] == num and (ps_ == st or ps_.startswith(st + " ") or st.startswith(ps_ + " "))
+        hits = [p for p in ps if same(p)]
+    if len(hits) == 1:
+        return hits[0]["id"]
+    if len(hits) > 1 and label:
+        words = set(re.findall(r"[a-z]{3,}", label.lower()))
+        scored = sorted(hits, key=lambda p: -len(words & set(re.findall(r"[a-z]{3,}", p["name"].lower()))))
+        if len(words & set(re.findall(r"[a-z]{3,}", scored[0]["name"].lower()))) > \
+                len(words & set(re.findall(r"[a-z]{3,}", scored[1]["name"].lower()))):
+            return scored[0]["id"]
+    return None
+
+
+def _guess_property(c, label: str, address: str = ""):
+    if address:
+        pid = _by_address(c, address, label)
+        if pid:
+            return pid, "address"
+    pid = _guess_by_name(c, label)
+    return (pid, "name") if pid else (None, None)
+
+
+def _guess_by_name(c, label: str):
     if not label:
         return None
     r = c.execute("SELECT id FROM properties WHERE archived_at IS NULL AND lower(name)=lower(?)", (label,)).fetchone()
@@ -582,12 +632,12 @@ def _guess_property(c, label: str):
 def import_rows(data: bytes, apply=False, mapping: dict | None = None, assignee_id=None, history=True, logins=True,
                 user_id=None, today: date | None = None) -> dict:
     items = parse(data, today)
-    labels = {}
+    labels, how = {}, {}
     with tx() as c:
         for it in items:
-            lab = it["property_label"]
-            if lab not in labels:
-                labels[lab] = _guess_property(c, lab)
+            k = it["key"]
+            if k not in labels:
+                labels[k], how[k] = _guess_property(c, it["property_label"], it["address"])
         props = rows(c.execute("SELECT id, name FROM properties WHERE archived_at IS NULL ORDER BY name COLLATE NOCASE"))
         people = rows(c.execute("SELECT id, name FROM users WHERE email IS NULL OR email NOT LIKE '%demo.example.com' ORDER BY name"))
     guess = next((p["id"] for p in people if p["name"].split()[0].lower() == "jennifer"), None)
@@ -595,7 +645,10 @@ def import_rows(data: bytes, apply=False, mapping: dict | None = None, assignee_
     out = {"total": len(items), "active": sum(it["active"] for it in items),
            "with_login": sum(bool(it["login_user"] or it["login_pass"]) for it in items),
            "providers": sorted({it["provider"] for it in items if it["provider"]}),
-           "labels": [{"label": k, "property_id": v, "count": sum(1 for it in items if it["property_label"] == k)} for k, v in labels.items()],
+           "has_address": any(it["address"] for it in items),
+           "labels": [{"key": k, "label": next(it["property_label"] for it in items if it["key"] == k),
+                       "address": next(it["address"] for it in items if it["key"] == k), "property_id": v, "matched_by": how[k],
+                       "count": sum(1 for it in items if it["key"] == k)} for k, v in labels.items()],
            "properties": props, "people": people, "assignee_guess": assignee_id or settings()["default_assignee"] or guess,
            "history_from": hist[0] if hist else None, "history_to": hist[-1] if hist else None,
            "marks": sum(len(it["marks"]) for it in items), "applied": False}
@@ -608,7 +661,7 @@ def import_rows(data: bytes, apply=False, mapping: dict | None = None, assignee_
         save_settings({"default_assignee": assignee_id})
     created = updated = marked = 0
     for it in items:
-        pid = mapping.get(it["property_label"], labels.get(it["property_label"]))
+        pid = mapping[it["key"]] if it["key"] in mapping else labels.get(it["key"])
         fields = {k: it[k] for k in ("provider", "property_label", "reference", "account_no", "gl_account", "description",
                                      "bill_day", "pay_day", "notes", "active", "freq", "bill_month")} | {"property_id": pid}
         if assignee_id:
